@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import BatchAllocationView from '@/app/components/showcase/BatchAllocationView';
+import { Suspense } from 'react';
 
-export default function AllocationViewerPage() {
+function AllocationViewerContent() {
   const searchParams = useSearchParams();
   const [batchId, setBatchId] = useState<string>('');
 
@@ -67,5 +68,13 @@ export default function AllocationViewerPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AllocationViewerPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <AllocationViewerContent />
+    </Suspense>
   );
 }

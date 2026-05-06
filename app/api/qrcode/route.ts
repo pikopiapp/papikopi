@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     if (format === "svg") {
       const svg = await QRCode.toString(qrData, {
-        type: "image/svg+xml",
+        type: "svg",
         width: 300,
         margin: 2,
         color: {

@@ -11,7 +11,6 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
-  const { role } = useAuth();
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
@@ -21,7 +20,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     redirect("/login");
   }
 
-  if (allowedRoles && !allowedRoles.includes(role || "")) {
+  if (allowedRoles && user.user_metadata?.role && !allowedRoles.includes(user.user_metadata.role)) {
     redirect("/unauthorized");
   }
 

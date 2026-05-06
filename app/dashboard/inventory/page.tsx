@@ -9,6 +9,7 @@ interface Ingredient {
   name: string;
   unit: string;
   cost: number;
+  quantity?: number;
   created_at?: string;
 }
 
@@ -35,7 +36,7 @@ export default function InventoryPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', unit: '', cost: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState({ name: '', unit: '', cost: '' });
+  const [editData, setEditData] = useState({ name: '', unit: '', cost: '', quantity: '' });
   
   // Purchase modal state
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -156,7 +157,7 @@ export default function InventoryPage() {
 
       console.log(`✅ Update successful`);
       setEditingId(null);
-      setEditData({ name: '', unit: '', cost: '' });
+      setEditData({ name: '', unit: '', cost: '', quantity: '' });
       console.log(`🔄 Refreshing stock list...`);
       await fetchStocks();
       console.log(`✅ Stock list refreshed`);
@@ -411,7 +412,7 @@ export default function InventoryPage() {
                           <button
                             onClick={() => {
                               setEditingId(null);
-                              setEditData({ name: '', unit: '', cost: '' });
+                              setEditData({ name: '', unit: '', cost: '', quantity: '' });
                             }}
                             className="bg-gray-500 hover:bg-gray-600 text-white p-2 rounded transition"
                             title="Batal"

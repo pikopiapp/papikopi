@@ -47,7 +47,7 @@ export default function AllocationReport() {
           </thead>
           <tbody className="divide-y">
             {allocationData.map((item, idx) => {
-              const available = item.showcase - parseInt(item.allocated);
+              const available = item.showcase - (typeof item.allocated === 'string' ? parseInt(item.allocated) : item.allocated);
               return (
                 <tr key={idx} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-semibold text-gray-900">{item.product}</td>

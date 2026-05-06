@@ -5,6 +5,7 @@ interface Product {
   name: string;
   price: number;
   category_id: string;
+  hpp?: number;
 }
 
 interface CartItem {
