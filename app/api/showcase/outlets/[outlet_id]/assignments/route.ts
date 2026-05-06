@@ -8,20 +8,17 @@ import {
   callRpc,
 } from '@/lib/showcase-utils';
 
-interface RouteContext {
-  params: {
-    outlet_id: string;
-  };
-}
-
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ outlet_id: string }> }
+) {
   try {
     const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json(errorResponse('Unauthorized'), { status: 401 });
     }
 
-    const { outlet_id } = params;
+    const { outlet_id } = await params;
 
     if (!outlet_id) {
       return NextResponse.json(

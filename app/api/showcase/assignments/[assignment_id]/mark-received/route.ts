@@ -9,13 +9,10 @@ import {
   callRpc,
 } from '@/lib/showcase-utils';
 
-interface RouteContext {
-  params: {
-    assignment_id: string;
-  };
-}
-
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ assignment_id: string }> }
+) {
   try {
     const user = await getAuthUser(request);
     if (!user) {
@@ -23,7 +20,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
     await requireRole(user, ['outlet_manager', 'admin']);
 
-    const { assignment_id } = params;
+    const { assignment_id } = await params;
     const body = await request.json();
 
     if (!assignment_id) {

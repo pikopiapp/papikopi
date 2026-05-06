@@ -8,20 +8,17 @@ import {
   errorResponse,
 } from '@/lib/showcase-utils';
 
-interface RouteContext {
-  params: {
-    return_id: string;
-  };
-}
-
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ return_id: string }> }
+) {
   try {
     const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json(errorResponse('Unauthorized'), { status: 401 });
     }
 
-    const { return_id } = params;
+    const { return_id } = await params;
 
     if (!return_id) {
       return NextResponse.json(
