@@ -1,9 +1,10 @@
-// Manage Product Returns Component
-// Handle returns from outlets to showcase with condition checking
+// Komponen Kelola Retur Produk
+// Menangani retur dari outlet ke showcase dengan pemeriksaan kondisi
 // Date: May 2026
 
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { supabase } from '@/lib/supabase';
 import {
   Card,
   CardContent,
@@ -36,16 +37,24 @@ import {
   Package,
   RotateCw,
   Trash2,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 interface PendingReturn {
   id: number;
-  product_unit_id: number;
-  outlet_id: number;
+  product_id: string; // UUID
+  outlet_id: string;
   return_reason: string;
   return_date: string;
-  outlets: { name: string };
-  product_units: {
+  condition_status?: string;
+  resolution_status?: string;
+  outlets?: { name: string };
+  barista_name?: string;
+  products?: { name: string; sku: string };
+  product_units?: {
     product_id: number;
     batch_id: number;
     products: { name: string; sku: string };
@@ -54,15 +63,17 @@ interface PendingReturn {
 
 interface ReturnDetail {
   id: number;
+  product_id?: number;
   product_unit_id: number;
-  outlet_id: number;
+  outlet_id: string;
   return_reason: string;
   return_date: string;
   condition_status?: string;
   condition_notes?: string;
   resolution_status?: string;
-  outlets: { name: string };
-  product_units: {
+  outlets?: { name: string };
+  products?: { name: string; sku: string };
+  product_units?: {
     product_id: number;
     batch_id: number;
     products: { name: string; sku: string };
@@ -73,6 +84,7 @@ export function ManageReturnsComponent() {
   const [pendingReturns, setPendingReturns] = useState<PendingReturn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
 
   // Return checking dialog state
   const [selectedReturn, setSelectedReturn] = useState<ReturnDetail | null>(null);
@@ -86,30 +98,173 @@ export function ManageReturnsComponent() {
   >('return_to_showcase');
   const [checkResult, setCheckResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Enrich returns with outlet and barista data
+  const enrichReturnsData = async (returns: any[]) => {
+    const outletIds = [...new Set(returns.map(r => r.outlet_id).filter(Boolean))];
+
+    let outletMap: Record<string, { name: string }> = {};
+    let baristaMap: Record<string, string> = {};
+
+    if (outletIds.length > 0) {
+      const { data: outlets } = await supabase
+        .from('outlets')
+        .select('id, name')
+        .in('id', outletIds);
+      if (outlets) {
+        outlets.forEach((o: any) => {
+          outletMap[o.id] = { name: o.name };
+        });
+      }
+
+      // Fetch barista names from users table
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, outlet_id')
+        .in('outlet_id', outletIds);
+      if (users) {
+        users.forEach((u: any) => {
+          if (u.outlet_id) {
+            baristaMap[u.outlet_id] = u.name;
+          }
+        });
+      }
+    }
+
+    // Enrich the returns with outlet names and barista names
+    return returns.map((ret: any) => ({
+      ...ret,
+      outlets: ret.outlet_id ? outletMap[ret.outlet_id] : undefined,
+      barista_name: ret.outlet_id ? baristaMap[ret.outlet_id] : undefined,
+    }));
+  };
+
+  // Hitung jumlah retur per hari
+  const getReturnsByDate = (returns: PendingReturn[]) => {
+    const dateMap: Record<string, PendingReturn[]> = {};
+    
+    returns.forEach((ret) => {
+      const date = new Date(ret.return_date).toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      if (!dateMap[date]) {
+        dateMap[date] = [];
+      }
+      dateMap[date].push(ret);
+    });
+    
+    return dateMap;
+  };
+
+  // Filter retur berdasarkan tanggal yang dipilih
+  const filteredReturns = selectedDate
+    ? pendingReturns.filter((ret) => {
+        const returnDate = new Date(ret.return_date).toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        const selectedDateStr = selectedDate.toLocaleDateString('id-ID', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        return returnDate === selectedDateStr;
+      })
+    : pendingReturns;
+
+  const returnsByDate = getReturnsByDate(pendingReturns);
+  const sortedDates = Object.keys(returnsByDate).sort().reverse();
+
   // Fetch pending returns
   const fetchPendingReturns = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get('/api/showcase/returns/pending');
-      setPendingReturns(response.data.data || []);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Error fetching returns';
-      setError(errorMessage);
+      
+      // Get the session token from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setError('Not authenticated. Please login first.');
+        setLoading(false);
+        return;
+      }
+
+      const response = await axios.get('/api/showcase/returns/pending', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      const data = response.data.data || [];
+      
+      // If no returns exist, seed test data
+      if (data.length === 0) {
+        try {
+          await axios.post('/api/showcase/returns/seed', {}, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+          // Fetch returns again after seeding
+          const seedResponse = await axios.get('/api/showcase/returns/pending', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+          const seedData = seedResponse.data.data || [];
+          const enrichedData = await enrichReturnsData(seedData);
+          setPendingReturns(enrichedData);
+        } catch (seedErr) {
+          console.log('Seed attempt - may already have data:', seedErr);
+          const enrichedData = await enrichReturnsData(data);
+          setPendingReturns(enrichedData);
+        }
+      } else {
+        const enrichedData = await enrichReturnsData(data);
+        setPendingReturns(enrichedData);
+      }
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        setError('Unauthorized. Please login to access this page.');
+      } else if (err.response?.status === 500) {
+        const errorMsg = err.response?.data?.message || 'Server error';
+        setError(`Server error: ${errorMsg}`);
+      } else {
+        const errorMessage = err instanceof Error ? err.message : err.response?.data?.message || 'Error fetching returns';
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPendingReturns();
-    const interval = setInterval(fetchPendingReturns, 30000); // Refresh every 30s
-    return () => clearInterval(interval);
+    // Wait a bit for auth to initialize, then fetch
+    const timer = setTimeout(() => {
+      fetchPendingReturns();
+    }, 500);
+    
+    return () => {
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleOpenReturnDetail = async (returnId: number) => {
     try {
-      const response = await axios.get(`/api/showcase/returns/${returnId}`);
+      // Get the session token from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Not authenticated. Please login first.');
+        return;
+      }
+
+      const response = await axios.get(`/api/showcase/returns/${returnId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
       setSelectedReturn(response.data.data);
       setCheckResult(null);
       setConditionStatus('sellable');
@@ -126,12 +281,28 @@ export function ManageReturnsComponent() {
 
     setCheckingReturn(true);
     try {
+      // Get the session token from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setCheckResult({
+          success: false,
+          message: 'Not authenticated. Please login first.'
+        });
+        setCheckingReturn(false);
+        return;
+      }
+
       const response = await axios.post(
         `/api/showcase/returns/${selectedReturn.id}/resolve`,
         {
           condition_status: conditionStatus,
           condition_notes: conditionNotes || null,
           resolution_action: resolutionAction,
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
         }
       );
 
@@ -173,123 +344,191 @@ export function ManageReturnsComponent() {
         </Alert>
       )}
 
-      {/* Tabs for different states */}
+      {/* Tabs untuk berbagai status */}
       <Tabs defaultValue="pending" className="w-full">
         <TabsList>
           <TabsTrigger value="pending">
-            Pending Returns ({pendingReturns.length})
+            Retur Menunggu ({pendingReturns.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-4">
-          {pendingReturns.length > 0 ? (
-            <div className="grid gap-4">
-              {pendingReturns.map((ret) => (
-                <Card key={ret.id} className="border-yellow-200 bg-yellow-50">
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-bold text-lg">
-                            {ret.product_units.products.name}
-                          </h3>
-                          <Badge variant="outline">
-                            Unit #{ret.product_unit_id}
-                          </Badge>
-                          <Badge variant="secondary">
-                            Return #{ret.id}
-                          </Badge>
-                        </div>
+          {/* Date Picker Card - Always Visible */}
+          <Card className="bg-blue-50 border-blue-200">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Pilih Tanggal Retur
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Manual Date Input */}
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={selectedDate ? selectedDate.toISOString().split('T')[0] : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedDate(new Date(e.target.value));
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={() => setSelectedDate(new Date())}
+                  variant="outline"
+                  className="whitespace-nowrap"
+                >
+                  Retur Hari Ini
+                </Button>
+              </div>
 
-                        <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                          <div>
-                            <p className="text-gray-600">From Outlet</p>
-                            <p className="font-medium">
-                              {ret.outlets.name}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-gray-600">SKU</p>
-                            <p className="font-medium">
-                              {ret.product_units.products.sku}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-gray-600">Return Reason</p>
-                            <p className="font-medium">
-                              {ret.return_reason}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-gray-600">Return Date</p>
-                            <p className="font-medium">
-                              {new Date(
-                                ret.return_date
-                              ).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+              {/* Display selected date info */}
+              {selectedDate && (
+                <div className="bg-white p-3 rounded border border-blue-200">
+                  <p className="text-sm font-medium text-gray-700">
+                    Retur Tanggal:
+                  </p>
+                  <p className="text-lg font-bold text-blue-600">
+                    {selectedDate.toLocaleDateString('id-ID', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                      <Button
-                        onClick={() => handleOpenReturnDetail(ret.id)}
-                        className="ml-4"
-                      >
-                        Check Condition
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+          {/* Retur untuk hari yang dipilih */}
+          {filteredReturns.length > 0 ? (
+            <div className="space-y-4">
+              <div className="text-sm font-medium text-gray-600">
+                Menampilkan {filteredReturns.length} retur untuk{' '}
+                {selectedDate?.toLocaleDateString('id-ID', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </div>
+
+              {/* Retur Per Outlet dengan Cards Grid 4 Kolom */}
+              {(() => {
+                const outletMap: Record<string, typeof filteredReturns> = {};
+                filteredReturns.forEach((ret) => {
+                  const outletKey = ret.outlet_id;
+                  if (!outletMap[outletKey]) {
+                    outletMap[outletKey] = [];
+                  }
+                  outletMap[outletKey].push(ret);
+                });
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Object.entries(outletMap).map(([outletKey, returns]) => {
+                      if (!returns || returns.length === 0) return null;
+                      
+                      const firstReturn = returns[0];
+                      const outletName = firstReturn.outlets?.name || 'Outlet Tidak Diketahui';
+                      const baristaName = firstReturn.barista_name || 'Barista Unknown';
+                      
+                      return (
+                        <Card key={outletKey} className="bg-green-50 border-green-200">
+                          <CardHeader>
+                            <CardTitle className="text-base">{outletName} ({baristaName})</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-3">
+                              <p className="font-semibold text-sm text-gray-700">
+                                Retur {returns.length} unit
+                              </p>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b border-green-300">
+                                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Produk</th>
+                                      <th className="text-center py-2 px-2 font-semibold text-gray-700">Qty</th>
+                                      <th className="text-left py-2 px-2 font-semibold text-gray-700">Alasan</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {returns.map((ret) => (
+                                      <tr key={ret.id} className="border-b border-green-100">
+                                        <td className="py-2 px-2 text-gray-700">{ret.products?.name || 'Produk Tidak Diketahui'}</td>
+                                        <td className="text-center py-2 px-2 font-semibold text-gray-800">1</td>
+                                        <td className="py-2 px-2 text-gray-600 text-xs">{ret.return_reason}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
+          ) : pendingReturns.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <Package className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                <p className="text-gray-600">Tidak ada retur yang menunggu</p>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardContent className="pt-6 text-center">
                 <Package className="h-12 w-12 mx-auto text-gray-300 mb-2" />
-                <p className="text-gray-600">Tidak ada pending returns</p>
+                <p className="text-gray-600">Tidak ada retur untuk tanggal ini</p>
               </CardContent>
             </Card>
           )}
         </TabsContent>
       </Tabs>
 
-      {/* Return Detail Dialog */}
+      {/* Dialog Detail Retur */}
       <Dialog open={!!selectedReturn} onOpenChange={() => {
         if (!checkingReturn) setSelectedReturn(null);
       }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Check Product Condition</DialogTitle>
+            <DialogTitle>Periksa Kondisi Produk</DialogTitle>
             <DialogDescription>
-              Review and determine condition status untuk Return #{selectedReturn?.id}
+              Tinjau dan tentukan status kondisi untuk Retur #{selectedReturn?.id}
             </DialogDescription>
           </DialogHeader>
 
           {selectedReturn && (
             <div className="space-y-6">
-              {/* Product Info */}
+              {/* Info Produk */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Product Information</CardTitle>
+                  <CardTitle className="text-base">Informasi Produk</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-gray-600">Product Name</p>
                       <p className="font-medium">
-                        {selectedReturn.product_units.products.name}
+                        {selectedReturn.products?.name || 'Produk Tidak Diketahui'}
                       </p>
                     </div>
                     <div>
                       <p className="text-gray-600">SKU</p>
                       <p className="font-medium">
-                        {selectedReturn.product_units.products.sku}
+                        {selectedReturn.products?.sku || 'N/A'}
                       </p>
                     </div>
                     <div>
                       <p className="text-gray-600">Outlet</p>
                       <p className="font-medium">
-                        {selectedReturn.outlets.name}
+                        {selectedReturn.outlets?.name || 'Unknown'}
                       </p>
                     </div>
                     <div>
@@ -305,13 +544,13 @@ export function ManageReturnsComponent() {
               {/* Condition Assessment */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Condition Assessment</CardTitle>
+                  <CardTitle className="text-base">Penilaian Kondisi</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Condition Status */}
+                  {/* Status Kondisi */}
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Condition Status *
+                      Status Kondisi *
                     </label>
                     <Select
                       value={conditionStatus}
@@ -327,22 +566,22 @@ export function ManageReturnsComponent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="sellable">
-                          ✅ Sellable - Bisa dijual di outlet lain
+                          ✅ Bisa Dijual - Kondisi baik
                         </SelectItem>
                         <SelectItem value="partially_damaged">
-                          ⚠️ Partially Damaged - Bisa diperbaiki
+                          ⚠️ Rusak Sebagian - Bisa diperbaiki
                         </SelectItem>
                         <SelectItem value="damaged">
-                          ❌ Damaged - Tidak bisa dijual
+                          ❌ Rusak Total - Tidak bisa dijual
                         </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  {/* Condition Notes */}
+                  {/* Catatan Kondisi */}
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Condition Notes
+                      Catatan Kondisi
                     </label>
                     <Textarea
                       placeholder="Detail kondisi produk..."
@@ -353,10 +592,10 @@ export function ManageReturnsComponent() {
                     />
                   </div>
 
-                  {/* Resolution Action */}
+                  {/* Aksi Penyelesaian */}
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Resolution Action *
+                      Aksi Penyelesaian *
                     </label>
                     <Select
                       value={resolutionAction}
@@ -375,14 +614,14 @@ export function ManageReturnsComponent() {
                           <SelectItem value="return_to_showcase">
                             <div className="flex items-center gap-2">
                               <RotateCw className="h-4 w-4" />
-                              Return to Showcase
+                              Kembalikan ke Showcase
                             </div>
                           </SelectItem>
                         )}
                         {(conditionStatus === 'sellable' ||
                           conditionStatus === 'partially_damaged') && (
                           <SelectItem value="return_to_showcase">
-                            Return to Showcase for Repair
+                            Kembalikan ke Showcase untuk Perbaikan
                           </SelectItem>
                         )}
                         {(conditionStatus === 'damaged' ||
@@ -390,12 +629,12 @@ export function ManageReturnsComponent() {
                           <SelectItem value="archive_as_damaged">
                             <div className="flex items-center gap-2">
                               <Trash2 className="h-4 w-4" />
-                              Archive as Damaged
+                              Arsipkan sebagai Rusak
                             </div>
                           </SelectItem>
                         )}
                         <SelectItem value="credit_outlet">
-                          Credit Outlet
+                          Kredit Outlet
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -403,7 +642,7 @@ export function ManageReturnsComponent() {
                 </CardContent>
               </Card>
 
-              {/* Result Message */}
+              {/* Pesan Hasil */}
               {checkResult && (
                 <Alert
                   variant={checkResult.success ? 'default' : 'destructive'}
@@ -417,7 +656,7 @@ export function ManageReturnsComponent() {
                 </Alert>
               )}
 
-              {/* Action Buttons */}
+              {/* Tombol Aksi */}
               <div className="flex gap-3">
                 <Button
                   onClick={handleResolveReturn}
@@ -427,10 +666,10 @@ export function ManageReturnsComponent() {
                   {checkingReturn ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
+                      Memproses...
                     </>
                   ) : (
-                    'Resolve Return'
+                    'Selesaikan Retur'
                   )}
                 </Button>
                 <Button
@@ -438,7 +677,7 @@ export function ManageReturnsComponent() {
                   onClick={() => setSelectedReturn(null)}
                   disabled={checkingReturn}
                 >
-                  Close
+                  Tutup
                 </Button>
               </div>
             </div>

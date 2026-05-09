@@ -1,0 +1,222 @@
+'use client';
+
+import { useEffect, useState, use } from 'react';
+import { AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+
+interface SalesItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  price: number;
+  hpp: number;
+}
+
+interface Sale {
+  id: string;
+  outlet_id: string;
+  outlet_name: string;
+  barista_name: string;
+  barista_id: string;
+  total_amount: number;
+  payment_method: string;
+  hpp_total: number;
+  bonus_amount: number;
+  profit: number;
+  created_at: string;
+  items?: SalesItem[];
+}
+
+export default function TransactionDetailPage({ params }: { params: Promise<{ outletId: string }> }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const resolvedParams = use(params);
+  
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const dateParam = searchParams.get('date');
+  const selectedDate = dateParam ? new Date(parseInt(dateParam)) : new Date();
+
+  const selectedDateStr = selectedDate.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch('/api/sales/by-outlet');
+        if (!res.ok) throw new Error('Failed to fetch sales');
+
+        const data = await res.json();
+        const salesData = Array.isArray(data) ? data : [];
+
+        // Filter by outlet and date
+        const filtered = salesData.filter((sale: Sale) => {
+          const saleDate = new Date(sale.created_at).toLocaleDateString('id-ID', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
+          return sale.outlet_id === resolvedParams.outletId && saleDate === selectedDateStr;
+        });
+
+        const sorted = filtered.sort(
+          (a: Sale, b: Sale) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        setSales(sorted);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Error fetching sales';
+        setError(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSales();
+  }, [resolvedParams.outletId, selectedDateStr]);
+
+  // Calculate totals
+  const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
+  const totalItems = sales.reduce((sum, s) => sum + (s.items?.length || 0), 0);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="animate-spin h-8 w-8" />
+      </div>
+    );
+  }
+
+  const outletName = sales[0]?.outlet_name || 'Outlet';
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => router.back()}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold">{outletName}</h1>
+          <p className="text-gray-600">{selectedDateStr}</p>
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="p-4 bg-red-100 border border-red-400 text-red-800 rounded flex items-center gap-2">
+          <AlertCircle size={20} />
+          {error}
+        </div>
+      )}
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <p className="text-gray-600 text-sm">Transaksi</p>
+          <p className="text-2xl font-bold text-blue-600">{sales.length}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <p className="text-gray-600 text-sm">Total Item Terjual</p>
+          <p className="text-2xl font-bold text-blue-600">{totalItems}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <p className="text-gray-600 text-sm">Total Omset</p>
+          <p className="text-2xl font-bold text-blue-600">Rp{(totalSales / 1000).toLocaleString('id-ID')}.000,-</p>
+        </div>
+      </div>
+
+      {/* Transactions Table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Jam</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Qty</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Produk</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Harga Satuan</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                  Belum ada transaksi untuk hari ini
+                </td>
+              </tr>
+            ) : (
+              sales.map((sale) => {
+                const items = sale.items || [];
+                const time = new Date(sale.created_at).toLocaleTimeString('id-ID', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+
+                return items.length > 0 ? (
+                  items.map((item, itemIdx) => (
+                    <tr key={`${sale.id}-${itemIdx}`} className={(itemIdx + sales.findIndex(s => s.id === sale.id)) % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      {itemIdx === 0 && (
+                        <td rowSpan={items.length} className="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 font-medium">
+                          {time}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-sm text-right text-gray-800 font-medium">
+                        {item.quantity}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-800">
+                        {item.product_name}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-800">
+                        Rp{(item.price / 1000).toLocaleString('id-ID')}.000,-
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">
+                        Rp{((item.price * item.quantity) / 1000).toLocaleString('id-ID')}.000,-
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr key={sale.id} className="bg-gray-50">
+                    <td className="px-4 py-3 text-sm text-gray-800">{time}</td>
+                    <td colSpan={4} className="px-4 py-3 text-sm text-gray-500">No items</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+          {sales.length > 0 && (
+            <tfoot className="bg-gray-100 border-t border-gray-300 font-semibold">
+              <tr>
+                <td colSpan={3} className="px-4 py-3 text-right text-sm">
+                  TOTAL OMSET
+                </td>
+                <td className="px-4 py-3 text-right text-sm text-gray-600">
+                  -
+                </td>
+                <td className="px-4 py-3 text-right text-sm text-blue-600">
+                  Rp{(totalSales / 1000).toLocaleString('id-ID')}.000,-
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}

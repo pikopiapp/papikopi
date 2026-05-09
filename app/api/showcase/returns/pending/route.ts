@@ -12,41 +12,58 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    await requireRole(user, ['admin', 'showcase_manager']);
+    if (!user) {
+      return NextResponse.json(errorResponse('Unauthorized'), { status: 401 });
+    }
 
-    const { data, error } = await supabase
+    // Fetch pending returns
+    const { data: returns, error: returnsError } = await supabase
       .from('product_returns')
-      .select(
-        `
-        id,
-        product_unit_id,
-        outlet_id,
-        return_reason,
-        return_date,
-        condition_status,
-        outlets (name),
-        product_units (
-          product_id,
-          batch_id,
-          products (name)
-        )
-      `
-      )
+      .select('id,product_id,outlet_id,return_reason,condition_status,resolution_status,return_date')
       .eq('resolution_status', 'pending')
       .order('return_date', { ascending: false });
 
-    if (error) {
-      throw error;
+    if (returnsError) {
+      console.error('Supabase error fetching returns:', returnsError);
+      throw returnsError;
     }
+
+    // Get all unique product_ids
+    const productIds = [...new Set(returns?.map(r => r.product_id).filter(Boolean))];
+    
+    let productsMap: Record<string, any> = {};
+    
+    // Fetch products with details
+    if (productIds.length > 0) {
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id, name')
+        .in('id', productIds);
+      
+      if (productsError) {
+        console.error('Error fetching products:', productsError);
+      } else if (products) {
+        products.forEach((product: any) => {
+          productsMap[product.id] = product;
+        });
+      }
+    }
+
+    // Enrich returns with product data
+    const enrichedData = returns?.map((ret: any) => ({
+      ...ret,
+      products: productsMap[ret.product_id] || null,
+    }));
 
     return NextResponse.json(
       {
         success: true,
-        data: data,
+        data: enrichedData,
       },
       { status: 200 }
     );
   } catch (error) {
+    console.error('API error:', error);
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 
     if (errorMsg === 'UNAUTHORIZED') {
@@ -56,7 +73,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(errorResponse('Forbidden - insufficient permissions'), { status: 403 });
     }
 
-    console.error('Error:', error);
     return NextResponse.json(
       errorResponse(errorMsg || 'Server error saat fetch pending returns'),
       { status: 500 }

@@ -50,7 +50,6 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/showcase', label: 'Manage Showcase', icon: LayoutDashboard },
         { href: '/showcase/assign', label: 'Alokasi Produk', icon: Package },
         { href: '/showcase/returns', label: 'Kelola Returns', icon: RotateCw },
-        { href: '/showcase/tracking', label: 'Lacak Alokasi', icon: Eye },
       ]
     },
     {
@@ -61,7 +60,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },
         { href: '/dashboard/staff', label: 'Barista', icon: Users2 },
         { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
-        { href: '/dashboard/outlets/transactions', label: 'Transactions', icon: Receipt },
+        { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
       ]
     },
     {

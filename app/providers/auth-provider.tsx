@@ -15,9 +15,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLocalLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user, setUser, setRole, setOutletId } = useAuthStore();
+  const { user, setUser, setRole, setOutletId, setLoading } = useAuthStore();
 
   // Helper function to fetch user profile with timeout
   const fetchUserProfile = useCallback(async (userId: string) => {
@@ -87,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Auth check error:", err);
       } finally {
         if (mounted) {
+          setLocalLoading(false);
           setLoading(false);
         }
       }

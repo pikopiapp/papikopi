@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Plus, ChevronDown, ChevronUp, AlertCircle, X, RotateCcw } from 'lucide-react';
 
 interface ShowcaseProduct {
@@ -10,6 +11,7 @@ interface ShowcaseProduct {
   total_quantity: number;
   allocated_quantity: number;
   allocations?: Allocation[];
+  return_count?: number;
 }
 
 interface Allocation {
@@ -46,10 +48,12 @@ export default function ShowcasePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [returnCounts, setReturnCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchProducts();
     fetchOutlets();
+    fetchReturnCounts();
   }, []);
 
   const fetchProducts = async () => {
@@ -74,6 +78,23 @@ export default function ShowcasePage() {
       setOutlets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Fetch outlets error:', err);
+    }
+  };
+
+  const fetchReturnCounts = async () => {
+    try {
+      const res = await fetch('/api/showcase/returns/count');
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('API error response:', errorData);
+        throw new Error(`Failed to fetch return counts: ${res.status}`);
+      }
+      const data = await res.json();
+      console.log('Return counts fetched:', data);
+      setReturnCounts(data);
+    } catch (err) {
+      console.error('Fetch return counts error:', err);
+      // Don't break the page, just log the error
     }
   };
 
@@ -261,7 +282,7 @@ export default function ShowcasePage() {
                 {/* Card Body */}
                 <div className="p-4">
                   {/* Stats */}
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-4 gap-3 mb-4">
                     <div className="bg-blue-50 rounded p-3 text-center">
                       <div className="text-4xl font-bold text-blue-600">{product.total_quantity}</div>
                       <div className="text-sm text-gray-600 font-medium">Total</div>
@@ -274,6 +295,12 @@ export default function ShowcasePage() {
                       <div className="text-4xl font-bold text-green-600">{available}</div>
                       <div className="text-sm text-gray-600 font-medium">Available</div>
                     </div>
+                    <Link href="/showcase/returns">
+                      <div className="bg-red-50 rounded p-3 text-center cursor-pointer hover:bg-red-100 hover:shadow-md transition">
+                        <div className="text-4xl font-bold text-red-600">{returnCounts[product.product_id] || 0}</div>
+                        <div className="text-sm text-gray-600 font-medium">Retur</div>
+                      </div>
+                    </Link>
                   </div>
 
                   {/* Buttons Group */}

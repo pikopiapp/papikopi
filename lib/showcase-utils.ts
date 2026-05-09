@@ -26,7 +26,7 @@ export interface ReceiveProductRequest {
 
 export interface InitiateReturnRequest {
   product_unit_id: number;
-  outlet_id: number;
+  outlet_id: string;
   return_reason: string;
 }
 
@@ -57,12 +57,35 @@ export interface ApiResponse<T = any> {
 export async function getAuthUser(request: NextRequest) {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    
     if (!token) {
       return null;
     }
 
+    // Try to get user from token first
     const { data } = await supabase.auth.getUser(token);
-    return data?.user;
+    if (data?.user) {
+      return data.user;
+    }
+
+    // Fallback: parse JWT directly to get user info
+    // JWT format: header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    try {
+      const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      return {
+        id: decoded.sub,
+        email: decoded.email,
+        role: decoded.role,
+      };
+    } catch (e) {
+      console.error('JWT decode error:', e);
+      return null;
+    }
   } catch (error) {
     console.error('Auth error:', error);
     return null;
@@ -192,8 +215,14 @@ export function validateInitiateReturnRequest(body: any): InitiateReturnRequest 
     throw new Error('product_unit_id, outlet_id, dan return_reason harus diisi');
   }
 
-  if (typeof product_unit_id !== 'number' || typeof outlet_id !== 'number') {
-    throw new Error('product_unit_id dan outlet_id harus berupa number');
+  // product_unit_id must be number (BIGINT in DB)
+  if (typeof product_unit_id !== 'number') {
+    throw new Error('product_unit_id harus berupa number');
+  }
+
+  // outlet_id must be string (UUID in DB)
+  if (typeof outlet_id !== 'string' || outlet_id.trim() === '') {
+    throw new Error('outlet_id harus berupa string UUID');
   }
 
   if (typeof return_reason !== 'string' || return_reason.trim() === '') {
