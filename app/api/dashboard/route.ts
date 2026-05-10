@@ -14,9 +14,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get today's sales for outlet
-    const startOfDay = `${date}T00:00:00Z`;
-    const endOfDay = `${date}T23:59:59Z`;
+    // Get outlet's business day start hour
+    const { data: outletData } = await supabase
+      .from('outlets')
+      .select('business_day_start_hour')
+      .eq('id', outlet_id)
+      .single();
+
+    const businessDayStartHour = outletData?.business_day_start_hour || 4;
+
+    // Calculate business day boundaries (04:00 to 03:59:59)
+    const startDateTime = new Date(`${date}T00:00:00Z`);
+    const endDateTime = new Date(`${date}T23:59:59Z`);
+
+    // Adjust for business day (if before reset hour, start from previous day 04:00)
+    if (startDateTime.getUTCHours() < businessDayStartHour) {
+      startDateTime.setUTCDate(startDateTime.getUTCDate() - 1);
+    }
+    startDateTime.setUTCHours(businessDayStartHour, 0, 0, 0);
+
+    // End date: next day at reset hour - 1 second
+    endDateTime.setUTCDate(endDateTime.getUTCDate() + 1);
+    endDateTime.setUTCHours(businessDayStartHour - 1, 59, 59, 999);
+
+    console.log(`📅 Dashboard business day: ${startDateTime.toISOString()} to ${endDateTime.toISOString()}`);
+
+    const startOfDay = startDateTime.toISOString();
+    const endOfDay = endDateTime.toISOString();
 
     const { data: todaysSales } = await supabase
       .from("sales")

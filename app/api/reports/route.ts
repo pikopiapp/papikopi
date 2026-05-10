@@ -17,12 +17,38 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
+    // Get outlet's business day start hour
+    const { data: outletData } = await supabase
+      .from('outlets')
+      .select('business_day_start_hour')
+      .eq('id', outlet_id)
+      .single();
+
+    const businessDayStartHour = outletData?.business_day_start_hour || 4;
+
+    // Calculate business day boundaries
+    // Business day: From 04:00 today to 03:59:59 tomorrow
+    const startDateTime = new Date(`${start_date}T00:00:00Z`);
+    const endDateTime = new Date(`${end_date}T23:59:59Z`);
+
+    // Adjust for business day (if before reset hour, start from previous day 04:00)
+    if (startDateTime.getUTCHours() < businessDayStartHour) {
+      startDateTime.setUTCDate(startDateTime.getUTCDate() - 1);
+    }
+    startDateTime.setUTCHours(businessDayStartHour, 0, 0, 0);
+
+    // End date: add 1 day and set to reset hour - 1 second
+    endDateTime.setUTCDate(endDateTime.getUTCDate() + 1);
+    endDateTime.setUTCHours(businessDayStartHour - 1, 59, 59, 999);
+
+    console.log(`📅 Business day range: ${startDateTime.toISOString()} to ${endDateTime.toISOString()}`);
+
     const { data: sales, error } = await supabase
       .from('sales')
       .select('*, sale_items(*), users(name)')
       .eq('outlet_id', outlet_id)
-      .gte('created_at', `${start_date}T00:00:00`)
-      .lte('created_at', `${end_date}T23:59:59`);
+      .gte('created_at', startDateTime.toISOString())
+      .lte('created_at', endDateTime.toISOString());
 
     if (error) throw error;
 
