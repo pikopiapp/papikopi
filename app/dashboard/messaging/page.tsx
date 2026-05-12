@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useAuthStore } from '@/lib/store/auth';
-import { Loader2, Send, AlertCircle } from 'lucide-react';
+import { Loader2, Send, AlertCircle, Edit2, Trash2, X } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -60,6 +60,8 @@ export default function MessagingPage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementForm, setAnnouncementForm] = useState({ title: '', description: '' });
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   // Private Messages
   const [privateMessages, setPrivateMessages] = useState<PrivateMessage[]>([]);
@@ -174,24 +176,68 @@ export default function MessagingPage() {
 
     setCreatingAnnouncement(true);
     try {
-      const { error } = await supabase.from('announcements').insert([
-        {
-          title: announcementForm.title,
-          description: announcementForm.description,
-          created_by: user.id,
-          is_active: true,
-        },
-      ]);
+      if (editingId) {
+        // Update existing announcement
+        const { error } = await supabase
+          .from('announcements')
+          .update({
+            title: announcementForm.title,
+            description: announcementForm.description,
+          })
+          .eq('id', editingId);
 
-      if (error) throw error;
+        if (error) throw error;
+        setEditingId(null);
+      } else {
+        // Create new announcement
+        const { error } = await supabase.from('announcements').insert([
+          {
+            title: announcementForm.title,
+            description: announcementForm.description,
+            created_by: user.id,
+            is_active: true,
+          },
+        ]);
+
+        if (error) throw error;
+      }
       setAnnouncementForm({ title: '', description: '' });
       await loadData();
     } catch (err) {
-      console.error('Error creating announcement:', err);
-      setError('Gagal membuat pengumuman');
+      console.error('Error creating/updating announcement:', err);
+      setError('Gagal membuat/mengubah pengumuman');
     } finally {
       setCreatingAnnouncement(false);
     }
+  };
+
+  const handleEditAnnouncement = (announcement: Announcement) => {
+    setEditingId(announcement.id);
+    setAnnouncementForm({
+      title: announcement.title,
+      description: announcement.description,
+    });
+  };
+
+  const handleDeleteAnnouncement = async (announcementId: string) => {
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', announcementId);
+
+      if (error) throw error;
+      setShowDeleteConfirm(null);
+      await loadData();
+    } catch (err) {
+      console.error('Error deleting announcement:', err);
+      setError('Gagal menghapus pengumuman');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setAnnouncementForm({ title: '', description: '' });
   };
 
   const handleSendPrivateMessage = async (e: React.FormEvent) => {
@@ -296,8 +342,14 @@ export default function MessagingPage() {
           <div className="space-y-6">
             {/* Create Announcement Form */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Buat Pengumuman Baru</h2>
-              <p className="text-gray-600 mb-4">Bagikan informasi penting dengan semua pengguna</p>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                {editingId ? 'Edit Pengumuman' : 'Buat Pengumuman Baru'}
+              </h2>
+              <p className="text-gray-600 mb-4">
+                {editingId
+                  ? 'Perbarui informasi pengumuman'
+                  : 'Bagikan informasi penting dengan semua pengguna'}
+              </p>
               <form onSubmit={handleCreateAnnouncement} className="space-y-4">
                 <input
                   type="text"
@@ -322,14 +374,26 @@ export default function MessagingPage() {
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
                 />
-                <button
-                  type="submit"
-                  disabled={creatingAnnouncement}
-                  className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {creatingAnnouncement && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Kirim Pengumuman
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={creatingAnnouncement}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    {creatingAnnouncement && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {editingId ? 'Perbarui Pengumuman' : 'Kirim Pengumuman'}
+                  </button>
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="px-4 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <X className="h-4 w-4" />
+                      Batal
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
 
@@ -343,25 +407,70 @@ export default function MessagingPage() {
               ) : (
                 <div className="space-y-4">
                   {announcements.map((announcement) => (
-                    <div
-                      key={announcement.id}
-                      className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h4 className="text-xl font-semibold text-gray-900">
-                            {announcement.title}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            oleh Admin •{' '}
-                            {new Date(announcement.created_at).toLocaleDateString('id-ID')}
-                          </p>
+                    <div key={announcement.id}>
+                      {/* Delete Confirmation Modal */}
+                      {showDeleteConfirm === announcement.id && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                          <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                              Hapus Pengumuman?
+                            </h3>
+                            <p className="text-gray-600 mb-6">
+                              Anda yakin ingin menghapus pengumuman "{announcement.title}"? Tindakan ini tidak dapat dibatalkan.
+                            </p>
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                onClick={() => setShowDeleteConfirm(null)}
+                                className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg transition-colors"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                onClick={() => handleDeleteAnnouncement(announcement.id)}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <span className="inline-block px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded">
-                          Aktif
-                        </span>
+                      )}
+
+                      <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                            <h4 className="text-xl font-semibold text-gray-900">
+                              {announcement.title}
+                            </h4>
+                            <p className="text-sm text-gray-600">
+                              oleh Admin •{' '}
+                              {new Date(announcement.created_at).toLocaleDateString('id-ID')}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded">
+                              Aktif
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-gray-700 mb-4">{announcement.description}</p>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => handleEditAnnouncement(announcement)}
+                            className="flex items-center gap-2 px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(announcement.id)}
+                            className="flex items-center gap-2 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Hapus
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-gray-700">{announcement.description}</p>
                     </div>
                   ))}
                 </div>

@@ -132,3 +132,50 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { action, ...data } = await request.json();
+
+    if (action === 'update-announcement') {
+      const { error } = await supabase
+        .from('announcements')
+        .update({
+          title: data.title,
+          description: data.description,
+        })
+        .eq('id', data.id);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  } catch (error) {
+    console.error('Messaging API error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const action = searchParams.get('action');
+    const announcementId = searchParams.get('announcementId');
+
+    if (action === 'delete-announcement' && announcementId) {
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', announcementId);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  } catch (error) {
+    console.error('Messaging API error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
