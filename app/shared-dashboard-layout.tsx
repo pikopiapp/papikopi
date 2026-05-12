@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
@@ -16,6 +16,19 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
   const router = useRouter();
   const pathname = usePathname();
   const { logout, user } = useAuthStore();
+  const [currentTime, setCurrentTime] = useState<string>('');
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+    
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -31,62 +44,62 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
 
   const navGroups = [
     {
-      title: 'Dashboard',
+      title: 'Home',
       items: [
-        { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-        { href: '/dashboard/analytics', label: 'Analytics', icon: TrendingDown },
+        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       ]
     },
     {
-      title: 'Warehouse',
-      items: [
-        { href: '/dashboard/warehouse', label: 'Production', icon: Factory },
-        { href: '/dashboard/inventory', label: 'Inventory', icon: Archive },
-      ]
-    },
-    {
-      title: 'Showcase',
-      items: [
-        { href: '/showcase', label: 'Manage Showcase', icon: LayoutDashboard },
-        { href: '/showcase/assign', label: 'Alokasi Produk', icon: Package },
-        { href: '/showcase/returns', label: 'Kelola Returns', icon: RotateCw },
-      ]
-    },
-    {
-      title: 'Outlets',
+      title: 'Toko & Penjualan',
       items: [
         { href: '/dashboard/outlets', label: 'Outlets', icon: Store },
-        { href: '/dashboard/outlets/stock', label: 'Outlet Stock', icon: Archive },
-        { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },
         { href: '/dashboard/staff', label: 'Barista', icon: Users2 },
-        { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
         { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
+        { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
+        { href: '/dashboard/wages', label: 'Gajian', icon: DollarSign },
+        { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },
       ]
     },
     {
-      title: 'Reports',
+      title: 'Produksi & Stok',
       items: [
-        { href: '/dashboard/reports/daily-summary', label: 'Daily Summary', icon: Calendar },
-        { href: '/dashboard/reports/sales', label: 'Report Penjualan', icon: ClipboardList },
+        { href: '/dashboard/warehouse', label: 'Produksi', icon: Factory },
+        { href: '/dashboard/inventory', label: 'Inventaris', icon: Archive },
+        { href: '/showcase', label: 'Showcase', icon: LayoutDashboard },
+        { href: '/showcase/assign', label: 'Alokasi Produk', icon: Package },
+        { href: '/showcase/returns', label: 'Returns', icon: RotateCw },
+      ]
+    },
+    {
+      title: 'Investor',
+      items: [
+        { href: '/dashboard/investor', label: 'Dashboard', icon: BarChart3 },
+        { href: '/dashboard/investor/outlets', label: 'Outlets Investasi', icon: Store },
+        { href: '/dashboard/investor/profit-history', label: 'Laporan Profit', icon: TrendingDown },
+        { href: '/dashboard/investor/settings', label: 'Pengaturan', icon: Settings },
+      ]
+    },
+    {
+      title: 'Laporan',
+      items: [
+        { href: '/dashboard/reports/daily-summary', label: 'Ringkasan Harian', icon: Calendar },
+        { href: '/dashboard/reports/sales', label: 'Penjualan', icon: ClipboardList },
         { href: '/dashboard/reports/profitloss', label: 'Rugi Laba', icon: TrendingDown },
         { href: '/dashboard/reports/outlet-stock', label: 'Stok Outlet', icon: Archive },
-        { href: '/dashboard/reports/product-performance', label: 'Product Performance', icon: Zap },
-        { href: '/dashboard/reports/outlet-comparison', label: 'Outlet Comparison', icon: BarChart3 },
-        { href: '/dashboard/reports/batch-aging', label: 'Batch Aging', icon: Clock },
-        { href: '/dashboard/reports/returns-analysis', label: 'Returns Analysis', icon: AlertCircle },
-        { href: '/dashboard/reports/allocation', label: 'Alokasi Produk', icon: Package },
-        { href: '/dashboard/reports/warehouse', label: 'Warehouse Summary', icon: Factory },
+        { href: '/dashboard/reports/product-performance', label: 'Performa Produk', icon: Zap },
+        { href: '/dashboard/reports/outlet-comparison', label: 'Perbandingan Outlet', icon: BarChart3 },
+        { href: '/dashboard/reports/batch-aging', label: 'Umur Batch', icon: Clock },
+        { href: '/dashboard/reports/returns-analysis', label: 'Analisis Returns', icon: AlertCircle },
       ]
     },
     {
-      title: 'Configuration',
+      title: 'Kelola Sistem',
       items: [
-        { href: '/dashboard/users', label: 'Manage Users', icon: Users },
-        { href: '/dashboard/users/investor-management', label: 'Investor Management', icon: Briefcase },
-        { href: '/dashboard/outlets', label: 'Outlets', icon: Store },
-        { href: '/dashboard/products', label: 'Products', icon: ShoppingBag },
-        { href: '/dashboard/messaging', label: 'Messaging', icon: MessageSquare },
-        { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+        { href: '/dashboard/users', label: 'User', icon: Users },
+        { href: '/dashboard/users/investor-management', label: 'Investor', icon: Briefcase },
+        { href: '/dashboard/products', label: 'Produk', icon: ShoppingBag },
+        { href: '/dashboard/messaging', label: 'Chat', icon: MessageSquare },
+        { href: '/dashboard/settings', label: 'Pengaturan Sistem', icon: Settings },
       ]
     }
   ];
@@ -105,6 +118,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                 src="/logo.png"
                 alt="PapiKopi Logo"
                 fill
+                sizes="48px"
                 className="object-cover"
               />
             </div>
@@ -185,7 +199,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
             <div className="text-right">
               <p className="text-sm text-gray-500">Current Time</p>
               <p className="font-semibold text-[#1F4E5F]">
-                {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                {isMounted ? currentTime : ''}
               </p>
             </div>
           </div>
