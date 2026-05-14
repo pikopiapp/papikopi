@@ -125,11 +125,11 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, name, unit, cost, quantity } = body;
+    const { id, name, unit, cost } = body;
 
-    if (!id || !name || !unit || cost === undefined || quantity === undefined) {
+    if (!id || !name || !unit || cost === undefined) {
       return NextResponse.json(
-        { error: 'Missing required fields: id, name, unit, cost, quantity' },
+        { error: 'Missing required fields: id, name, unit, cost' },
         { status: 400 }
       );
     }

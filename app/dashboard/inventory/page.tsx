@@ -32,6 +32,7 @@ export default function InventoryPage() {
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', unit: '', cost: '' });
@@ -100,6 +101,7 @@ export default function InventoryPage() {
     e.preventDefault();
     try {
       setError(null);
+      setSuccess(null);
       if (!formData.name || !formData.unit || !formData.cost) {
         setError('Semua field harus diisi');
         return;
@@ -120,8 +122,10 @@ export default function InventoryPage() {
         throw new Error(errorData.error || 'Gagal menambah bahan baku');
       }
 
+      setSuccess(`✅ ${formData.name} berhasil ditambahkan`);
       setFormData({ name: '', unit: '', cost: '' });
       setShowForm(false);
+      setTimeout(() => setSuccess(null), 3000);
       await fetchStocks();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -133,6 +137,7 @@ export default function InventoryPage() {
   const handleEdit = async (id: string) => {
     try {
       setError(null);
+      setSuccess(null);
       if (!editData.name || !editData.unit || !editData.cost) {
         setError('Semua field harus diisi');
         return;
@@ -156,8 +161,10 @@ export default function InventoryPage() {
       }
 
       console.log(`✅ Update successful`);
+      setSuccess(`✅ ${editData.name} berhasil diperbarui`);
       setEditingId(null);
       setEditData({ name: '', unit: '', cost: '', quantity: '' });
+      setTimeout(() => setSuccess(null), 3000);
       console.log(`🔄 Refreshing stock list...`);
       await fetchStocks();
       console.log(`✅ Stock list refreshed`);
@@ -289,6 +296,15 @@ export default function InventoryPage() {
           <div>
             <p className="text-red-800 font-medium">Error</p>
             <p className="text-red-700 text-sm">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Success Snackbar */}
+      {success && (
+        <div className="fixed bottom-4 right-4 bg-green-50 border border-green-200 rounded-lg p-4 flex gap-3 items-center shadow-lg z-50 animate-in fade-in slide-in-from-bottom-4">
+          <div>
+            <p className="text-green-700 text-sm font-medium">{success}</p>
           </div>
         </div>
       )}
