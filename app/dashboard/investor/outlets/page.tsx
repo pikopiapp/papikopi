@@ -32,10 +32,11 @@ export default function InvestorOutlets() {
     setLoading(true);
 
     try {
-      // Fetch all investor assignments
+      // Fetch investor assignments for current user
       const { data: assignments } = await supabase
         .from('investor_assignments')
-        .select('*');
+        .select('*')
+        .eq('investor_id', user?.id);
 
       if (!assignments || assignments.length === 0) {
         setOutlets([]);
