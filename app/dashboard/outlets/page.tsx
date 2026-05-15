@@ -650,49 +650,21 @@ export default function OutletsPage() {
                   <p className="text-gray-500 text-center py-8">No products available</p>
                 ) : (
                   products.map((product: Product) => (
-                    <div key={product.id} className={`p-4 rounded-lg border-2 ${
-                      product.can_make 
-                        ? 'border-green-200 bg-green-50' 
-                        : 'border-red-200 bg-red-50'
-                    }`}>
-                      <div className="flex items-start justify-between mb-2">
+                    <div key={product.id} className="p-4 rounded-lg border-2 border-green-200 bg-green-50">
+                      <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-800">{product.name}</h4>
                           {product.category && (
                             <p className="text-sm text-gray-600">{product.category.name}</p>
                           )}
-                          <p className="text-sm font-medium text-amber-700 mt-1">
-                            Stok: {product.available_quantity || 0}
+                          <p className="text-sm font-medium text-amber-700 mt-2">
+                            Stok: {product.available_quantity || 0} unit
                           </p>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ml-2 ${
-                          product.can_make
-                            ? 'bg-green-200 text-green-800'
-                            : 'bg-red-200 text-red-800'
-                        }`}>
-                          {product.can_make ? '✓ Available' : '✗ Out of Stock'}
+                        <span className="px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ml-2 bg-green-200 text-green-800">
+                          ✓ Available
                         </span>
                       </div>
-
-                      {product.ingredient_details && product.ingredient_details.length > 0 && (
-                        <div className="mt-3 pt-3 border-t text-sm">
-                          <p className="font-medium text-gray-700 mb-2">Ingredients:</p>
-                          <div className="space-y-1">
-                            {product.ingredient_details.map((ing, idx) => (
-                              <div key={idx} className="flex justify-between text-gray-600">
-                                <span className="text-xs">Ingredient ID: {ing.ingredient_id}</span>
-                                <span className={`text-xs font-medium ${
-                                  ing.available >= ing.required
-                                    ? 'text-green-700'
-                                    : 'text-red-700'
-                                }`}>
-                                  {ing.available}/{ing.required} units
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ))
                 )}

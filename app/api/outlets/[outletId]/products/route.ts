@@ -10,30 +10,53 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { outletId } = await params;
     
-// Get products assigned to this outlet via warehouse batches
-    // Only products that have been assigned (status='assigned') from /dashboard/warehouse
-    const { data: assignedBatches, error: batchesError } = await supabase
-      .from('product_batches')
-      .select('id, product_id, outlet_id, status, quantity')
+    // Step 1: Get showcase allocations for this outlet (tombola products)
+    const { data: allocations, error: allocationsError } = await supabase
+      .from('showcase_allocations')
+      .select('showcase_product_id, quantity')
       .eq('outlet_id', outletId)
-      .eq('status', 'assigned')
       .gt('quantity', 0);
 
-    if (batchesError) throw batchesError;
+    if (allocationsError) throw allocationsError;
 
-    // Calculate total quantity per product
-    const productQuantityMap = new Map<string, number>();
-    const productBatchIds: string[] = [];
-    (assignedBatches || []).forEach(batch => {
-      const currentQty = productQuantityMap.get(batch.product_id) || 0;
-      productQuantityMap.set(batch.product_id, currentQty + batch.quantity);
-      productBatchIds.push(batch.id);
+    if (!allocations || allocations.length === 0) {
+      return NextResponse.json({
+        products: [],
+        outlet_ingredients: [],
+      });
+    }
+
+    // Step 2: Get showcase product IDs
+    const showcaseProductIds = allocations.map(a => a.showcase_product_id);
+    
+    // Step 3: Get showcase_products to get product_id
+    const { data: showcaseProducts, error: showcaseError } = await supabase
+      .from('showcase_products')
+      .select('id, product_id')
+      .in('id', showcaseProductIds);
+
+    if (showcaseError) throw showcaseError;
+
+    // Step 4: Build product ID map and quantity map
+    const showcaseProductMap = new Map<string, string>(); // showcase_product_id -> product_id
+    const productIds: string[] = [];
+    (showcaseProducts || []).forEach((sp: any) => {
+      showcaseProductMap.set(sp.id, sp.product_id);
+      productIds.push(sp.product_id);
     });
 
-    // Get unique product IDs that are assigned to this outlet
-    const assignedProductIds = [...new Set(
-      (assignedBatches || []).map(batch => batch.product_id)
-    )];
+    // Calculate total quantity per PRODUCT (not showcase product)
+    const productQuantityMap = new Map<string, number>();
+    (allocations || []).forEach((allocation: any) => {
+      const productId = showcaseProductMap.get(allocation.showcase_product_id);
+      if (productId) {
+        const currentQty = productQuantityMap.get(productId) || 0;
+        productQuantityMap.set(productId, currentQty + allocation.quantity);
+      }
+    });
+
+    // Get unique product IDs that are allocated to this outlet
+    const assignedProductIds = productIds;
 
     // If no products assigned, return empty list
     if (assignedProductIds.length === 0) {
@@ -74,32 +97,31 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
 
     // Determine products availability and stock info
-    const productsWithStock = (products || []).map((product: any) => {
-      const ingredients = (productIngredients || []).filter(
-        (pi: any) => pi.product_id === product.id
-      );
+    const productsWithStock = (products || [])
+      .map((product: any) => {
+        const ingredients = (productIngredients || []).filter(
+          (pi: any) => pi.product_id === product.id
+        );
 
-      // Check if all required ingredients are available
-      let canMake = true;
-      const ingredientDetails = ingredients.map((ing: any) => {
-        const availableStock = stockMap.get(ing.ingredient_id) || 0;
-        if (availableStock < ing.quantity) {
-          canMake = false;
-        }
+        // Check if all required ingredients are available
+        let canMake = true;
+        (ingredients || []).forEach((ing: any) => {
+          const availableStock = stockMap.get(ing.ingredient_id) || 0;
+          if (availableStock < ing.quantity) {
+            canMake = false;
+          }
+        });
+
         return {
-          ingredient_id: ing.ingredient_id,
-          required: ing.quantity,
-          available: availableStock,
+          ...product,
+          available_quantity: productQuantityMap.get(product.id) || 0,
+          can_make: canMake,
         };
-      });
-
-return {
-        ...product,
-        available_quantity: productQuantityMap.get(product.id) || 0,
-        can_make: canMake,
-        ingredient_details: ingredientDetails,
-      };
-    });
+      })
+      // Filter out of stock items (only show items with quantity > 0)
+      .filter((product: any) => product.available_quantity > 0)
+      // Sort by available_quantity highest first
+      .sort((a: any, b: any) => b.available_quantity - a.available_quantity);
 
     // Return both products and outlet stock ingredients
     return NextResponse.json({
