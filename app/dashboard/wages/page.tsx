@@ -6,6 +6,8 @@ import { DollarSign, ArrowLeft, TrendingUp, AlertCircle, RefreshCw, User, Calend
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+import { calculateMealAllowance } from '@/lib/bonus-calculator';
+import { isHoliday } from '@/lib/holiday-detector';
 
 interface WagePayment {
   id: string;
@@ -50,10 +52,24 @@ interface BaristaData {
   date: string;
 }
 
+interface DailyBaristaWage {
+  barista_id: string;
+  barista_name: string;
+  outlet_id: string;
+  outlet_name: string;
+  date: string;
+  omset: number;
+  bonus: number;
+  meal_allowance: number;
+  total_wage: number;
+  status: string;
+}
+
 export default function WagesPage() {
   const router = useRouter();
   const [payments, setPayments] = useState<WagePayment[]>([]);
   const [allPayments, setAllPayments] = useState<WagePayment[]>([]);
+  const [dailyWages, setDailyWages] = useState<DailyBaristaWage[]>([]);
   const [stats, setStats] = useState<WageStats>({
     totalPayments: 0,
     totalPaid: 0,
@@ -63,6 +79,9 @@ export default function WagesPage() {
     rejectedCount: 0,
   });
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dailyWagesStatusFilter, setDailyWagesStatusFilter] = useState<string>('all');
+  const [selectedBarista, setSelectedBarista] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,23 +91,24 @@ export default function WagesPage() {
       setRefreshing(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('cash_deposit_handovers')
+      // Fetch sales data from the sales table
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
         .select('*')
-        .order('submitted_at', { ascending: false });
+        .order('created_at', { ascending: false });
 
-      if (fetchError) {
-        console.error('Supabase query error:', fetchError);
-        throw fetchError;
+      if (salesError) {
+        console.error('Supabase query error:', salesError);
+        throw salesError;
       }
 
       // Fetch barista and outlet names
       let baristaMap: Record<string, string> = {};
       let outletMap: Record<string, string> = {};
 
-      if (data && data.length > 0) {
-        const baristaIds = [...new Set((data as BaristaData[]).map(d => d.barista_id))];
-        const outletIds = [...new Set((data as BaristaData[]).map(d => d.outlet_id))];
+      if (salesData && salesData.length > 0) {
+        const baristaIds = [...new Set(salesData.map((s: any) => s.barista_id))];
+        const outletIds = [...new Set(salesData.map((s: any) => s.outlet_id))];
 
         if (baristaIds.length > 0) {
           const { data: baristas } = await supabase
@@ -111,34 +131,62 @@ export default function WagesPage() {
         }
       }
 
-      const formattedPayments = ((data as BaristaData[]) || []).map((payment) => ({
-        id: payment.id,
-        barista_id: payment.barista_id,
-        barista_name: baristaMap[payment.barista_id] || 'Unknown',
-        outlet_id: payment.outlet_id,
-        outlet_name: outletMap[payment.outlet_id] || 'Unknown',
-        total_omset: payment.total_omset || 0,
-        cash_amount: payment.cash_amount || 0,
-        bonus: payment.bonus || 0,
-        meal_allowance: payment.meal_allowance || 0,
-        deposit_amount: payment.deposit_amount || 0,
-        kekurangan_upah: payment.kekurangan_upah || 0,
-        status: payment.status,
-        submitted_at: payment.submitted_at,
-        approved_at: payment.approved_at,
-        date: payment.date,
+      // Format sales data into payment structure
+      const formattedPayments = ((salesData || []) as any[]).map((sale) => ({
+        id: sale.id,
+        barista_id: sale.barista_id,
+        barista_name: baristaMap[sale.barista_id] || 'Unknown',
+        outlet_id: sale.outlet_id,
+        outlet_name: outletMap[sale.outlet_id] || 'Unknown',
+        total_omset: sale.total_amount || 0,
+        cash_amount: sale.total_amount || 0,
+        bonus: sale.bonus_amount || 0,
+        meal_allowance: 0,
+        deposit_amount: 0,
+        kekurangan_upah: 0,
+        status: 'approved',
+        submitted_at: sale.created_at,
+        approved_at: sale.created_at,
+        date: format(new Date(sale.created_at), 'yyyy-MM-dd'),
       }));
 
       setAllPayments(formattedPayments);
 
+      // Build daily wages summary from sales data
+      const wagesMap = new Map<string, DailyBaristaWage>();
+      formattedPayments.forEach(payment => {
+        const key = `${payment.date}-${payment.outlet_id}-${payment.barista_id}`;
+        const existing = wagesMap.get(key);
+        
+        // Aggregate sales per barista per outlet per day
+        const dailyOmset = (existing?.omset || 0) + payment.total_omset;
+        const dailyBonus = (existing?.bonus || 0) + payment.bonus;
+        const mealAllowance = calculateMealAllowance(dailyOmset); // Calculate based on daily omset ONLY
+        
+        wagesMap.set(key, {
+          barista_id: payment.barista_id,
+          barista_name: payment.barista_name,
+          outlet_id: payment.outlet_id,
+          outlet_name: payment.outlet_name,
+          date: payment.date,
+          omset: dailyOmset,
+          bonus: dailyBonus,
+          meal_allowance: mealAllowance,
+          total_wage: dailyBonus + mealAllowance,
+          status: 'approved',
+        });
+      });
+
+      const dailyWagesList = Array.from(wagesMap.values())
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setDailyWages(dailyWagesList);
+
       // Calculate statistics
       const newStats: WageStats = {
         totalPayments: formattedPayments.length,
-        totalPaid: formattedPayments
-          .filter(p => p.status === 'approved')
-          .reduce((sum, p) => sum + p.deposit_amount, 0),
-        totalShortfall: formattedPayments.reduce((sum, p) => sum + p.kekurangan_upah, 0),
-        approvedCount: formattedPayments.filter(p => p.status === 'approved').length,
+        totalPaid: formattedPayments.reduce((sum, p) => sum + p.bonus, 0),
+        totalShortfall: 0, // No shortfall in sales data
+        approvedCount: formattedPayments.length,
         pendingCount: formattedPayments.filter(p => p.status === 'pending').length,
         rejectedCount: formattedPayments.filter(p => p.status === 'rejected').length,
       };
@@ -245,29 +293,190 @@ export default function WagesPage() {
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Shortfall</p>
           <p className="text-lg font-bold text-orange-600">Rp {(stats.totalShortfall / 1000000).toFixed(1)}M</p>
         </div>
+        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+          <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Daily Records</p>
+          <p className="text-2xl font-bold text-purple-600">{dailyWages.length}</p>
+        </div>
       </div>
 
-      {/* Filter Buttons */}
-      <div className="mb-6 flex gap-2 flex-wrap">
-        {['all', 'pending', 'approved', 'rejected'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              statusFilter === status
-                ? 'bg-emerald-600 text-white'
-                : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-emerald-600'
-            }`}
+      {/* Daily Wages Section */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <Calendar size={24} className="text-emerald-600" />
+          Upah Barista Per Hari
+        </h2>
+        
+        {/* Daily Wages Filters */}
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex gap-2 flex-wrap">
+            {['all', 'pending', 'approved', 'rejected'].map((status) => (
+              <button
+                key={`daily-${status}`}
+                onClick={() => setDailyWagesStatusFilter(status)}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                  dailyWagesStatusFilter === status
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {status === 'all' ? 'Semua' : status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2 flex-wrap items-center">
+            <label className="text-sm font-semibold text-gray-700">Pilih Tanggal:</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-blue-600 focus:outline-none bg-white text-gray-700 font-semibold"
+            />
+            {isHoliday(new Date(selectedDate)) && (
+              <span className="px-3 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">
+                🎉 Hari Libur
+              </span>
+            )}
+            <button
+              onClick={() => setSelectedDate(format(new Date(), 'yyyy-MM-dd'))}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
+            >
+              Hari Ini
+            </button>
+          </div>
+          
+          {/* Barista Filter */}
+          <select
+            value={selectedBarista}
+            onChange={(e) => setSelectedBarista(e.target.value)}
+            className="px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-emerald-600 focus:outline-none bg-white text-gray-700 font-semibold"
           >
-            {status === 'all' ? 'Semua' : status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
-      </div>
+            <option value="all">Semua Barista</option>
+            {Array.from(new Set(dailyWages.map(w => w.barista_id))).map((baristaId) => {
+              const baristaName = dailyWages.find(w => w.barista_id === baristaId)?.barista_name;
+              return (
+                <option key={baristaId} value={baristaId}>
+                  {baristaName}
+                </option>
+              );
+            })}
+          </select>
+        </div>
 
+        {dailyWages.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dailyWages
+              .filter(wage => {
+                // Status filter
+                if (dailyWagesStatusFilter !== 'all' && wage.status !== dailyWagesStatusFilter) {
+                  return false;
+                }
+                
+                // Barista filter
+                if (selectedBarista !== 'all' && wage.barista_id !== selectedBarista) {
+                  return false;
+                }
+                
+                // Date filter - show only selected date
+                if (wage.date !== selectedDate) {
+                  return false;
+                }
+                
+                return true;
+              })
+              .sort((a, b) => {
+                // Sort by barista name
+                return a.barista_name.localeCompare(b.barista_name);
+              })
+              .map((wage, idx) => {
+                const isToday = format(new Date(wage.date), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+              return (
+                <div
+                  key={`${wage.date}-${wage.barista_id}`}
+                  className={`rounded-lg border-2 p-4 transition ${
+                    isToday
+                      ? 'bg-emerald-50 border-emerald-500 shadow-lg'
+                      : 'bg-white border-gray-200 hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-0.5 font-semibold uppercase">Outlet</p>
+                      <p className="text-sm text-gray-700 mb-2">{wage.outlet_name}</p>
+                      <p className="text-sm text-gray-500 mb-0.5">Barista</p>
+                      <p className="font-bold text-gray-800">{wage.barista_name}</p>
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                        <Calendar size={12} />
+                        {format(new Date(wage.date), 'dd MMM yyyy', { locale: idLocale })}
+                        {isToday && ' (Hari ini)'}
+                        {!isToday && new Date(wage.date).getTime() === new Date(new Date().setDate(new Date().getDate() - 1)).getTime() && ' (Kemarin)'}
+                      </p>
+                    </div>
+                    {isToday && (
+                      <span className="bg-emerald-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                        HARI INI
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 mb-3 pt-3 border-t border-gray-200">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Omset:</span>
+                      <span className="font-semibold text-gray-800">
+                        Rp {wage.omset.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Bonus:</span>
+                      <span className="font-semibold text-yellow-600">
+                        Rp {wage.bonus.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Uang Makan:</span>
+                      <span className="font-semibold text-orange-600">
+                        Rp {wage.meal_allowance.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-gray-200 mt-2">
+                      <span className="font-bold text-gray-800">Total Upah:</span>
+                      <span className={`font-bold text-lg ${
+                        wage.status === 'approved' ? 'text-emerald-600' : 'text-amber-600'
+                      }`}>
+                        Rp {wage.total_wage.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`text-xs px-3 py-1 rounded text-center font-semibold ${
+                    wage.status === 'approved'
+                      ? 'bg-green-100 text-green-700'
+                      : wage.status === 'pending'
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : 'bg-red-100 text-red-700'
+                  }`}>
+                    {wage.status === 'pending' ? '⏳ Menunggu' : wage.status === 'approved' ? '✓ Disetujui' : '✗ Ditolak'}
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
+                    {wage.omset >= 300000
+                      ? '🔹 Omset ≥ Rp 300rb → Uang Makan Rp 34rb'
+                      : '🔹 Omset < Rp 300rb → Uang Makan Rp 25rb'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg p-8 text-center text-gray-500">
+            Belum ada data upah harian
+          </div>
+        )}
+      </div>
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg mb-8 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <p className="text-red-800">{error}</p>
         </div>
       )}
@@ -287,106 +496,8 @@ export default function WagesPage() {
       {!loading && !error && payments.length === 0 && (
         <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
           <DollarSign size={64} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-xl font-semibold text-gray-600 mb-2">No Payments Found</h3>
-          <p className="text-gray-500">Wage payments will appear here once they are recorded.</p>
-        </div>
-      )}
-
-      {!loading && !error && payments.length > 0 && (
-        <div className="space-y-4">
-          {payments.map((payment) => (
-            <div key={payment.id} className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Left Section - Barista Info */}
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Barista</p>
-                    <p className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                      <User size={18} className="text-emerald-600" />
-                      {payment.barista_name}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Outlet</p>
-                    <p className="text-gray-700">{payment.outlet_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Date</p>
-                    <p className="text-gray-700 flex items-center gap-2">
-                      <Calendar size={16} className="text-gray-400" />
-                      {format(new Date(payment.date), 'dd MMM yyyy', { locale: idLocale })}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Middle Section - Earnings Breakdown */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-blue-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600 font-semibold mb-1">Omset</p>
-                    <p className="text-lg font-bold text-blue-600">
-                      Rp {payment.total_omset.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600 font-semibold mb-1">Cash</p>
-                    <p className="text-lg font-bold text-purple-600">
-                      Rp {payment.cash_amount.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                  <div className="bg-yellow-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600 font-semibold mb-1">Bonus</p>
-                    <p className="text-lg font-bold text-yellow-600">
-                      Rp {payment.bonus.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600 font-semibold mb-1">Makan</p>
-                    <p className="text-lg font-bold text-orange-600">
-                      Rp {payment.meal_allowance.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Right Section - Final Payment & Shortfall */}
-                <div className="space-y-3">
-                  <div className="bg-emerald-50 rounded-lg p-4 border-2 border-emerald-200">
-                    <p className="text-sm text-gray-600 font-semibold mb-1">Deposit (Bayar)</p>
-                    <p className="text-3xl font-bold text-emerald-600">
-                      Rp {payment.deposit_amount.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-
-                  {payment.kekurangan_upah > 0 && (
-                    <div className="bg-orange-50 rounded-lg p-4 border-2 border-orange-200">
-                      <p className="text-sm text-gray-600 font-semibold mb-1 flex items-center gap-2">
-                        <AlertCircle size={16} className="text-orange-600" />
-                        Shortfall (Toko Bayar)
-                      </p>
-                      <p className="text-xl font-bold text-orange-600">
-                        Rp {payment.kekurangan_upah.toLocaleString('id-ID')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom - Status & Date */}
-              <div className="mt-6 pt-6 border-t border-gray-200 flex items-center justify-between">
-                <div className="text-sm text-gray-500">
-                  <p>Submitted: {format(new Date(payment.submitted_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</p>
-                  {payment.approved_at && (
-                    <p className="text-emerald-600">
-                      Approved: {format(new Date(payment.approved_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}
-                    </p>
-                  )}
-                </div>
-                <div className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm capitalize flex items-center gap-2 ${getStatusColor(payment.status)}`}>
-                  {getStatusIcon(payment.status)}
-                  {payment.status === 'pending' ? 'Menunggu' : payment.status === 'approved' ? 'Disetujui' : 'Ditolak'}
-                </div>
-              </div>
-            </div>
-          ))}
+          <h3 className="text-xl font-semibold text-gray-600 mb-2">No Sales Data Found</h3>
+          <p className="text-gray-500">Sales data akan muncul di daily wages section di atas setelah ada transaksi.</p>
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ import {
   LogOut, LayoutDashboard, TrendingDown, Archive,
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
   Package, RotateCw, Eye, Calendar, Zap, BarChart3, Clock, AlertCircle,
-  Target, DollarSign, Receipt, Users, Briefcase
+  Target, DollarSign, Receipt, Users, Briefcase, Calculator
 } from 'lucide-react';
 
 export default function GenericDashboardLayout({ children }: { children: ReactNode }) {
@@ -57,6 +57,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
         { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
         { href: '/dashboard/wages', label: 'Gajian', icon: DollarSign },
+        { href: '/dashboard/bonus-calculator', label: 'Bonus Calculator', icon: Calculator },
         { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },
       ]
     },
