@@ -15,6 +15,26 @@ import { calculateDailyWage } from '@/lib/bonus-calculator';
 // STEP 2: Saat fetch wage payments, tambahkan holiday info
 // ============================================================================
 
+// Note: WagePayment interface should be imported from wages/page.tsx
+// For this guide, we define it here for reference:
+interface WagePayment {
+  id: string;
+  barista_id: string;
+  barista_name: string;
+  outlet_id: string;
+  outlet_name: string;
+  total_omset: number;
+  cash_amount: number;
+  bonus: number;
+  meal_allowance: number;
+  deposit_amount: number;
+  kekurangan_upah: number;
+  status: string;
+  submitted_at: string;
+  approved_at: string | null;
+  date: string;
+}
+
 interface WagePaymentWithHolidayInfo extends WagePayment {
   isHolidayDate?: boolean;
   holidayName?: string;
