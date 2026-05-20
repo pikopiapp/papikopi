@@ -8,76 +8,24 @@ const supabase = createClient(
 
 export async function GET() {
   try {
-    // Get all products
+    // Get all products with categories using single join query
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('*')
+      .select(`
+        *,
+        categories!category_id(id, name)
+      `)
       .order('name');
 
     if (productsError) throw productsError;
 
-    // Get unique category IDs
-    const categoryIds = [...new Set(products?.map((p: any) => p.category_id) || [])];
+    // Transform to include category info
+    const productsWithCategory = (products || []).map((product: any) => ({
+      ...product,
+      category: product.categories || { id: product.category_id, name: 'Unknown' },
+    }));
 
-    // Get categories
-    const { data: categories } = await supabase
-      .from('categories')
-      .select('id, name')
-      .in('id', categoryIds);
-
-    const categoryMap = new Map(categories?.map((c: any) => [c.id, c]) || []);
-
-    // Get product ingredients separately (without join - we'll join manually)
-    const { data: allIngredients, error: ingredientsError } = await supabase
-      .from('product_ingredients')
-      .select('product_id, ingredient_id, quantity');
-
-    if (ingredientsError) {
-      console.error('❌ Error fetching product_ingredients:', ingredientsError);
-    }
-
-    // Get all ingredients for lookup
-    const { data: allIngredientsData } = await supabase
-      .from('ingredients')
-      .select('id, name, unit, cost');
-
-    const ingredientLookup = new Map(allIngredientsData?.map((ing: any) => [ing.id, ing]) || []);
-
-    const ingredientsMap = new Map();
-    (allIngredients || []).forEach((pi: any) => {
-      if (!ingredientsMap.has(pi.product_id)) {
-        ingredientsMap.set(pi.product_id, []);
-      }
-      const ingredient = ingredientLookup.get(pi.ingredient_id);
-      ingredientsMap.get(pi.product_id).push({
-        product_id: pi.product_id,
-        ingredient_id: pi.ingredient_id,
-        quantity: pi.quantity,
-        ingredient: ingredient
-      });
-    });
-
-    // Calculate HPP for each product and add category
-    const productsWithHpp = (products || []).map((product: Record<string, unknown>) => {
-      const productIngredients = ingredientsMap.get(product.id as string) || [];
-      const hpp = productIngredients.reduce((total: number, pi: any) => {
-        return total + (pi.ingredient?.cost || 0) * (pi.quantity || 1);
-      }, 0);
-
-      const price = product.price as number || 0;
-      const margin = price ? ((price - hpp) / price * 100).toFixed(2) : 0;
-      const category = categoryMap.get(product.category_id as string);
-
-      return {
-        ...product,
-        category: category || { id: product.category_id, name: 'Unknown' },
-        product_ingredients: productIngredients,
-        hpp: hpp.toFixed(2),
-        margin: `${margin}%`,
-      };
-    });
-
-    return NextResponse.json(productsWithHpp);
+    return NextResponse.json(productsWithCategory);
   } catch (error) {
     console.error('GET products error:', error);
     return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });

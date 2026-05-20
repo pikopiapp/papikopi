@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store/auth';
 import { Package, Plus, Edit2, Trash2, Check, X, AlertCircle, QrCode, Send, Calendar } from 'lucide-react';
+import QRCode from 'qrcode';
 import type { ProductBatch } from '@/lib/types';
 
 interface Product {
@@ -24,6 +25,7 @@ export default function WarehousePage() {
   const [showForm, setShowForm] = useState(false);
   const [editingBatch, setEditingBatch] = useState<ProductBatch | null>(null);
   const [showQR, setShowQR] = useState<ProductBatch | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     product_id: '',
     quantity: 1,
@@ -196,6 +198,7 @@ export default function WarehousePage() {
     return JSON.stringify({
       batch: batch.batch_code,
       product: batch.product_name,
+      product_id: batch.product_id,
       prod: batch.production_date?.split('T')[0],
       exp: batch.expired_date?.split('T')[0] || 'N/A',
       status: batch.status,
@@ -375,6 +378,15 @@ export default function WarehousePage() {
               <h3 className="text-lg font-bold">Batch QR Code</h3>
               <p className="text-sm text-gray-500">{showQR.batch_code}</p>
             </div>
+            
+            {/* QR Code Image */}
+            {qrImage && (
+              <div className="bg-white border border-gray-300 rounded-lg p-4 mb-4 flex justify-center">
+                <img src={qrImage} alt="QR Code" className="w-64 h-64" />
+              </div>
+            )}
+
+            {/* Batch Info */}
             <div className="bg-gray-100 p-4 rounded-lg text-left text-sm font-mono mb-4">
               <p><strong>Product:</strong> {showQR.product_name}</p>
               <p><strong>Code:</strong> {showQR.batch_code}</p>
@@ -383,7 +395,10 @@ export default function WarehousePage() {
               <p><strong>Status:</strong> {showQR.status}</p>
             </div>
             <button
-              onClick={() => setShowQR(null)}
+              onClick={() => {
+                setShowQR(null);
+                setQrImage(null);
+              }}
               className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg"
             >
               Close
@@ -466,7 +481,15 @@ export default function WarehousePage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
                         <button
-                          onClick={() => setShowQR(batch)}
+                          onClick={async () => {
+                            setShowQR(batch);
+                            try {
+                              const qrDataUrl = await QRCode.toDataURL(getQRContent(batch));
+                              setQrImage(qrDataUrl);
+                            } catch (err) {
+                              console.error('Error generating QR code:', err);
+                            }
+                          }}
                           className="text-gray-600 hover:text-amber-600 p-1"
                           title="View QR"
                         >

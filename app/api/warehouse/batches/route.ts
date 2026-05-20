@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const outlet_id = request.nextUrl.searchParams.get('outlet_id');
     const status = request.nextUrl.searchParams.get('status');
 
-    // Get batches - fetch all columns first, then join products and outlets
+    // Get batches
     let query = supabase
       .from('product_batches')
       .select('*')
@@ -42,24 +42,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([]);
     }
 
-    // Get unique product IDs
+    // Get unique product IDs and outlet IDs
     const productIds = [...new Set(batches.map((b: any) => b.product_id))];
     const outletIds = [...new Set(batches.map((b: any) => b.outlet_id).filter(Boolean))];
 
-    // Fetch products and outlets
-    const { data: products } = await supabase
-      .from('products')
-      .select('id, name')
-      .in('id', productIds);
+    // Fetch products and outlets in parallel (2 queries instead of N queries)
+    const [productsResult, outletsResult] = await Promise.all([
+      productIds.length > 0 ? supabase.from('products').select('id, name').in('id', productIds) : Promise.resolve({ data: [] }),
+      outletIds.length > 0 ? supabase.from('outlets').select('id, name').in('id', outletIds) : Promise.resolve({ data: [] }),
+    ]);
 
-    const { data: outlets } = await supabase
-      .from('outlets')
-      .select('id, name')
-      .in('id', outletIds);
-
-    // Create lookup maps
-    const productMap = new Map(products?.map((p: any) => [p.id, p.name]) || []);
-    const outletMap = new Map(outlets?.map((o: any) => [o.id, o.name]) || []);
+    const productMap = new Map((productsResult.data || []).map((p: any) => [p.id, p.name]));
+    const outletMap = new Map((outletsResult.data || []).map((o: any) => [o.id, o.name]));
 
     // Transform to include product_name and outlet_name
     const transformed = batches.map((item: any) => ({
