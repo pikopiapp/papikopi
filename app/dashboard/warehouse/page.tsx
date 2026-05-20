@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store/auth';
-import { Package, Plus, Edit2, Trash2, Check, X, AlertCircle, QrCode, Send, Calendar } from 'lucide-react';
+import { Package, Plus, Edit2, Trash2, Check, X, AlertCircle, QrCode, Send, Calendar, Printer } from 'lucide-react';
 import QRCode from 'qrcode';
+import { BatchPrintMenu } from '@/components/warehouse/batch-print-menu';
 import type { ProductBatch } from '@/lib/types';
 
 interface Product {
@@ -479,7 +480,7 @@ export default function WarehousePage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{batch.production_date?.split('T')[0]}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{batch.expired_date?.split('T')[0] || '-'}</td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 items-center">
                         <button
                           onClick={async () => {
                             setShowQR(batch);
@@ -495,6 +496,16 @@ export default function WarehousePage() {
                         >
                           <QrCode size={18} />
                         </button>
+                        <BatchPrintMenu batch={{
+                          id: batch.id,
+                          batch: batch.batch_code,
+                          product_id: batch.product_id,
+                          product_name: batch.product_name || '',
+                          production_date: batch.production_date?.split('T')[0] || '',
+                          expiry_date: batch.expired_date?.split('T')[0],
+                          status: batch.status,
+                          quantity: batch.quantity,
+                        }} />
                         {batch.status === 'ready' && (
                           <button
                             onClick={() => handleSendToShowcase(batch)}
