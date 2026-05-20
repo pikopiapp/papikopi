@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
             font-family: 'Arial', sans-serif;
             padding-top: 1.5mm;
             padding-bottom: 1.5mm;
+            padding-left: 1mm;
+            padding-right: 0.5mm;
           }
           
           .production-date {
