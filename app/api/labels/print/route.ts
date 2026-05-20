@@ -120,31 +120,36 @@ export async function POST(request: NextRequest) {
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: space-around;
             font-family: 'Arial', sans-serif;
+            padding-top: 1.5mm;
+            padding-bottom: 1.5mm;
           }
           
           .production-date {
             font-size: 8pt;
             font-weight: normal;
             line-height: 1;
+            margin: 0;
+            padding: 0;
           }
           
           .product-name {
             font-size: 10pt;
             font-weight: bold;
-            line-height: 1.1;
+            line-height: 1;
             text-transform: uppercase;
             word-wrap: break-word;
-            flex: 1;
-            display: flex;
-            align-items: center;
+            margin: 0.3mm 0;
+            padding: 0;
           }
           
           .instagram {
             font-size: 7pt;
             font-weight: bold;
             line-height: 1;
+            margin: 0;
+            padding: 0;
           }
           
           .right-column {
