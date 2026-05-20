@@ -9,7 +9,7 @@ import QRCode from 'qrcode';
  *   product_id: string,
  *   batch: string,
  *   production_date: string (YYYY-MM-DD),
- *   expiry_date?: string
+ *   quantity: number (number of labels to print)
  * }
  */
 export async function POST(request: NextRequest) {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       product_id,
       batch,
       production_date,
-      expiry_date,
+      quantity = 1,
     } = body;
 
     if (!product_name || !product_id || !batch || !production_date) {
@@ -38,21 +38,45 @@ export async function POST(request: NextRequest) {
       product: product_name,
     });
 
-    // Generate QR code as data URL
+    // Generate QR code as data URL (high quality for thermal printer)
     const qrImage = await QRCode.toDataURL(qrData, {
-      width: 200, // 200px for thermal printer
+      width: 200,
       margin: 1,
+      errorCorrectionLevel: 'H',
       color: {
         dark: '#000000',
         light: '#ffffff',
       },
     });
 
-    // Format dates
-    const prodDate = new Date(production_date).toLocaleDateString('id-ID');
-    const expDate = expiry_date
-      ? new Date(expiry_date).toLocaleDateString('id-ID')
-      : 'N/A';
+    // Format date DD-MM-YYYY
+    const date = new Date(production_date);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const formattedDate = `${day}-${month}-${year}`;
+
+    // Generate multiple label copies based on quantity
+    let labelsHTML = '';
+    for (let i = 0; i < quantity; i++) {
+      labelsHTML += `
+        <div class="label">
+          <div class="label-content">
+            <!-- Left Column -->
+            <div class="left-column">
+              <div class="production-date">${formattedDate}</div>
+              <div class="product-name">${product_name.toUpperCase()}</div>
+              <div class="instagram">@papikopi_bdg</div>
+            </div>
+            
+            <!-- Right Column -->
+            <div class="right-column">
+              <img src="${qrImage}" alt="QR Code" class="qr-code">
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     // Return HTML label template
     const html = `
@@ -70,101 +94,88 @@ export async function POST(request: NextRequest) {
           }
           
           body {
-            font-family: 'Courier New', monospace;
+            font-family: 'Arial', sans-serif;
             background: white;
-            padding: 0;
+            padding: 2mm;
           }
           
           .label {
             width: 50mm;
             height: 20mm;
-            padding: 2mm;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            border: 1px solid #000;
+            margin-bottom: 1mm;
+            page-break-inside: avoid;
             background: white;
+            border: 1px dashed #999;
           }
           
-          .header {
+          .label-content {
             display: flex;
-            gap: 2mm;
-            align-items: flex-start;
+            width: 100%;
+            height: 100%;
+            padding: 1mm;
+            gap: 1mm;
           }
           
-          .qr-section {
-            flex-shrink: 0;
-          }
-          
-          .qr-section img {
-            width: 14mm;
-            height: 14mm;
-            border: 0.5mm solid #000;
-          }
-          
-          .info-section {
+          .left-column {
             flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            font-size: 6pt;
-            line-height: 1.2;
+            font-family: 'Arial', sans-serif;
+          }
+          
+          .production-date {
+            font-size: 8pt;
+            font-weight: normal;
+            line-height: 1;
           }
           
           .product-name {
+            font-size: 10pt;
             font-weight: bold;
-            font-size: 7pt;
-            margin-bottom: 1mm;
-          }
-          
-          .date-row {
+            line-height: 1.1;
+            text-transform: uppercase;
+            word-wrap: break-word;
+            flex: 1;
             display: flex;
-            justify-content: space-between;
-            font-size: 5pt;
-            gap: 1mm;
+            align-items: center;
           }
           
-          .footer {
-            text-align: center;
-            font-size: 5pt;
+          .instagram {
+            font-size: 7pt;
             font-weight: bold;
-            margin-top: 1mm;
-            border-top: 0.5mm solid #000;
-            padding-top: 0.5mm;
+            line-height: 1;
+          }
+          
+          .right-column {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 16mm;
+            height: 16mm;
+            flex-shrink: 0;
+          }
+          
+          .qr-code {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border: 0.5mm solid #000;
           }
           
           @media print {
             body {
               margin: 0;
-              padding: 2mm;
+              padding: 1mm;
             }
             .label {
-              page-break-after: avoid;
+              margin-bottom: 0.5mm;
             }
           }
         </style>
       </head>
       <body>
-        <div class="label">
-          <div class="header">
-            <div class="qr-section">
-              <img src="${qrImage}" alt="QR Code">
-            </div>
-            <div class="info-section">
-              <div class="product-name">${product_name}</div>
-              <div class="date-row">
-                <span>Prod: ${prodDate}</span>
-              </div>
-              <div class="date-row">
-                <span>Exp: ${expDate}</span>
-              </div>
-              <div class="date-row">
-                <span>Batch: ${batch.substring(0, 12)}</span>
-              </div>
-            </div>
-          </div>
-          <div class="footer">@papikopi_bdg</div>
-        </div>
+        ${labelsHTML}
       </body>
       </html>
     `;
@@ -172,7 +183,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': 'inline; filename="label.html"',
+        'Content-Disposition': 'inline; filename="labels.html"',
       },
     });
   } catch (error) {

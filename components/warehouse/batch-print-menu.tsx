@@ -70,6 +70,7 @@ export function BatchPrintMenu({ batch }: BatchPrintMenuProps) {
           batch={batch.batch}
           productionDate={batch.production_date}
           expiryDate={batch.expiry_date}
+          quantity={batch.quantity}
         />
       )}
     </div>

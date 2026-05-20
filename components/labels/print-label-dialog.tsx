@@ -6,6 +6,7 @@ interface PrintLabelProps {
   batch: string;
   productionDate: string;
   expiryDate?: string;
+  quantity?: number; // Number of labels to print (default: 1)
 }
 
 export function PrintLabelDialog({
@@ -14,9 +15,11 @@ export function PrintLabelDialog({
   batch,
   productionDate,
   expiryDate,
+  quantity = 1,
 }: PrintLabelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [printQuantity, setPrintQuantity] = useState(quantity);
 
   const handlePrint = async () => {
     setIsLoading(true);
@@ -30,6 +33,7 @@ export function PrintLabelDialog({
           batch,
           production_date: productionDate,
           expiry_date: expiryDate,
+          quantity: printQuantity, // Send quantity
         }),
       });
 
@@ -58,15 +62,28 @@ export function PrintLabelDialog({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium">Jumlah Label:</label>
+        <input
+          type="number"
+          min="1"
+          max="999"
+          value={printQuantity}
+          onChange={(e) => setPrintQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+          className="w-16 px-2 py-1 border rounded text-sm"
+        />
+      </div>
+
       <button
         onClick={handlePrint}
         disabled={isLoading}
-        className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+        className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
       >
-        🖨️ Print Label
+        🖨️ Print {printQuantity} {printQuantity === 1 ? 'Label' : 'Labels'}
         {isLoading && <span className="animate-spin">⏳</span>}
       </button>
+
       {previewUrl && (
         <div className="text-xs text-gray-600">
           ✓ Label preview dibuka di tab baru
