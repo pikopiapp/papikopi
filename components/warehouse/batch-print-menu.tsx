@@ -43,23 +43,23 @@ export function BatchPrintMenu({ batch }: BatchPrintMenuProps) {
   };
 
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-1 md:gap-2">
       {/* Print Label Button */}
       <button
         onClick={handlePrintLabel}
-        className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition"
+        className="flex items-center gap-1 px-2 md:px-3 py-1 text-xs md:text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition whitespace-nowrap"
         title="Cetak label thermal untuk batch ini"
       >
-        🖨️ Label
+        🖨️ <span className="hidden md:inline">Label</span>
       </button>
 
       {/* Print QR Button */}
       <button
         onClick={handlePrintQR}
-        className="flex items-center gap-1 px-3 py-1 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition"
+        className="flex items-center gap-1 px-2 md:px-3 py-1 text-xs md:text-sm bg-green-500 hover:bg-green-600 text-white rounded transition whitespace-nowrap"
         title="Preview & print QR code"
       >
-        📱 QR
+        📱 <span className="hidden md:inline">QR</span>
       </button>
 
       {/* Print Dialog */}

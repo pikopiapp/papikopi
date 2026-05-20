@@ -216,14 +216,14 @@ export default function WarehousePage() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-4 lg:p-6 space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <Package size={40} className="text-amber-600" />
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 md:gap-4">
+        <div className="flex items-center gap-2 md:gap-3">
+          <Package size={32} className="text-amber-600 md:w-10 md:h-10" />
           <div>
-            <h1 className="text-5xl font-bold">Production House</h1>
-            <p className="text-gray-500 text-lg">Manage product batches & QR codes</p>
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold">Production House</h1>
+            <p className="text-gray-500 text-xs md:text-sm lg:text-base">Manage product batches & QR codes</p>
           </div>
         </div>
         <button
@@ -231,21 +231,21 @@ export default function WarehousePage() {
             resetForm();
             setShowForm(!showForm);
           }}
-          className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 text-lg font-semibold"
+          className="bg-amber-600 hover:bg-amber-700 text-white px-3 md:px-6 py-2 md:py-3 rounded-lg flex items-center gap-2 text-sm md:text-base font-semibold whitespace-nowrap"
         >
-          <Plus size={22} />
-          New Batch
+          <Plus size={18} className="md:w-5 md:h-5" />
+          <span>New Batch</span>
         </button>
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
-          <p className="text-gray-500 text-base font-semibold">Jumlah Stok</p>
-          <p className="text-5xl font-bold text-blue-600 mt-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div className="bg-white rounded-lg shadow p-3 md:p-4 lg:p-6 border-l-4 border-blue-500">
+          <p className="text-gray-500 text-xs md:text-sm font-semibold">Jumlah Stok</p>
+          <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-blue-600 mt-1 md:mt-2">
             {batches.reduce((sum, b) => sum + b.quantity, 0)}
           </p>
-          <p className="text-gray-400 text-sm mt-2">{batches.filter(b => b.status === 'ready' || b.status === 'assigned').length} batches</p>
+          <p className="text-gray-400 text-xs md:text-sm mt-1 md:mt-2">{batches.filter(b => b.status === 'ready' || b.status === 'assigned').length} batches</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
@@ -410,9 +410,9 @@ export default function WarehousePage() {
 
       {/* Batches Table */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
-          <h3 className="font-semibold flex items-center gap-2">
-            <Package size={20} className="text-amber-600" />
+        <div className="p-3 md:p-4 border-b bg-gray-50">
+          <h3 className="font-semibold flex items-center gap-2 text-sm md:text-base">
+            <Package size={18} className="text-amber-600 md:w-5 md:h-5" />
             Production Batches ({batches.length})
           </h3>
         </div>
@@ -424,17 +424,17 @@ export default function WarehousePage() {
               <p className="text-gray-400 text-sm">Create your first production batch</p>
             </div>
           ) : (
-            <table className="w-full">
+            <table className="w-full text-xs md:text-sm">
               <thead className="bg-gray-100 border-b">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Batch Code</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Stok</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Tujuan</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Prod. Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Exp. Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold">Batch Code</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold hidden md:table-cell">Product</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold">Stok</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold\">Status</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold hidden lg:table-cell\">Tujuan</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold hidden lg:table-cell\">Prod. Date</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold hidden lg:table-cell\">Exp. Date</th>
+                  <th className="px-2 md:px-3 lg:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-semibold\">Actions</th>
                 </tr>
               </thead>
               <tbody>
