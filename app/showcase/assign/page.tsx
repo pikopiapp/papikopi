@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AssignProductComponent } from '@/app/components/showcase/AssignProductComponent';
+import { AssignProductNewComponent } from '@/app/components/showcase/AssignProductNewComponent';
 
 export default function AssignProductPage() {
   return (
@@ -10,7 +10,7 @@ export default function AssignProductPage() {
         <h1 className="text-3xl font-bold">Alokasi Produk ke Outlet</h1>
         <p className="text-gray-600">Kelola alokasi produk dari showcase ke outlet</p>
       </div>
-      <AssignProductComponent />
+      <AssignProductNewComponent />
     </div>
   );
 }

@@ -56,6 +56,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/outlets', label: 'Outlets', icon: Store },
         { href: '/dashboard/staff', label: 'Barista', icon: Users2 },
         { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
+        { href: '/dashboard/expenses', label: 'Pengeluaran', icon: Receipt },
         { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
         { href: '/dashboard/wages', label: 'Gajian', icon: DollarSign },
         { href: '/dashboard/bonus-calculator', label: 'Bonus Calculator', icon: Calculator },
@@ -129,7 +130,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       {/* Sidebar */}
       <aside className={`
         fixed lg:static top-0 left-0 h-screen z-40 
-        w-72 bg-gradient-to-b from-[#1F4E5F] via-[#163944] to-[#1F4E5F] 
+        w-72 bg-linear-to-b from-[#1F4E5F] via-[#163944] to-[#1F4E5F] 
         text-white flex flex-col shadow-2xl
         transform transition-transform duration-300 lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -137,7 +138,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         {/* Logo */}
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 relative rounded-xl overflow-hidden shadow-lg bg-white flex-shrink-0">
+            <div className="w-12 h-12 relative rounded-xl overflow-hidden shadow-lg bg-white shrink-0">
               <Image
                 src="/logo.png"
                 alt="PapiKopi Logo"
@@ -181,12 +182,12 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
                       isActive(href)
-                        ? 'bg-gradient-to-r from-[#F59E0B] to-[#FFB703] text-[#163944] shadow-lg shadow-[#F59E0B]/30 font-semibold'
+                        ? 'bg-linear-to-r from-[#F59E0B] to-[#FFB703] text-[#163944] shadow-lg shadow-[#F59E0B]/30 font-semibold'
                         : 'text-white/70 hover:bg-white/10 hover:text-white'
                     }`}
                     title={label}
                   >
-                    <Icon size={18} className="flex-shrink-0" />
+                    <Icon size={18} className="shrink-0" />
                     <span className="font-medium text-xs md:text-sm">{label}</span>
                     {isActive(href) && (
                       <div className="ml-auto w-2 h-2 bg-[#163944] rounded-full animate-pulse" />
@@ -205,7 +206,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
             className="w-full flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 transition-all duration-200 justify-start"
             title="Logout"
           >
-            <LogOut size={18} className="flex-shrink-0" />
+            <LogOut size={18} className="shrink-0" />
             <span className="font-medium text-xs md:text-sm">Logout</span>
           </button>
         </div>

@@ -19,8 +19,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { showcase_product_id, outlet_id, quantity } = body as AllocateRequest;
 
+    console.log('Allocate request received:', {
+      showcase_product_id,
+      outlet_id,
+      quantity,
+    });
+
     // Validate input
     if (!showcase_product_id || !outlet_id || !quantity) {
+      console.error('Missing required fields:', { showcase_product_id, outlet_id, quantity });
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
@@ -57,62 +64,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if already allocated to this outlet
-    const { data: existingAllocation, error: existingError } = await supabase
-      .from('showcase_allocations')
-      .select('*')
-      .eq('showcase_product_id', showcase_product_id)
-      .eq('outlet_id', outlet_id)
-      .single();
+    // Always INSERT new allocation record (since constraint is dropped)
+    // No need to check for existing allocations
+    console.log(`Creating new allocation record for outlet`, {
+      quantity,
+    });
 
-    // For new allocations, quantityDifference = requested quantity
-    // For existing, we ADD to existing (not replace)
+    const { error: insertError } = await supabase
+      .from('showcase_allocations')
+      .insert({
+        showcase_product_id,
+        outlet_id,
+        quantity,
+        created_at: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to create allocation: ${insertError.message}` },
+        { status: 500 }
+      );
+    }
+
     let quantityDifference = quantity;
     let newAllocationQuantity = quantity;
-
-    if (existingAllocation) {
-      // ADD to existing allocation (accumulate)
-      newAllocationQuantity = existingAllocation.quantity + quantity;
-      quantityDifference = quantity; // Only add the new quantity to product total
-
-      console.log(`Updating existing allocation for outlet`, {
-        existingQuantity: existingAllocation.quantity,
-        addQuantity: quantity,
-        newAllocationQuantity,
-      });
-
-      const { error: updateError } = await supabase
-        .from('showcase_allocations')
-        .update({ quantity: newAllocationQuantity })
-        .eq('id', existingAllocation.id);
-
-      if (updateError) {
-        return NextResponse.json(
-          { success: false, error: `Failed to update allocation: ${updateError.message}` },
-          { status: 500 }
-        );
-      }
-    } else {
-      // Create new allocation
-      console.log(`Creating new allocation for outlet`, {
-        quantity,
-      });
-
-      const { error: insertError } = await supabase
-        .from('showcase_allocations')
-        .insert({
-          showcase_product_id,
-          outlet_id,
-          quantity,
-        });
-
-      if (insertError) {
-        return NextResponse.json(
-          { success: false, error: `Failed to create allocation: ${insertError.message}` },
-          { status: 500 }
-        );
-      }
-    }
 
     // Update showcase product allocated quantity (always add the requested quantity)
     const newProductAllocated = product.allocated_quantity + quantityDifference;

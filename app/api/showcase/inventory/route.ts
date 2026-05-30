@@ -1,5 +1,5 @@
 // GET /api/showcase/inventory
-// Get showcase inventory summary with allocations
+// Get showcase inventory summary with aggregated allocations
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -10,7 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export async function GET(request: NextRequest) {
   try {
-    // Get all showcase products with allocations
+    // Get all showcase products
     const { data: showcaseProducts, error: productsError } = await supabase
       .from('showcase_products')
       .select(`
@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
         product_id,
         product_name,
         total_quantity,
-        allocated_quantity,
         created_at
       `)
       .order('created_at', { ascending: false });
@@ -30,52 +29,49 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get allocations for each product
-    const productsWithAllocations = await Promise.all(
-      (showcaseProducts || []).map(async (product) => {
-        const { data: allocations, error: allocError } = await supabase
-          .from('showcase_allocations')
-          .select(`
-            id,
-            quantity,
-            outlet_id,
-            allocated_date
-          `)
-          .eq('showcase_product_id', product.id)
-          .order('allocated_date', { ascending: false });
+    // Get all allocations (aggregate by showcase_product_id)
+    const { data: allAllocations, error: allocError } = await supabase
+      .from('showcase_allocations')
+      .select(`
+        id,
+        quantity,
+        showcase_product_id,
+        outlet_id,
+        allocated_date,
+        created_at
+      `);
 
-        console.log(`Allocations for ${product.product_name}:`, { count: allocations?.length, allocations, error: allocError });
+    if (allocError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to fetch allocations: ${allocError.message}` },
+        { status: 500 }
+      );
+    }
 
-        // Get outlet details for each allocation
-        let allocationsWithOutlets = allocations || [];
-        if (allocationsWithOutlets.length > 0) {
-          const outletIds = [...new Set(allocationsWithOutlets.map((a: any) => a.outlet_id))];
-          const { data: outlets } = await supabase
-            .from('outlets')
-            .select('id, name')
-            .in('id', outletIds);
-          
-          const outletMap = new Map(outlets?.map((o: any) => [o.id, o.name]) || []);
-          allocationsWithOutlets = allocationsWithOutlets.map((alloc: any) => ({
-            ...alloc,
-            outlet_name: outletMap.get(alloc.outlet_id) || 'Unknown Outlet',
-          }));
-        }
+    // Aggregate allocations by showcase_product_id
+    const allocationMap = new Map<string, number>();
+    (allAllocations || []).forEach((alloc: any) => {
+      const productId = alloc.showcase_product_id;
+      const qty = alloc.quantity || 0;
+      allocationMap.set(productId, (allocationMap.get(productId) || 0) + qty);
+    });
 
-        return {
-          ...product,
-          allocations: allocationsWithOutlets,
-        };
-      })
-    );
+    console.log(`Total allocations found: ${allAllocations?.length || 0}`);
+    console.log(`Products aggregated: ${allocationMap.size}`);
 
-    // Calculate summary
-    const summary = {
-      total_products: productsWithAllocations.length,
-      total_quantity: productsWithAllocations.reduce((sum, p) => sum + p.total_quantity, 0),
-      total_allocated: productsWithAllocations.reduce((sum, p) => sum + p.allocated_quantity, 0),
-      total_available: productsWithAllocations.reduce((sum, p) => sum + (p.total_quantity - p.allocated_quantity), 0),
-    };
+    // Map products with actual allocated quantities from aggregation
+    const productsWithAllocations = (showcaseProducts || []).map((product) => {
+      const actualAllocatedQuantity = allocationMap.get(product.id) || 0;
+      return {
+        id: product.id,
+        product_id: product.product_id,
+        product_name: product.product_name,
+        total_quantity: product.total_quantity,
+        allocated_quantity: actualAllocatedQuantity,
+        remaining: product.total_quantity - actualAllocatedQuantity,
+        created_at: product.created_at,
+      };
+    });
 
     return NextResponse.json(productsWithAllocations, { status: 200 });
   } catch (error) {

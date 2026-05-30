@@ -11,7 +11,7 @@ import {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ assignment_id: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getAuthUser(request);
@@ -20,12 +20,12 @@ export async function POST(
     }
     await requireRole(user, ['outlet_manager', 'admin']);
 
-    const { assignment_id } = await params;
+    const { id } = await params;
     const body = await request.json();
 
-    if (!assignment_id) {
+    if (!id) {
       return NextResponse.json(
-        errorResponse('assignment_id harus diisi'),
+        errorResponse('id harus diisi'),
         { status: 400 }
       );
     }
@@ -33,7 +33,7 @@ export async function POST(
     const result = await callRpc(
       'mark_product_received_at_outlet',
       {
-        p_assignment_id: parseInt(assignment_id),
+        p_assignment_id: parseInt(id),
         p_received_by: user.id,
         p_notes: body.notes || null,
       },

@@ -95,18 +95,23 @@ export default function InvestorDashboard() {
         };
       });
 
-      setOutlets(enhancedOutlets);
+      // Remove duplicates by outlet_id (keep first occurrence)
+      const uniqueOutlets = Array.from(
+        new Map(enhancedOutlets.map((o) => [o.outlet_id, o])).values()
+      );
+
+      setOutlets(uniqueOutlets);
 
       // Calculate KPI data
-      const totalInvestment = assignments.reduce((sum, a) => sum + a.investment_amount, 0);
-      const totalProfitShare = enhancedOutlets.reduce((sum, o) => sum + o.investor_share, 0);
-      const activeCount = assignments.filter((a) => a.status === 'active').length;
+      const totalInvestment = uniqueOutlets.reduce((sum, o) => sum + o.investment_amount, 0);
+      const totalProfitShare = uniqueOutlets.reduce((sum, o) => sum + o.investor_share, 0);
+      const activeCount = uniqueOutlets.filter((o) => o.status === 'active').length;
 
       setKpiData({
         totalInvestment,
         totalProfitShare,
         activeOutlets: activeCount,
-        totalAssignments: assignments.length,
+        totalAssignments: uniqueOutlets.length,
       });
 
       // Build profit trend data (last 30 days)
