@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store/auth';
-import { Package, Plus, Edit2, Trash2, Check, X, AlertCircle, QrCode, Send, Calendar, Printer } from 'lucide-react';
+import { Package, Plus, Edit2, Trash2, Check, X, AlertCircle, QrCode, Send, Calendar, Printer, Copy } from 'lucide-react';
 import QRCode from 'qrcode';
 import { BatchPrintMenu } from '@/components/warehouse/batch-print-menu';
 import type { ProductBatch } from '@/lib/types';
@@ -36,6 +36,7 @@ export default function WarehousePage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [copiedBatchId, setCopiedBatchId] = useState<string | null>(null);
 
   // Initialize outlet from localStorage
   useEffect(() => {
@@ -204,6 +205,21 @@ export default function WarehousePage() {
       exp: batch.expired_date?.split('T')[0] || 'N/A',
       status: batch.status,
     });
+  };
+
+  const handleCopyQRJson = async (batch: ProductBatch) => {
+    try {
+      const jsonData = getQRContent(batch);
+      await navigator.clipboard.writeText(jsonData);
+      setCopiedBatchId(batch.id);
+      setSuccess('QR JSON copied to clipboard!');
+      setTimeout(() => {
+        setCopiedBatchId(null);
+        setSuccess(null);
+      }, 2000);
+    } catch (err) {
+      setError('Failed to copy JSON');
+    }
   };
 
   if (loading) return (
@@ -395,6 +411,22 @@ export default function WarehousePage() {
               <p><strong>Expired:</strong> {showQR.expired_date?.split('T')[0] || 'N/A'}</p>
               <p><strong>Status:</strong> {showQR.status}</p>
             </div>
+
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => handleCopyQRJson(showQR)}
+                className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors ${
+                  copiedBatchId === showQR.id
+                    ? 'bg-green-600 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                <Copy size={18} />
+                {copiedBatchId === showQR.id ? 'Copied!' : 'Copy JSON'}
+              </button>
+            </div>
+
+            {/* Close Button */}
             <button
               onClick={() => {
                 setShowQR(null);
