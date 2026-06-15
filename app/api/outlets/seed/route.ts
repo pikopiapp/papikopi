@@ -6,18 +6,18 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const outletsData = [
-  { name: 'gerobak Papi 001', type: 'gerobak', address: 'Jalan Suropati, Bandung' },
-  { name: 'gerobak Papi 002', type: 'gerobak', address: 'Jalan Trunojoyo, Bandung' },
-  { name: 'gerobak Papi 003', type: 'gerobak', address: 'Jalan Dipati Ukur, Bandung' },
-  { name: 'gerobak Papi 004', type: 'gerobak', address: 'Jalan Stakusuma, Bandung' },
-  { name: 'gerobak Papi 005', type: 'gerobak', address: 'Jalan Braga, Bandung' },
-  { name: 'gerobak Papi 006', type: 'gerobak', address: 'Jalan Cihampelas, Bandung' },
-  { name: 'gerobak Papi 007', type: 'gerobak', address: 'Jalan Setiabudhi, Bandung' },
-  { name: 'gerobak Papi 008', type: 'gerobak', address: 'Jalan Ir. H. Juanda, Bandung' },
-  { name: 'gerobak Papi 009', type: 'gerobak', address: 'Jalan Gatot Subroto, Bandung' },
-  { name: 'gerobak Papi 010', type: 'gerobak', address: 'Jalan Pasteur, Bandung' },
-  { name: 'gerobak Papi 011', type: 'gerobak', address: 'Jalan Tangkuban Perahu, Bandung' },
-  { name: 'gerobak Papi 012', type: 'gerobak', address: 'Jalan Riau, Bandung' },
+  { name: 'E-trike Papi 001', type: 'e-trike', address: 'Jalan Suropati, Bandung' },
+  { name: 'E-trike Papi 002', type: 'e-trike', address: 'Jalan Trunojoyo, Bandung' },
+  { name: 'E-trike Papi 003', type: 'e-trike', address: 'Jalan Dipati Ukur, Bandung' },
+  { name: 'E-trike Papi 004', type: 'e-trike', address: 'Jalan Stakusuma, Bandung' },
+  { name: 'E-trike Papi 005', type: 'e-trike', address: 'Jalan Braga, Bandung' },
+  { name: 'E-trike Papi 006', type: 'e-trike', address: 'Jalan Cihampelas, Bandung' },
+  { name: 'E-trike Papi 007', type: 'e-trike', address: 'Jalan Setiabudhi, Bandung' },
+  { name: 'E-trike Papi 008', type: 'e-trike', address: 'Jalan Ir. H. Juanda, Bandung' },
+  { name: 'E-trike Papi 009', type: 'e-trike', address: 'Jalan Gatot Subroto, Bandung' },
+  { name: 'E-trike Papi 010', type: 'e-trike', address: 'Jalan Pasteur, Bandung' },
+  { name: 'E-trike Papi 011', type: 'e-trike', address: 'Jalan Tangkuban Perahu, Bandung' },
+  { name: 'E-trike Papi 012', type: 'e-trike', address: 'Jalan Riau, Bandung' },
 ];
 
 export async function GET() {

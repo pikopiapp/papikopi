@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { Product } from "@/lib/types";
 import { ShoppingCart, Trash2, Send } from "lucide-react";
 import QRCode from "qrcode";
+import { useAuthStore } from '@/lib/store/auth';
 
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -15,8 +16,10 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [qrCode, setQrCode] = useState<string>("");
   const [saleSaved, setSaleSaved] = useState(false);
+  const [saleTotal, setSaleTotal] = useState<number | null>(null);
 
   const cart = useCartStore();
+  const { outletId, user } = useAuthStore();
 
   // Load products and categories
   useEffect(() => {
@@ -65,12 +68,18 @@ export default function POSPage() {
 
     setLoading(true);
     try {
+      // prefer real outlet and user from auth store
+      if (!outletId || !user?.id) {
+        alert('Outlet atau user tidak ditemukan. Pastikan Anda login dan outlet dipilih.');
+        setLoading(false);
+        return;
+      }
       // Create sale
       const { data: saleData, error: saleError } = await supabase
         .from("sales")
         .insert({
-          outlet_id: "dummy-outlet-id",
-          barista_id: "dummy-barista-id",
+          outlet_id: outletId,
+          barista_id: user.id,
           total_amount: cart.getTotal(),
           payment_method: paymentMethod,
           hpp_total: 0,
@@ -98,6 +107,9 @@ export default function POSPage() {
         });
       }
 
+      // Save sale total before clearing cart
+      const total = saleData.total_amount || cart.getTotal();
+      setSaleTotal(Number(total));
       setSaleSaved(true);
       cart.clear();
     } catch (err) {
@@ -114,7 +126,7 @@ export default function POSPage() {
         <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full text-center">
           <h2 className="text-2xl font-bold text-green-600 mb-4">Transaksi Berhasil!</h2>
           <img src={qrCode} alt="QR Code" className="mx-auto mb-6 w-64 h-64" />
-          <p className="text-gray-700 mb-6">Total: <span className="font-bold text-xl">Rp {cart.getTotal().toLocaleString("id-ID")}</span></p>
+          <p className="text-gray-700 mb-6">Total: <span className="font-bold text-xl">Rp {saleTotal ? saleTotal.toLocaleString("id-ID") : cart.getTotal().toLocaleString("id-ID")}</span></p>
           <button
             onClick={() => {
               setSaleSaved(false);

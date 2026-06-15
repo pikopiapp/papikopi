@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { X } from 'lucide-react';
+import { typeLabel } from '@/lib/utils/outletTypes';
 
 interface Outlet {
   id: string;
@@ -139,7 +140,7 @@ export default function BatchAllocationView({ batchId }: BatchAllocationViewProp
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <h5 className="font-semibold text-gray-900">{allocation.outlet.name}</h5>
-                    <p className="text-sm text-gray-600">{allocation.outlet.type}</p>
+                    <p className="text-sm text-gray-600">{typeLabel(allocation.outlet.type)}</p>
                     <p className="text-xs text-gray-500 mt-1">{allocation.outlet.address}</p>
                   </div>
                   <div className="text-right">
@@ -167,7 +168,7 @@ export default function BatchAllocationView({ batchId }: BatchAllocationViewProp
             <div className="bg-linear-to-r from-blue-600 to-blue-700 p-6 text-white flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-bold">{selectedOutlet.outlet.name}</h3>
-                <p className="text-blue-100 text-sm mt-1">{selectedOutlet.outlet.type}</p>
+                <p className="text-blue-100 text-sm mt-1">{typeLabel(selectedOutlet.outlet.type)}</p>
               </div>
               <button
                 onClick={() => setSelectedOutlet(null)}

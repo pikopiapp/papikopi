@@ -9,7 +9,7 @@ import {
   LogOut, LayoutDashboard, TrendingDown, Archive,
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
   Package, RotateCw, Eye, Calendar, Zap, BarChart3, Clock, AlertCircle,
-  Target, DollarSign, Receipt, Users, Briefcase, Calculator, Menu, X
+  Target, DollarSign, Receipt, Users, Briefcase, Calculator, Menu, X, HardDrive
 } from 'lucide-react';
 
 export default function GenericDashboardLayout({ children }: { children: ReactNode }) {
@@ -45,7 +45,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
 
   const navGroups = [
     {
-      title: 'Home',
+      title: 'Beranda',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       ]
@@ -53,7 +53,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     {
       title: 'Toko & Penjualan',
       items: [
-        { href: '/dashboard/outlets', label: 'Outlets', icon: Store },
+        { href: '/dashboard/outlets', label: 'Outlet', icon: Store },
         { href: '/dashboard/staff', label: 'Barista', icon: Users2 },
         { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
         { href: '/dashboard/expenses', label: 'Pengeluaran', icon: Receipt },
@@ -77,7 +77,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       title: 'Investor',
       items: [
         { href: '/dashboard/investor', label: 'Dashboard', icon: BarChart3 },
-        { href: '/dashboard/investor/outlets', label: 'Outlets Investasi', icon: Store },
+        { href: '/dashboard/investor/outlets', label: 'Outlet Investasi', icon: Store },
         { href: '/dashboard/investor/profit-history', label: 'Laporan Profit', icon: TrendingDown },
         { href: '/dashboard/investor/settings', label: 'Pengaturan', icon: Settings },
       ]
@@ -226,6 +226,12 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
             </p>
           </div>
           <div className="flex items-center gap-2 lg:gap-4">
+            <div className="hidden md:flex items-center gap-3">
+              <Link href="/dashboard/settings/backup" className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700">
+                <HardDrive size={16} />
+                <span className="text-sm font-medium">Backup</span>
+              </Link>
+            </div>
             <div className="text-right hidden md:block">
               <p className="text-xs lg:text-sm text-gray-500">Current Time</p>
               <p className="font-semibold text-[#1F4E5F]">

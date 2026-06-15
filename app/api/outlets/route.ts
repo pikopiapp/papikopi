@@ -46,16 +46,77 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name and type required' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
-      .from('outlets')
-      .insert([{ name, type, address: address || null }])
-      .select()
-      .single();
+    // Normalize/validate outlet type to avoid DB check-constraint failures
+    const allowedTypes = ['e-trike', 'coffee_stand'];
+    const legacyMap: Record<string, string> = {
+      gerobak: 'e-trike',
+      "becak_listrik": 'e-trike',
+      toko: 'coffee_stand',
+      warung: 'coffee_stand',
+      cafe: 'coffee_stand',
+      retail: 'coffee_stand',
+    };
 
-    if (error) {
-      console.error('Create outlet error details:', error);
-      throw error;
+    function normalizeType(input: unknown) {
+      if (typeof input === 'string') {
+        const v = input.trim().toLowerCase();
+        if (allowedTypes.includes(v)) return v;
+        if (legacyMap[v]) return legacyMap[v];
+        return null;
+      }
+      if (typeof input === 'number') {
+        // legacy numeric codes mapping (defensive)
+        const numMap: Record<number, string> = {
+          1: 'e-trike',
+          2: 'coffee_stand',
+          3: 'e-trike',
+          4: 'coffee_stand',
+        };
+        return numMap[input] ?? null;
+      }
+      return null;
     }
+
+    const normalizedType = normalizeType(type);
+    if (!normalizedType) {
+      console.error('Invalid outlet type received:', type);
+      return NextResponse.json({ error: `Invalid outlet type. Allowed: ${allowedTypes.join(', ')}`, details: { receivedType: type } }, { status: 400 });
+    }
+
+    // Attempt insert; if DB still uses legacy check values, retry with legacy mapping
+    async function tryInsert(typeValue: string) {
+      return supabase
+        .from('outlets')
+        .insert([{ name, type: typeValue, address: address || null }])
+        .select()
+        .single();
+    }
+
+    let insertResult = await tryInsert(normalizedType);
+
+    if (insertResult.error) {
+      console.error('Create outlet error details:', insertResult.error);
+      // If it's a check-constraint on type, attempt legacy fallback mapping and retry once
+      const err = insertResult.error as any;
+      if (err?.code === '23514' || (err?.message && err.message.includes('check constraint "outlets_type_check"'))) {
+        const legacyFallback: Record<string, string> = {
+          'e-trike': 'gerobak',
+          'coffee_stand': 'toko',
+        };
+        const fallbackType = legacyFallback[normalizedType];
+        if (fallbackType) {
+          console.warn('Retrying insert with legacy type value:', fallbackType);
+          insertResult = await tryInsert(fallbackType);
+        }
+      }
+    }
+
+    if (insertResult.error) {
+      console.error('Create outlet error details:', insertResult.error);
+      throw insertResult.error;
+    }
+
+    const data = insertResult.data;
 
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
@@ -69,27 +130,115 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const { id, name, type, address } = body;
+    const rawType = type; // preserve original input for fallback attempts
 
     if (!id) {
       return NextResponse.json({ error: 'id required' }, { status: 400 });
     }
 
+    // Normalize/validate outlet type on update as well
+    const allowedTypes = ['e-trike', 'coffee_stand'];
+    const legacyMap: Record<string, string> = {
+      gerobak: 'e-trike',
+      "becak_listrik": 'e-trike',
+      toko: 'coffee_stand',
+      warung: 'coffee_stand',
+      cafe: 'coffee_stand',
+      retail: 'coffee_stand',
+    };
+
+    function normalizeType(input: unknown) {
+      if (typeof input === 'string') {
+        const v = input.trim().toLowerCase();
+        if (allowedTypes.includes(v)) return v;
+        if (legacyMap[v]) return legacyMap[v];
+        return null;
+      }
+      if (typeof input === 'number') {
+        const numMap: Record<number, string> = {
+          1: 'e-trike',
+          2: 'coffee_stand',
+          3: 'e-trike',
+          4: 'coffee_stand',
+        };
+        return numMap[input] ?? null;
+      }
+      return null;
+    }
+
     const updateData: Record<string, string | null> = {};
     if (name) updateData.name = name;
-    if (type) updateData.type = type;
+    if (type) {
+      const normalized = normalizeType(type);
+      if (!normalized) {
+        console.error('Invalid outlet type received (update):', type);
+        return NextResponse.json({ error: `Invalid outlet type. Allowed: ${allowedTypes.join(', ')}`, details: { receivedType: type } }, { status: 400 });
+      }
+      updateData.type = normalized;
+    }
     if (address !== undefined) updateData.address = address || null;
 
-    const { data, error } = await supabase
-      .from('outlets')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Update outlet error details:', error);
-      throw error;
+    // Attempt update; if DB still enforces legacy type values, retry with fallback
+    async function tryUpdate(dataToUpdate: Record<string, string | null>) {
+      return supabase.from('outlets').update(dataToUpdate).eq('id', id).select().single();
     }
+
+    let updateResult = await tryUpdate(updateData);
+    if (updateResult.error) {
+      console.error('Update outlet error details:', updateResult.error);
+      const err = updateResult.error as any;
+      if (err?.code === '23514' || (err?.message && err.message.includes('check constraint "outlets_type_check"'))) {
+        const legacyFallback: Record<string, string> = {
+          'e-trike': 'gerobak',
+          'coffee_stand': 'toko',
+        };
+
+        // Determine fallback candidate: prefer normalized update value, else try original raw input
+        let fallbackType: string | undefined;
+        if (updateData.type) {
+          fallbackType = legacyFallback[updateData.type as string];
+        }
+
+        if (!fallbackType && rawType !== undefined) {
+          // try to normalize the raw input and map it
+          const normalizedRaw = (function (input: unknown) {
+            if (typeof input === 'string') {
+              const v = input.trim().toLowerCase();
+              if (allowedTypes.includes(v)) return v;
+              if (legacyMap[v]) return legacyMap[v];
+              return null;
+            }
+            if (typeof input === 'number') {
+              const numMap: Record<number, string> = {
+                1: 'e-trike',
+                2: 'coffee_stand',
+                3: 'e-trike',
+                4: 'coffee_stand',
+              };
+              return numMap[input] ?? null;
+            }
+            return null;
+          })(rawType as unknown);
+
+          if (normalizedRaw) {
+            fallbackType = legacyFallback[normalizedRaw];
+          }
+        }
+
+        if (fallbackType) {
+          console.warn('Retrying update with legacy type value:', fallbackType);
+          const dataToRetry = { ...updateData, type: fallbackType };
+          updateResult = await tryUpdate(dataToRetry);
+        }
+      }
+    }
+
+    if (updateResult.error) {
+      console.error('Update outlet error details:', updateResult.error);
+      throw updateResult.error;
+    }
+
+    const data = updateResult.data;
 
     return NextResponse.json(data);
   } catch (error) {

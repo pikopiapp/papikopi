@@ -83,11 +83,8 @@ useEffect(() => {
       setError(null);
       setSuccess(null);
       
-// Validate outletId is available for new users only
-      if (!outletId && !editingId) {
-        setError('Outlet ID not available. Please refresh the page.');
-        return;
-      }
+      // It's OK if `outletId` is not present when creating a staff member.
+      // Staff can be created unassigned and assigned to an outlet later.
 
       // Validate form data
       if (!formData.name || !formData.email || !formData.role) {
