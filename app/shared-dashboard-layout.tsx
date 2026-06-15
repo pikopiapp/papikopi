@@ -57,7 +57,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/staff', label: 'Barista', icon: Users2 },
         { href: '/dashboard/outlets/transactions', label: 'Penjualan', icon: Receipt },
         { href: '/dashboard/expenses', label: 'Pengeluaran', icon: Receipt },
-        { href: '/dashboard/outlets/cash-handover', label: 'Cash Handover', icon: DollarSign },
+        { href: '/dashboard/outlets/cash-handover', label: 'Setoran', icon: DollarSign },
         { href: '/dashboard/wages', label: 'Gajian', icon: DollarSign },
         { href: '/dashboard/bonus-calculator', label: 'Bonus Calculator', icon: Calculator },
         { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },

@@ -1,9 +1,11 @@
-'use client';
+"use client";
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC } from '@/lib/helpers/business-day';
+import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { getBusinessDayRange, getBusinessDayDate, formatBusinessDay } from '@/lib/helpers/business-day';
 
 interface SalesItem {
   id: string;
@@ -29,10 +31,11 @@ interface Sale {
   items?: SalesItem[];
 }
 
-export default function TransactionDetailPage({ params }: { params: Promise<{ outletId: string }> }) {
+export default function TransactionDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const resolvedParams = use(params);
+  const routeParams = useParams();
+  const outletId = routeParams?.outletId || searchParams.get('outletId') || '';
   
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,12 +44,14 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ ou
   const dateParam = searchParams.get('date');
   const selectedDate = dateParam ? new Date(parseInt(dateParam)) : new Date();
 
-  const selectedDateStr = selectedDate.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const BUSINESS_DAY_START_HOUR = 4;
+  const selectedBizDate = getBusinessDayDate(selectedDate, BUSINESS_DAY_START_HOUR);
+  const { start: businessStart, end: businessEnd } = getBusinessDayRange(selectedBizDate, BUSINESS_DAY_START_HOUR);
+
+  // Use centralized parser that handles microseconds and Jakarta offset
+  const parseAsJakarta = (s: string) => parseTimestampAsJakarta(s);
+
+  const selectedDateStr = `${formatBusinessDay(selectedBizDate)} (business day 04:00–03:59)`;
 
   useEffect(() => {
     const fetchSales = async () => {
@@ -60,19 +65,14 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ ou
         const data = await res.json();
         const salesData = Array.isArray(data) ? data : [];
 
-        // Filter by outlet and date
+        // Filter by outlet and business-day using Jakarta-aware helper
         const filtered = salesData.filter((sale: Sale) => {
-          const saleDate = new Date(sale.created_at).toLocaleDateString('id-ID', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
-          return sale.outlet_id === resolvedParams.outletId && saleDate === selectedDateStr;
+          const saleBizDate = getBusinessDayDate(sale.created_at, BUSINESS_DAY_START_HOUR);
+          return sale.outlet_id === outletId && saleBizDate.getTime() === selectedBizDate.getTime();
         });
 
         const sorted = filtered.sort(
-          (a: Sale, b: Sale) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          (a: Sale, b: Sale) => parseAsJakarta(a.created_at).getTime() - parseAsJakarta(b.created_at).getTime()
         );
 
         setSales(sorted);
@@ -85,7 +85,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ ou
     };
 
     fetchSales();
-  }, [resolvedParams.outletId, selectedDateStr]);
+  }, [outletId, selectedDateStr]);
 
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
@@ -164,10 +164,10 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ ou
             ) : (
               sales.map((sale) => {
                 const items = sale.items || [];
-                const time = new Date(sale.created_at).toLocaleTimeString('id-ID', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
+                // Use centralized parser/formatter to handle microseconds and timezone
+                const jakartaDate = parseAsJakarta(sale.created_at);
+                // Parse stored timestamp as UTC and show in Jakarta local time
+                const time = formatTimestampFromUTC(sale.created_at, { hour: '2-digit', minute: '2-digit' });
 
                 return items.length > 0 ? (
                   items.map((item, itemIdx) => (

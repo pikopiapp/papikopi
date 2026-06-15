@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC } from '@/lib/helpers/business-day';
 import { useParams, useRouter } from 'next/navigation';
 import { typeLabel } from '@/lib/utils/outletTypes';
 import { Building2, ArrowLeft, DollarSign, TrendingUp, Package, Calendar, User, CreditCard, Flame } from 'lucide-react';
@@ -305,25 +306,28 @@ export default function OutletDetailPage() {
             </h2>
           </div>
           <div className="p-6 space-y-3">
-            {details.recent_sales.slice(0, 10).map((sale, idx) => (
-              <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                <div>
-                  <p className="text-xl font-bold text-gray-800">
-                    Rp {Number(sale.total_amount).toLocaleString('id-ID')}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {new Date(sale.created_at).toLocaleString('id-ID')}
-                  </p>
+            {details.recent_sales.slice(0, 10).map((sale, idx) => {
+              // Interpret stored timestamps as UTC and display in Asia/Jakarta
+              const formatted = formatTimestampFromUTC(sale.created_at, { dateStyle: 'short', timeStyle: 'short' });
+
+              return (
+                <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                  <div>
+                    <p className="text-xl font-bold text-gray-800">
+                      Rp {Number(sale.total_amount).toLocaleString('id-ID')}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatted}</p>
+                  </div>
+                  <span className={`px-4 py-2 rounded-xl text-sm font-medium ${
+                    sale.payment_method === 'cash' 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {sale.payment_method.toUpperCase()}
+                  </span>
                 </div>
-                <span className={`px-4 py-2 rounded-xl text-sm font-medium ${
-                  sale.payment_method === 'cash' 
-                    ? 'bg-green-100 text-green-700' 
-                    : 'bg-blue-100 text-blue-700'
-                }`}>
-                  {sale.payment_method.toUpperCase()}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

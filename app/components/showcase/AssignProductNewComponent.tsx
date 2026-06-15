@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { formatTimestampInJakarta } from '@/lib/helpers/business-day';
 import axios from 'axios';
 import {
   Card,
@@ -464,7 +465,7 @@ export function AssignProductNewComponent() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right text-sm text-gray-600">
-                          {new Date(assignment.created_at).toLocaleDateString('id-ID')}
+                          {formatTimestampInJakarta(assignment.created_at, { year: 'numeric', month: 'long', day: 'numeric' })}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">

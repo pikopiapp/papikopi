@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Trophy } from 'lucide-react';
+import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRange, getBusinessDayDate } from '@/lib/helpers/business-day';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@/app/components/DatePicker';
 
@@ -86,21 +87,13 @@ export default function TransactionsPage() {
     void init();
   }, []);
 
-  const selectedDateStr = selectedDate.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  // Use helper to compute Jakarta-aware business day range and comparisons
+  const BUSINESS_DAY_START_HOUR = 4;
+  const selectedBizDate = getBusinessDayDate(selectedDate, BUSINESS_DAY_START_HOUR);
 
   const filteredSales = sales.filter((sale) => {
-    const saleDate = new Date(sale.created_at).toLocaleDateString('id-ID', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-    return saleDate === selectedDateStr;
+    const saleBizDate = getBusinessDayDate(sale.created_at, BUSINESS_DAY_START_HOUR);
+    return saleBizDate.getTime() === selectedBizDate.getTime();
   });
 
   // Group by outlet - initialize ALL outlets first
@@ -169,31 +162,28 @@ export default function TransactionsPage() {
     totalsMap[id] = { today: 0, week: 0, month: 0 };
   });
 
-  const ref = selectedDate;
-  const startOfDay = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 0, 0, 0);
-  const endOfDay = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 23, 59, 59, 999);
+  const ref = selectedBizDate;
+  const { start: startOfDay, end: endOfDay } = getBusinessDayRange(ref, BUSINESS_DAY_START_HOUR);
 
-  // week start = Monday
+  // week start = Monday 04:00
   const day = ref.getDay(); // 0 (Sun) - 6 (Sat)
   const diffToMonday = (day + 6) % 7; // days to subtract to get Monday
-  const startOfWeek = new Date(ref);
-  startOfWeek.setDate(ref.getDate() - diffToMonday);
-  startOfWeek.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() - diffToMonday);
+  const { start: startOfWeek, end: endOfWeek } = getBusinessDayRange(monday, BUSINESS_DAY_START_HOUR);
 
-  const startOfMonth = new Date(ref.getFullYear(), ref.getMonth(), 1, 0, 0, 0);
-  const endOfMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
+  // month: first day 04:00 to next month's first day 03:59:59.999
+  const { start: startOfMonth, end: endOfMonth } = getBusinessDayRange(new Date(ref.getFullYear(), ref.getMonth(), 1), BUSINESS_DAY_START_HOUR);
 
   // Use ALL sales, not just filtered
   sales.forEach((sale) => {
-    const sDate = new Date(sale.created_at);
+    // Parse sale timestamp as Jakarta instant (handles naive strings and microseconds)
+    const sDate = parseTimestampAsJakarta(sale.created_at);
     const oid = sale.outlet_id;
     if (!totalsMap[oid]) totalsMap[oid] = { today: 0, week: 0, month: 0 }; // Initialize if outlet not in map
-    if (sDate >= startOfDay && sDate <= endOfDay) totalsMap[oid].today += Number(sale.total_amount || 0);
-    if (sDate >= startOfWeek && sDate <= endOfWeek) totalsMap[oid].week += Number(sale.total_amount || 0);
-    if (sDate >= startOfMonth && sDate <= endOfMonth) totalsMap[oid].month += Number(sale.total_amount || 0);
+    if (sDate.getTime() >= startOfDay.getTime() && sDate.getTime() <= endOfDay.getTime()) totalsMap[oid].today += Number(sale.total_amount || 0);
+    if (sDate.getTime() >= startOfWeek.getTime() && sDate.getTime() <= endOfWeek.getTime()) totalsMap[oid].week += Number(sale.total_amount || 0);
+    if (sDate.getTime() >= startOfMonth.getTime() && sDate.getTime() <= endOfMonth.getTime()) totalsMap[oid].month += Number(sale.total_amount || 0);
   });
 
   // Attach totals to outlet groups

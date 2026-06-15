@@ -1,9 +1,8 @@
-'use client';
+"use client";
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { DollarSign, ArrowLeft, TrendingUp, User, Calendar, RefreshCw } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 
 interface CashHandoverSession {
@@ -13,6 +12,9 @@ interface CashHandoverSession {
   handled_by: string;
   approved_by: string | null;
   start_amount: number;
+  qris_amount?: number;
+  bonus?: number;
+  meal_allowance?: number;
   cash_received: number;
   cash_handed_over: number;
   difference: number;
@@ -55,85 +57,39 @@ export default function CashHandoverPage() {
     totalCash: 0
   });
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('none');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(20);
+  const [total, setTotal] = useState<number>(0);
+  const [baristaFilter, setBaristaFilter] = useState<string>('all');
 
   const fetchSessions = useCallback(async () => {
     try {
       setRefreshing(true);
       setError(null);
-      
-      // Fetch cash handover data directly
-      const { data, error: fetchError } = await supabase
-        .from('cash_deposit_handovers')
-        .select('*')
-        .order('submitted_at', { ascending: false });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
 
-      if (fetchError) {
-        console.error('Supabase query error:', fetchError);
-        throw fetchError;
-      }
+      const res = await fetch(`/api/cash-handovers?limit=${limit}&page=${page}`, { signal: controller.signal });
+      clearTimeout(timeout);
 
-      // If we have data, fetch outlet and user names separately
-      let outletsMap: Record<string, string> = {};
-      let usersMap: Record<string, string> = {};
+      if (!res.ok) throw new Error('Failed to fetch cash handovers');
 
-      if (data && data.length > 0) {
-        const outletIds = [...new Set((data as SessionData[]).map(d => d.outlet_id))];
-        const userIds = [
-          ...new Set(
-            (data as SessionData[])
-              .flatMap(d => [d.barista_id, d.approved_by])
-              .filter((id): id is string => id !== null)
-          )
-        ];
+      const payload: { data: CashHandoverSession[]; total: number; page: number; limit: number } = await res.json();
 
-        if (outletIds.length > 0) {
-          const { data: outlets } = await supabase
-            .from('outlets')
-            .select('id, name')
-            .in('id', outletIds);
-          outletsMap = Object.fromEntries(
-            (outlets || []).map(o => [o.id, o.name])
-          );
-        }
+      const data = payload.data || [];
+      setAllSessions(data);
+      setTotal(typeof payload.total === 'number' ? payload.total : 0);
 
-        if (userIds.length > 0) {
-          const { data: users } = await supabase
-            .from('users')
-            .select('id, name')
-            .in('id', userIds);
-          usersMap = Object.fromEntries(
-            (users || []).map(u => [u.id, u.name])
-          );
-        }
-      }
-
-      const formattedSessions = ((data as unknown) as SessionData[] || []).map((session) => ({
-        id: session.id,
-        outlet_id: session.outlet_id,
-        outlet_name: outletsMap[session.outlet_id] || 'Unknown',
-        handled_by: usersMap[session.barista_id] || 'Unknown',
-        approved_by: session.approved_by ? usersMap[session.approved_by] || null : null,
-        start_amount: session.total_omset || 0,
-        cash_received: session.cash_amount || 0,
-        cash_handed_over: session.deposit_amount || 0,
-        difference: (session.cash_amount || 0) - (session.deposit_amount || 0),
-        status: session.status,
-        created_at: session.submitted_at,
-        approved_at: session.approved_at
-      }));
-
-      setAllSessions(formattedSessions);
-
-      // Calculate statistics from all sessions
       const newStats: CashHandoverStats = {
-        totalSessions: formattedSessions.length,
-        approvedCount: formattedSessions.filter(s => s.status === 'approved').length,
-        pendingCount: formattedSessions.filter(s => s.status === 'pending').length,
-        rejectedCount: formattedSessions.filter(s => s.status === 'rejected').length,
-        totalCash: formattedSessions.reduce((sum, s) => sum + (s.cash_handed_over || 0), 0)
+        totalSessions: typeof payload.total === 'number' ? payload.total : (data || []).length,
+        approvedCount: (data || []).filter(s => s.status === 'approved').length,
+        pendingCount: (data || []).filter(s => s.status === 'pending').length,
+        rejectedCount: (data || []).filter(s => s.status === 'rejected').length,
+        totalCash: (data || []).reduce((sum, s) => sum + (s.cash_handed_over || 0), 0)
       };
       setStats(newStats);
     } catch (err) {
@@ -143,18 +99,35 @@ export default function CashHandoverPage() {
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
 
   useEffect(() => {
-    const filtered = statusFilter === 'all' 
-      ? allSessions 
+    let filtered = statusFilter === 'all'
+      ? [...allSessions]
       : allSessions.filter(s => s.status === statusFilter);
+
+    if (baristaFilter !== 'all') {
+      filtered = filtered.filter(s => (s.handled_by || '').includes(baristaFilter));
+    }
+
+    if (sortBy === 'barista_asc') {
+      filtered.sort((a, b) => (a.handled_by || '').localeCompare(b.handled_by || ''));
+    } else if (sortBy === 'barista_desc') {
+      filtered.sort((a, b) => (b.handled_by || '').localeCompare(a.handled_by || ''));
+    }
+
     setSessions(filtered);
-  }, [statusFilter, allSessions]);
+  }, [statusFilter, allSessions, sortBy, baristaFilter]);
+
+  useEffect(() => {
+    // refetch when page or limit changes
+    setLoading(true);
+    fetchSessions();
+  }, [page, limit]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -162,12 +135,23 @@ export default function CashHandoverPage() {
         return 'bg-yellow-50 text-yellow-800 border-yellow-200';
       case 'approved':
         return 'bg-green-50 text-green-800 border-green-200';
+      case 'verified by barista':
+        return 'bg-teal-50 text-teal-800 border-teal-200';
       case 'rejected':
         return 'bg-red-50 text-red-800 border-red-200';
       default:
         return 'bg-gray-50 text-gray-800 border-gray-200';
     }
   };
+
+  const statusLabels: Record<string, string> = {
+    all: 'Semua',
+    pending: 'Menunggu',
+    approved: 'Disetujui',
+    rejected: 'Ditolak',
+  };
+
+  const baristaOptions = Array.from(new Set(allSessions.map(s => s.handled_by).filter(Boolean))).sort();
 
   return (
     <div className="p-6 bg-linear-to-br from-amber-50 to-orange-50 min-h-screen">
@@ -177,15 +161,15 @@ export default function CashHandoverPage() {
           className="flex items-center text-amber-600 hover:text-amber-700 transition-colors"
         >
           <ArrowLeft size={20} className="mr-2" />
-          Back
+          Kembali
         </button>
       </div>
 
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
             <DollarSign size={32} className="text-amber-600" />
-            <h1 className="text-4xl font-bold text-gray-800">Cash Handover</h1>
+            <h1 className="text-4xl font-bold text-gray-800">Setoran</h1>
           </div>
           <button
             onClick={() => fetchSessions()}
@@ -193,51 +177,85 @@ export default function CashHandoverPage() {
             className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-            Refresh
+            Segarkan
           </button>
         </div>
-        <p className="text-gray-600">Manage and track cash handover sessions across all outlets</p>
+        <p className="text-gray-600">Kelola dan pantau sesi setoran di seluruh outlet</p>
       </div>
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
-          <p className="text-sm text-gray-600 font-semibold mb-1">Total Sessions</p>
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+          <p className="text-sm text-gray-600 font-semibold mb-1">Total Setoran</p>
           <p className="text-2xl font-bold text-gray-800">{stats.totalSessions}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
-          <p className="text-sm text-gray-600 font-semibold mb-1">Approved</p>
+          <p className="text-sm text-gray-600 font-semibold mb-1">Disetujui</p>
           <p className="text-2xl font-bold text-green-600">{stats.approvedCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
-          <p className="text-sm text-gray-600 font-semibold mb-1">Pending</p>
+          <p className="text-sm text-gray-600 font-semibold mb-1">Menunggu</p>
           <p className="text-2xl font-bold text-yellow-600">{stats.pendingCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
-          <p className="text-sm text-gray-600 font-semibold mb-1">Rejected</p>
+          <p className="text-sm text-gray-600 font-semibold mb-1">Ditolak</p>
           <p className="text-2xl font-bold text-red-600">{stats.rejectedCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
-          <p className="text-sm text-gray-600 font-semibold mb-1">Total Cash</p>
+          <p className="text-sm text-gray-600 font-semibold mb-1">Total Disetor</p>
           <p className="text-lg font-bold text-purple-600">Rp {stats.totalCash.toLocaleString('id-ID')}</p>
         </div>
       </div>
 
       {/* Filter Buttons */}
-      <div className="mb-6 flex gap-2 flex-wrap">
-        {['all', 'pending', 'approved', 'rejected'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              statusFilter === status
-                ? 'bg-amber-600 text-white'
-                : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-amber-600'
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
+      <div className="mb-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            {['all', 'pending', 'approved', 'rejected'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-4 py-2 rounded-lg font-semibold transition ${
+                  statusFilter === status
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-amber-600'
+                }`}
+              >
+                {statusLabels[status] ?? (status.charAt(0).toUpperCase() + status.slice(1))}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600 mb-1">Per halaman</label>
+              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="border rounded px-2 py-1">
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600 mb-1">Barista</label>
+              <select value={baristaFilter} onChange={(e) => { setBaristaFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1 min-w-[180px]">
+                <option value="all">Semua</option>
+                {baristaOptions.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600 mb-1">Urutkan</label>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded px-2 py-1">
+                <option value="none">Tidak</option>
+                <option value="barista_asc">Barista A → Z</option>
+                <option value="barista_desc">Barista Z → A</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       {loading && (
@@ -248,7 +266,7 @@ export default function CashHandoverPage() {
               <div className="w-8 h-8 border-4 border-amber-600 border-t-transparent rounded-full animate-spin" />
             </div>
           </div>
-          <p className="text-gray-500 mt-6">Loading cash handover data...</p>
+          <p className="text-gray-500 mt-6">Memuat data setoran...</p>
         </div>
       )}
 
@@ -261,70 +279,120 @@ export default function CashHandoverPage() {
       {!loading && !error && sessions.length === 0 && (
         <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
           <DollarSign size={64} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-xl font-semibold text-gray-600 mb-2">No Cash Handovers Yet</h3>
-          <p className="text-gray-500">Cash handover sessions will appear here once they are recorded.</p>
+          <h3 className="text-xl font-semibold text-gray-600 mb-2">Belum ada setoran</h3>
+          <p className="text-gray-500">Sesi setoran akan muncul di sini setelah tercatat.</p>
         </div>
       )}
 
       {!loading && !error && sessions.length > 0 && (
         <div className="grid gap-4">
+          {/* Pager controls */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-3 py-1 rounded bg-white border hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Sebelumnya
+                </button>
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page >= Math.max(1, Math.ceil(total / limit))}
+                  className="px-3 py-1 rounded bg-white border hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Berikutnya
+                </button>
+                <div className="text-sm text-gray-600 ml-3">Halaman {page} / {Math.max(1, Math.ceil(total / limit))}</div>
+              </div>
+              <div className="text-sm text-gray-600">Total: {total}</div>
+          </div>
           {sessions.map((session) => (
             <div key={session.id} className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-500 mb-1">Outlet</p>
-                    <p className="text-lg font-semibold text-gray-800">{session.outlet_name}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
+                <div className="sm:col-span-2 flex items-center justify-between gap-6">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-500">Outlet</span>
+                    <span className="text-lg font-semibold text-gray-800">{session.outlet_name}</span>
                   </div>
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-500 mb-1">Handled By</p>
-                    <p className="text-gray-700 flex items-center gap-2">
-                      <User size={16} /> {session.handled_by}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-500">Penanggung Jawab</span>
+                    <span className="text-gray-700 flex items-center gap-2"><User size={16} /> {session.handled_by}</span>
                   </div>
-                  {session.approved_by && (
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Approved By</p>
-                      <p className="text-gray-700">{session.approved_by}</p>
-                    </div>
-                  )}
                 </div>
+                {session.approved_by && (
+                  <div className="sm:col-span-2 mt-2">
+                    <p className="text-sm text-gray-500 mb-1">Disetujui Oleh</p>
+                    <p className="text-gray-700">{session.approved_by}</p>
+                  </div>
+                )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    <p className="text-sm text-gray-500 mb-2">Start Amount</p>
-                    <p className="text-xl font-bold text-blue-600">
-                      Rp {session.start_amount.toLocaleString('id-ID')}
-                    </p>
+                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6 items-stretch">
+                  <div className="h-full">
+                    <div className="mb-4 h-full">
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 h-full flex flex-col">
+                        <p className="text-sm text-gray-500 mb-2">Omset</p>
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="text-gray-700">Penjualan</div>
+                          <div className="font-semibold">Rp {Number(session.start_amount || 0).toLocaleString('id-ID')}</div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm mt-2">
+                          <div className="text-gray-600">├─ Cash</div>
+                          <div className="font-medium">Rp {Number(session.cash_received || 0).toLocaleString('id-ID')}</div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm mt-1">
+                          <div className="text-gray-600">└─ QRIS</div>
+                          <div className="text-gray-600">Rp {Number((session as any).qris_amount || 0).toLocaleString('id-ID')}</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-green-50 rounded-lg p-4">
-                    <p className="text-sm text-gray-500 mb-2">Cash Received</p>
-                    <p className="text-xl font-bold text-green-600">
-                      Rp {session.cash_received.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-4">
-                    <p className="text-sm text-gray-500 mb-2">Handed Over</p>
-                    <p className="text-xl font-bold text-orange-600">
-                      Rp {session.cash_handed_over.toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                  <div className={`rounded-lg p-4 ${session.difference === 0 ? 'bg-green-50' : session.difference > 0 ? 'bg-yellow-50' : 'bg-red-50'}`}>
-                    <p className="text-sm text-gray-500 mb-2">Difference</p>
-                    <p className={`text-xl font-bold ${session.difference === 0 ? 'text-green-600' : session.difference > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-                      Rp {session.difference.toLocaleString('id-ID')}
-                    </p>
+
+                  <div className="h-full">
+                    {(() => {
+                      const bonus = Number((session as any).bonus || 0);
+                      const meal = Number((session as any).meal_allowance || 0);
+                      const cash = Number(session.cash_received || 0);
+                      const netCash = cash - (bonus + meal);
+                      const qris = Number((session as any).qris_amount || 0);
+
+                      return (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 h-full flex flex-col justify-between">
+                          <p className="text-sm font-semibold text-gray-700 mb-3">Rincian Setoran</p>
+
+                          <div className="text-sm text-gray-600 mb-2">Berangkat dari CASH (bukan Omset)</div>
+                          <div className="flex items-center justify-between text-sm mb-2">
+                            <div className="text-gray-700">CASH Diterima</div>
+                            <div className="font-semibold">Rp {cash.toLocaleString('id-ID')}</div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <div className="text-gray-700">- Bonus (Bertahap)</div>
+                            <div className="text-red-600">-Rp {bonus.toLocaleString('id-ID')}</div>
+                          </div>
+                          <div className="flex items-center justify-between text-sm mb-2">
+                            <div className="text-gray-700">- Uang Makan</div>
+                            <div className="text-red-600">-Rp {meal.toLocaleString('id-ID')}</div>
+                          </div>
+
+                          <div className="border-t border-green-100 pt-3 flex items-center justify-between">
+                            <div className="text-gray-700 font-semibold">
+                              {netCash > qris ? '= Setoran Barista' : netCash < qris ? '= Harus Bayar kekurangan ke Barista' : '= Setoran Barista'}
+                            </div>
+                            <div className="text-green-700 font-bold">Rp {netCash.toLocaleString('id-ID')}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-200 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm">
                   <Calendar size={16} className="text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-500">Created</p>
-                    <p className="text-gray-700">{format(new Date(session.created_at), 'PPP HH:mm')}</p>
-                  </div>
+                  <span className="text-sm text-gray-500">Created</span>
+                  <span className="text-gray-700 ml-2">{new Date(session.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
                 </div>
                 <div className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm capitalize ${getStatusColor(session.status)}`}>
                   {session.status}

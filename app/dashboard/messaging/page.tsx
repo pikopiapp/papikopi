@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { formatTimestampInJakarta } from '@/lib/helpers/business-day';
 import { createClient } from '@supabase/supabase-js';
 import { useAuthStore } from '@/lib/store/auth';
 import { Loader2, Send, AlertCircle, Edit2, Trash2, X } from 'lucide-react';
@@ -444,7 +445,7 @@ export default function MessagingPage() {
                             </h4>
                             <p className="text-sm text-gray-600">
                               oleh Admin •{' '}
-                              {new Date(announcement.created_at).toLocaleDateString('id-ID')}
+                              {formatTimestampInJakarta(announcement.created_at, { year: 'numeric', month: 'long', day: 'numeric' })}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -572,7 +573,7 @@ export default function MessagingPage() {
                       </div>
                       <p className="text-gray-700 mb-2">{msg.message}</p>
                       <p className="text-xs text-gray-500">
-                        {new Date(msg.created_at).toLocaleString('id-ID')}
+                        {formatTimestampInJakarta(msg.created_at, { dateStyle: 'short', timeStyle: 'short' })}
                       </p>
                     </div>
                   ))}
@@ -652,7 +653,7 @@ export default function MessagingPage() {
                               </p>
                               <p className="text-sm">{msg.message}</p>
                               <p className="text-xs opacity-70 mt-1">
-                                {new Date(msg.created_at).toLocaleTimeString('id-ID')}
+                                {formatTimestampInJakarta(msg.created_at, { timeStyle: 'short' })}
                               </p>
                             </div>
                           </div>

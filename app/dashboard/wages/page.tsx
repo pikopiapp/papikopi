@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { calculateMealAllowance } from '@/lib/bonus-calculator';
-import { isHoliday } from '@/lib/holiday-detector';
+// Use DB-backed holidays via /api/holidays
 
 interface WagePayment {
   id: string;
@@ -85,6 +85,35 @@ export default function WagesPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customHolidays, setCustomHolidays] = useState<Map<string,string>>(new Map());
+  const [nationalHolidays, setNationalHolidays] = useState<Map<string,string>>(new Map());
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/holidays');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!mounted) return;
+        if (json && json.success && Array.isArray(json.data)) {
+          const custom = new Map<string,string>();
+          const national = new Map<string,string>();
+          for (const r of json.data as Array<{date:string;description?:string;is_national?:boolean}>) {
+            const d = String(r.date);
+            const desc = r.description || '';
+            if (r.is_national) national.set(d, desc);
+            else custom.set(d, desc);
+          }
+          setCustomHolidays(custom);
+          setNationalHolidays(national);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const fetchPayments = useCallback(async () => {
     try {
@@ -332,11 +361,15 @@ export default function WagesPage() {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-blue-600 focus:outline-none bg-white text-gray-700 font-semibold"
             />
-            {isHoliday(new Date(selectedDate)) && (
-              <span className="px-3 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">
-                🎉 Hari Libur
-              </span>
-            )}
+            {(() => {
+              const iso = selectedDate; // state stores yyyy-MM-dd
+              const isHolidayDate = nationalHolidays.has(iso) || customHolidays.has(iso) || new Date(iso).getDay() === 0 || new Date(iso).getDay() === 6;
+              return isHolidayDate ? (
+                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">
+                  🎉 Hari Libur
+                </span>
+              ) : null;
+            })()}
             <button
               onClick={() => setSelectedDate(format(new Date(), 'yyyy-MM-dd'))}
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"

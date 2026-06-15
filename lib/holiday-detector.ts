@@ -20,7 +20,7 @@ const INDONESIAN_HOLIDAYS_2025: [number, number][] = [
   [5, 14],  // Kenaikan Isa Almasih
   [5, 19],  // Hari Vesak
   [6, 1],   // Lebaran (Tahun Baru Hijriah)
-  [6, 17],  // Hari Lahir Pancasila
+  [6, 1],   // Lebaran (Tahun Baru Hijriah)
   [8, 17],  // Hari Kemerdekaan
   [9, 16],  // Maulid Nabi Muhammad
   [12, 25], // Hari Raya Kristen
@@ -41,11 +41,25 @@ const INDONESIAN_HOLIDAYS_2026: [number, number][] = [
   [5, 14],  // Kenaikan Isa Almasih
   [5, 4],   // Hari Vesak
   [6, 1],   // Pancasila Day (optional)
-  [6, 17],  // Hari Lahir Pancasila
+  [6, 16],  //Tahun Baru Hijriah
   [8, 17],  // Hari Kemerdekaan
   [9, 5],   // Maulid Nabi Muhammad
   [12, 25], // Hari Raya Kristen
   [12, 26], // Hari Libur Bersama
+];
+
+const INDONESIAN_HOLIDAYS_2027: [number, number][] = [
+  // 2027 (fixed-date and estimated common holidays)
+  [1, 1],   // Tahun Baru
+  [2, 17],  // Isra dan Mi'raj (estimated)
+  [4, 10],  // Hari Raya Idul Fitri (estimated)
+  [4, 11],  // Hari Raya Idul Fitri (estimated)
+  [4, 12],  // Hari Raya Idul Fitri (estimated)
+  [6, 1],   // Hari Lahir Pancasila
+  [8, 17],  // Hari Kemerdekaan
+  [12, 25], // Hari Raya Kristen (Natal)
+  [12, 26], // Hari Libur Bersama
+  [5, 1],   // Hari Buruh
 ];
 
 /**
@@ -54,7 +68,11 @@ const INDONESIAN_HOLIDAYS_2026: [number, number][] = [
  * @returns Array of [month, day] tuples
  */
 export function getHolidaysForYear(year: number): [number, number][] {
-  return year === 2025 ? INDONESIAN_HOLIDAYS_2025 : INDONESIAN_HOLIDAYS_2026;
+  if (year === 2025) return INDONESIAN_HOLIDAYS_2025;
+  if (year === 2026) return INDONESIAN_HOLIDAYS_2026;
+  if (year === 2027) return INDONESIAN_HOLIDAYS_2027;
+  // Fallback: return closest known year set (2026)
+  return INDONESIAN_HOLIDAYS_2026;
 }
 
 /**
@@ -99,20 +117,28 @@ export function getHolidayDescription(date: Date): string {
   const month = date.getMonth() + 1;
   const dateNum = date.getDate();
 
-  if (day === 6) return 'Hari Sabtu';
-  if (day === 0) return 'Hari Minggu';
+  // Indonesian weekday names
+  const weekdayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
-  // Check for specific holidays
+  // Weekends -> return weekday name in Indonesian
+  if (day === 6 || day === 0) return weekdayNames[day];
+
+  // Check for specific national holidays (Indonesian names)
   if (month === 1 && dateNum === 1) return 'Tahun Baru';
   if (month === 5 && dateNum === 1) return 'Hari Buruh';
   if (month === 8 && dateNum === 17) return 'Hari Kemerdekaan';
   if (month === 12 && dateNum === 25) return 'Natal';
-  if (month === 6 && dateNum === 17) return 'Hari Lahir Pancasila';
+  if (month === 6 && dateNum === 16) return 'Tahun Baru Hijriah';
   if (month === 2 && dateNum === 19) return 'Isra dan Mi\'raj';
   if (month === 5 && dateNum === 19) return 'Hari Vesak';
   if (month === 12 && dateNum === 26) return 'Hari Libur Bersama';
 
-  return 'Hari Libur Nasional';
+  // If it's a national holiday listed in the holiday arrays but not matched above,
+  // return a generic national holiday label in Indonesian.
+  if (isIndonesianHoliday(date)) return 'Hari Libur Nasional';
+
+  // Default: return weekday name in Indonesian
+  return weekdayNames[day];
 }
 
 /**
@@ -125,7 +151,7 @@ export function getHolidaysInMonth(year: number, month: number): number[] {
   const holidays = getHolidaysForYear(year);
   return holidays
     .filter(([h_month]) => h_month === month)
-    .map(([_, day]) => day);
+    .map(([, day]) => day);
 }
 
 /**

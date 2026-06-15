@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { getBusinessDayDate } from '@/lib/helpers/business-day';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,9 +74,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const totalHpp = (salesWithData || []).reduce((sum, s) => sum + Number(s.hpp_total), 0);
     const totalTransactions = salesWithData?.length || 0;
 
-    // Today's sales
-    const today = new Date().toISOString().split('T')[0];
-    const todaysSales = (salesWithData || []).filter((s: any) => s.created_at.startsWith(today));
+    // Today's sales (business day in Asia/Jakarta with start hour 04:00)
+    const BUSINESS_DAY_START_HOUR = 4;
+    const selectedBizDate = getBusinessDayDate(new Date(), BUSINESS_DAY_START_HOUR);
+    const todaysSales = (salesWithData || []).filter((s: any) => {
+      try {
+        const saleBizDate = getBusinessDayDate(s.created_at, BUSINESS_DAY_START_HOUR);
+        return saleBizDate.getTime() === selectedBizDate.getTime();
+      } catch (err) {
+        return false;
+      }
+    });
     const todayRevenue = todaysSales.reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
     const todayTransactions = todaysSales.length;
 
@@ -161,11 +170,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       expired_date: batch.expired_date
     }));
 
-    // Payment method breakdown
-    const cashSales = (salesWithData || []).filter((s: any) => s.payment_method === 'cash');
-    const qrisSales = (salesWithData || []).filter((s: any) => s.payment_method === 'qris');
-    const cashRevenue = cashSales.reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
-    const qrisRevenue = qrisSales.reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
+    // Payment method breakdown (calculate for the selected business-day)
+    // Normalize payment_method to lowercase to tolerate variations in stored values
+    const cashSalesAll = (salesWithData || []).filter((s: any) => String(s.payment_method || '').toLowerCase() === 'cash');
+    const qrisSalesAll = (salesWithData || []).filter((s: any) => String(s.payment_method || '').toLowerCase() === 'qris');
+    const cashRevenueAll = cashSalesAll.reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
+    const qrisRevenueAll = qrisSalesAll.reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
+
+    // Also compute cash/qris revenue for the current business day (today)
+    const cashRevenueToday = todaysSales
+      .filter((s: any) => String(s.payment_method || '').toLowerCase() === 'cash')
+      .reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
+    const qrisRevenueToday = todaysSales
+      .filter((s: any) => String(s.payment_method || '').toLowerCase() === 'qris')
+      .reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
 
     return NextResponse.json({
       outlet,
@@ -178,8 +196,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         total_transactions: totalTransactions,
         today_revenue: todayRevenue,
         today_transactions: todayTransactions,
-        cash_revenue: cashRevenue,
-        qris_revenue: qrisRevenue
+        // Expose both today's and all-time payment breakdown; UI expects today's values here
+        cash_revenue: cashRevenueToday,
+        qris_revenue: qrisRevenueToday,
+        cash_revenue_all: cashRevenueAll,
+        qris_revenue_all: qrisRevenueAll
       },
       product_sales: productSalesSummary,
       product_batches: productsWithQuantity,

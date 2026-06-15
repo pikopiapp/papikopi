@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatTimestampInJakarta } from '@/lib/helpers/business-day';
 import axios from 'axios';
 import { ChevronDown, X } from 'lucide-react';
 import { typeLabel } from '@/lib/utils/outletTypes';
@@ -176,7 +177,7 @@ export default function ShowcaseInventoryPage() {
                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                       <p className="text-sm text-gray-600 mb-2">Total Product Stock</p>
                       <p className="text-4xl font-bold text-green-600">{product.total_quantity} pcs</p>
-                      <p className="text-xs text-gray-500 mt-2">First assigned: {new Date(product.created_at).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500 mt-2">First assigned: {formatTimestampInJakarta(product.created_at, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                     </div>
 
                     {/* Allocations */}
@@ -189,13 +190,13 @@ export default function ShowcaseInventoryPage() {
                               <div className="flex justify-between items-start">
                                 <div>
                                   <p className="font-semibold text-gray-900">{allocation.outlet.name}</p>
-                                  <p className="text-sm text-gray-600">{typeLabel(allocation.outlet.type)}</p>
+                                  <p className="text-xs text-gray-600">{typeLabel(allocation.outlet.type)}</p>
                                   <p className="text-xs text-gray-500">{allocation.outlet.address}</p>
                                 </div>
                                 <div className="text-right">
                                   <p className="text-lg font-bold text-green-600">{allocation.quantity}</p>
                                   <p className="text-xs text-gray-500">
-                                    {new Date(allocation.allocated_date).toLocaleDateString()}
+                                    {formatTimestampInJakarta(allocation.allocated_date, { year: 'numeric', month: 'long', day: 'numeric' })}
                                   </p>
                                 </div>
                               </div>
