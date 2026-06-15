@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { typeLabel } from '@/lib/utils/outletTypes';
+import { typeLabel, outletTypes } from '@/lib/utils/outletTypes';
 import { useAuthStore } from '@/lib/store/auth';
 import { Building2, Plus, Edit2, Trash2, MapPin, Tag, Users, X, ShoppingBag, Info, DollarSign, TrendingUp, Package } from 'lucide-react';
 
