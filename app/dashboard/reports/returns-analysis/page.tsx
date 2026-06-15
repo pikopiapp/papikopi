@@ -155,13 +155,13 @@ export default function ReturnsAnalysisReport() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Returns Analysis</h1>
         <p className="text-gray-600">Analisis return dan damage produk</p>
       </div>
 
       {/* Period Selector */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <div className="flex flex-wrap gap-2 mb-4">
           <button
             onClick={() => setPeriod('ytd')}
@@ -231,24 +231,24 @@ export default function ReturnsAnalysisReport() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Total Returns</h3>
           <p className="text-4xl font-bold text-red-600 mt-2">{stats.totalReturns}</p>
           <p className="text-sm text-gray-500 mt-1">{period.toUpperCase()}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Return Rate</h3>
           <p className="text-4xl font-bold text-orange-600 mt-2">{stats.returnRate.toFixed(1)}%</p>
           <p className="text-sm text-gray-500 mt-1">Of total transactions</p>
         </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Avg Loss</h3>
           <p className="text-3xl font-bold text-red-500 mt-2">{formatCurrency(stats.avgLoss)}</p>
           <p className="text-sm text-gray-500 mt-1">Value lost per return</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="surface-card rounded-lg shadow-md overflow-hidden">
         {loading ? (
           <div className="p-6 text-center text-gray-500">Loading returns data...</div>
         ) : returnsData.length === 0 ? (

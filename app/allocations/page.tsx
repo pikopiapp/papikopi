@@ -24,7 +24,7 @@ function AllocationViewerContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen surface p-6">
       <div className="max-w-4xl mx-auto">
         <div className="mb-6 flex justify-between items-start">
           <div>
@@ -40,7 +40,7 @@ function AllocationViewerContent() {
         </div>
 
         {/* Batch ID Input */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <div className="surface-card rounded-lg shadow p-4 mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Batch ID
           </label>
@@ -57,7 +57,7 @@ function AllocationViewerContent() {
         </div>
 
         {/* Allocation View */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="surface-card rounded-lg shadow p-6">
           {batchId ? (
             <BatchAllocationView batchId={batchId} />
           ) : (

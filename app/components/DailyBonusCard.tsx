@@ -25,7 +25,7 @@ export function DailyBonusCard({ omset = 0, isLoading = false }: DailyBonusProps
 
   if (isLoading) {
     return (
-      <div className="bg-linear-to-br from-green-500 to-green-600 rounded-lg shadow-md p-6 text-white animate-pulse">
+      <div className="surface-card rounded-lg shadow-md p-6 animate-pulse">
         <p className="text-sm font-medium opacity-80">Upah Harian</p>
         <div className="h-8 bg-white/20 rounded mt-2 w-32"></div>
       </div>
@@ -34,7 +34,7 @@ export function DailyBonusCard({ omset = 0, isLoading = false }: DailyBonusProps
 
   if (!wageData || omset === 0) {
     return (
-      <div className="bg-linear-to-br from-gray-300 to-gray-400 rounded-lg shadow-md p-6 text-white">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <p className="text-sm font-medium opacity-80">Upah Harian</p>
         <p className="text-3xl font-bold mt-2">Rp 0</p>
         <p className="text-xs opacity-70 mt-1">Belum ada penjualan</p>
@@ -43,7 +43,7 @@ export function DailyBonusCard({ omset = 0, isLoading = false }: DailyBonusProps
   }
 
   return (
-    <div className="bg-linear-to-br from-green-500 to-green-600 rounded-lg shadow-md p-6 text-white">
+    <div className="surface-card rounded-lg shadow-md p-6">
       <p className="text-sm font-medium opacity-90">💰 Upah Harian</p>
       <p className="text-4xl font-bold mt-2">Rp {formatNumber(wageData.totalWage)}</p>
       <div className="mt-4 pt-4 border-t border-white/30 space-y-2 text-xs opacity-90">
@@ -84,9 +84,9 @@ export function BonusSummaryCard({ omset = 0 }: { omset?: number }) {
   }, [omset]);
 
   return (
-    <div className="border-2 border-green-500 rounded-lg p-4 bg-green-50">
-      <p className="text-green-700 font-semibold text-sm">Bonus Otomatis</p>
-      <p className="text-2xl font-bold text-green-600 mt-1">Rp {formatNumber(bonus)}</p>
+    <div className="surface-card border-2 rounded-lg p-4" style={{ borderColor: 'var(--accent)' }}>
+      <p className="text-accent font-semibold text-sm">Bonus Otomatis</p>
+      <p className="text-2xl font-bold text-accent mt-1">Rp {formatNumber(bonus)}</p>
     </div>
   );
 }

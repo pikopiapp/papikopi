@@ -31,7 +31,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-900 to-orange-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-2xl p-8">
+        <div className="surface-card rounded-lg shadow-2xl p-8">
           <div className="flex justify-center mb-6">
             <div className="bg-amber-100 p-4 rounded-full">
               <LogIn className="w-8 h-8 text-amber-900" />

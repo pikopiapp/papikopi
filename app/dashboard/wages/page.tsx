@@ -267,7 +267,7 @@ export default function WagesPage() {
   };
 
   return (
-    <div className="p-6 bg-linear-to-br from-emerald-50 to-teal-50 min-h-screen">
+    <div className="p-6 surface min-h-screen">
       <div className="mb-6">
         <button
           onClick={() => router.back()}
@@ -298,31 +298,31 @@ export default function WagesPage() {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-blue-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Total Records</p>
           <p className="text-2xl font-bold text-gray-800">{stats.totalPayments}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-green-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Approved</p>
           <p className="text-2xl font-bold text-green-600">{stats.approvedCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-yellow-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Pending</p>
           <p className="text-2xl font-bold text-yellow-600">{stats.pendingCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-red-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Rejected</p>
           <p className="text-2xl font-bold text-red-600">{stats.rejectedCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-teal-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-teal-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Total Dibayar</p>
           <p className="text-lg font-bold text-teal-600">Rp {(stats.totalPaid / 1000000).toFixed(1)}M</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-orange-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Shortfall</p>
           <p className="text-lg font-bold text-orange-600">Rp {(stats.totalShortfall / 1000000).toFixed(1)}M</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-purple-500">
+        <div className="surface-card rounded-lg shadow p-4 border-l-4 border-purple-500">
           <p className="text-xs text-gray-600 font-semibold mb-1 uppercase">Daily Records</p>
           <p className="text-2xl font-bold text-purple-600">{dailyWages.length}</p>
         </div>
@@ -337,7 +337,7 @@ export default function WagesPage() {
         
         {/* Daily Wages Filters */}
         <div className="mb-4 flex flex-col gap-3">
-          <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
             {['all', 'pending', 'approved', 'rejected'].map((status) => (
               <button
                 key={`daily-${status}`}
@@ -345,7 +345,7 @@ export default function WagesPage() {
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   dailyWagesStatusFilter === status
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'surface-muted text-gray-700 hover:surface-card'
                 }`}
               >
                 {status === 'all' ? 'Semua' : status.charAt(0).toUpperCase() + status.slice(1)}
@@ -428,8 +428,8 @@ export default function WagesPage() {
                   key={`${wage.date}-${wage.barista_id}`}
                   className={`rounded-lg border-2 p-4 transition ${
                     isToday
-                      ? 'bg-emerald-50 border-emerald-500 shadow-lg'
-                      : 'bg-white border-gray-200 hover:shadow-md'
+                      ? 'surface-muted border-emerald-500 shadow-lg'
+                      : 'surface-card border-gray-200 hover:shadow-md'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -501,7 +501,7 @@ export default function WagesPage() {
             })}
           </div>
         ) : (
-          <div className="bg-white rounded-lg p-8 text-center text-gray-500">
+          <div className="surface-card rounded-lg p-8 text-center text-gray-500">
             Belum ada data upah harian
           </div>
         )}
@@ -515,7 +515,7 @@ export default function WagesPage() {
       )}
 
       {loading && (
-        <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+        <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
           <div className="relative">
             <DollarSign size={64} className="text-emerald-600 opacity-20 animate-pulse mx-auto" />
             <div className="absolute inset-0 flex items-center justify-center">
@@ -527,7 +527,7 @@ export default function WagesPage() {
       )}
 
       {!loading && !error && payments.length === 0 && (
-        <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+        <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
           <DollarSign size={64} className="mx-auto text-gray-300 mb-4" />
           <h3 className="text-xl font-semibold text-gray-600 mb-2">No Sales Data Found</h3>
           <p className="text-gray-500">Sales data akan muncul di daily wages section di atas setelah ada transaksi.</p>

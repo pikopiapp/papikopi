@@ -154,7 +154,7 @@ export default function CashHandoverPage() {
   const baristaOptions = Array.from(new Set(allSessions.map(s => s.handled_by).filter(Boolean))).sort();
 
   return (
-    <div className="p-6 bg-linear-to-br from-amber-50 to-orange-50 min-h-screen">
+    <div className="p-6 min-h-screen" style={{ background: 'linear-gradient(135deg, var(--surface-start), var(--surface-end))' }}>
       <div className="mb-6">
         <button
           onClick={() => router.back()}

@@ -182,7 +182,7 @@ export default function ProfitLossReport() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <p className="text-gray-600">Loading P&L data...</p>
         </div>
       </div>
@@ -191,13 +191,13 @@ export default function ProfitLossReport() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Rugi Laba (P&L)</h1>
         <p className="text-gray-600">Analisis profit dan loss dengan periode fleksibel</p>
       </div>
 
       {/* Period Selector */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Pilih Periode</h2>
         <div className="flex gap-2 mb-4 flex-wrap">
           <button

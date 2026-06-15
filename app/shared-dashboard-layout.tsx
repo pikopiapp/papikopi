@@ -31,15 +31,37 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     return () => clearInterval(timer);
   }, []);
 
+  // Keep HTML `dark` class in sync with OS/browser preference so components using `.dark` or `dark:` work.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = (isDark: boolean) => {
+      if (isDark) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+    };
+    apply(mq.matches);
+    const handler = (e: MediaQueryListEvent) => apply(e.matches);
+    try {
+      mq.addEventListener('change', handler);
+    } catch {
+      mq.addListener(handler);
+    }
+    return () => {
+      try { mq.removeEventListener('change', handler); } catch { mq.removeListener(handler); }
+    };
+  }, []);
+
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
 
   const isActive = (path: string) => {
-    if (path === '/showcase' || path === '/dashboard') {
-      return pathname === path;
-    }
+    // Treat some top-level routes as exact-only matches.
+    // For example, '/dashboard/outlets' should not be considered active
+    // when viewing '/dashboard/outlets/transactions'.
+    const exactOnly = new Set(['/showcase', '/dashboard', '/dashboard/outlets']);
+    if (exactOnly.has(path)) return pathname === path;
     return pathname === path || pathname.startsWith(path + '/');
   };
 
@@ -110,11 +132,11 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
   const allNavItems = navGroups.flatMap(group => group.items);
 
   return (
-    <div className="flex h-screen bg-[#1F4E5F]">
+    <div className="flex h-screen">
       {/* Mobile Menu Button */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed top-4 right-4 z-50 lg:hidden p-2 bg-white rounded-lg shadow-lg hover:bg-gray-100 transition-colors"
+        className="fixed top-4 right-4 z-50 lg:hidden p-2 surface-card rounded-lg shadow-lg transition-colors"
       >
         {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
@@ -130,7 +152,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       {/* Sidebar */}
       <aside className={`
         fixed lg:static top-0 left-0 h-screen z-40 
-        w-72 bg-linear-to-b from-[#1F4E5F] via-[#163944] to-[#1F4E5F] 
+        w-72 sidebar-gradient 
         text-white flex flex-col shadow-2xl
         transform transition-transform duration-300 lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -138,7 +160,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         {/* Logo */}
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 relative rounded-xl overflow-hidden shadow-lg bg-white shrink-0">
+            <div className="w-12 h-12 relative rounded-xl overflow-hidden shadow-lg surface-card shrink-0">
               <Image
                 src="/logo.png"
                 alt="PapiKopi Logo"
@@ -159,7 +181,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         {/* User Info */}
         {user && (
           <div className="px-6 py-4 border-b border-white/10">
-            <div className="bg-white/10 rounded-xl p-3">
+            <div className="surface-muted rounded-xl p-3">
               <p className="text-sm font-medium text-white hidden lg:block">{user.name}</p>
               <p className="text-xs text-white/60 capitalize hidden lg:block">{user.role}</p>
               <p className="text-xs text-white/60 lg:hidden">{user.role}</p>
@@ -182,7 +204,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
                       isActive(href)
-                        ? 'bg-linear-to-r from-[#F59E0B] to-[#FFB703] text-[#163944] shadow-lg shadow-[#F59E0B]/30 font-semibold'
+                        ? 'accent-gradient text-accent shadow-lg font-semibold'
                         : 'text-white/70 hover:bg-white/10 hover:text-white'
                     }`}
                     title={label}
@@ -190,7 +212,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                     <Icon size={18} className="shrink-0" />
                     <span className="font-medium text-xs md:text-sm">{label}</span>
                     {isActive(href) && (
-                      <div className="ml-auto w-2 h-2 bg-[#163944] rounded-full animate-pulse" />
+                      <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
                     )}
                   </Link>
                 ))}
@@ -215,9 +237,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
         {/* Top Bar */}
-        <header className="bg-white shadow-sm px-4 lg:px-8 py-5 border-b border-gray-200 flex items-center justify-between lg:pt-5 pt-14">
+        <header className="surface-card shadow-sm px-4 lg:px-8 py-5 border-b flex items-center justify-between lg:pt-5 pt-14">
           <div>
-            <h2 className="text-xl lg:text-2xl font-bold text-[#1F4E5F]">
+            <h2 className="text-xl lg:text-2xl font-bold text-accent">
               <span className="lg:hidden">PapiKopi</span>
               <span className="hidden lg:inline">{allNavItems.find(item => isActive(item.href))?.label || 'Dashboard'}</span>
             </h2>
@@ -234,7 +256,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
             </div>
             <div className="text-right hidden md:block">
               <p className="text-xs lg:text-sm text-gray-500">Current Time</p>
-              <p className="font-semibold text-[#1F4E5F]">
+              <p className="font-semibold text-accent">
                 {isMounted ? currentTime : ''}
               </p>
             </div>
@@ -242,7 +264,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto bg-gray-50 p-4 lg:p-8">
+        <main className="flex-1 overflow-auto surface p-4 lg:p-8">
           {children}
         </main>
       </div>

@@ -130,8 +130,8 @@ export default function ShowcaseInventoryPage() {
       )}
 
       {/* Products List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
+      <div className="surface-card rounded-lg shadow overflow-hidden">
+        <div className="p-4 border-b surface-muted">
           <h3 className="font-semibold text-lg">Products in Showcase</h3>
           <p className="text-sm text-gray-600">Click to view details and allocations</p>
         </div>
@@ -172,9 +172,9 @@ export default function ShowcaseInventoryPage() {
 
                 {/* Expanded Details */}
                 {expandedProducts.has(product.id) && (
-                  <div className="p-4 bg-gray-50 space-y-4 border-t">
+                  <div className="p-4 surface-muted space-y-4 border-t">
                     {/* Total Info */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="surface-card border border-gray-200 rounded-lg p-4">
                       <p className="text-sm text-gray-600 mb-2">Total Product Stock</p>
                       <p className="text-4xl font-bold text-green-600">{product.total_quantity} pcs</p>
                       <p className="text-xs text-gray-500 mt-2">First assigned: {formatTimestampInJakarta(product.created_at, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
@@ -186,7 +186,7 @@ export default function ShowcaseInventoryPage() {
                       {product.allocations.length > 0 ? (
                         <div className="space-y-2">
                           {product.allocations.map((allocation) => (
-                            <div key={allocation.id} className="bg-white border border-gray-200 rounded p-3">
+                            <div key={allocation.id} className="surface-card border border-gray-200 rounded p-3">
                               <div className="flex justify-between items-start">
                                 <div>
                                   <p className="font-semibold text-gray-900">{allocation.outlet.name}</p>

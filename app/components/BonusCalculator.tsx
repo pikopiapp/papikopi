@@ -42,7 +42,7 @@ export function BonusCalculator({
 
   return (
     <div className="w-full max-w-2xl mx-auto p-4">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">
           📊 Kalkulator Bonus Berjenjang
         </h2>
@@ -119,13 +119,13 @@ export function BonusCalculator({
                 <>
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div className="surface-muted rounded-lg p-4 border border-gray-200">
                       <p className="text-xs text-gray-600 font-medium">OMSET</p>
                       <p className="text-lg font-bold text-gray-800">
                         {formatNumber(result.omset)}
                       </p>
                     </div>
-                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="surface-muted rounded-lg p-4 border border-blue-200">
                       <p className="text-xs text-blue-600 font-medium">
                         PERSENTASE EFEKTIF
                       </p>
@@ -136,7 +136,7 @@ export function BonusCalculator({
                   </div>
 
                   {/* Wage Components */}
-                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                  <div className="surface-muted rounded-lg p-4 border border-green-200">
                     <h3 className="font-semibold text-gray-800 mb-3">💰 Komponen Upah Harian</h3>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -167,7 +167,7 @@ export function BonusCalculator({
                       </h3>
 
                       {result.isSpecial ? (
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="surface-muted border border-green-200 rounded-lg p-4">
                           <div className="flex items-start gap-3">
                             <span className="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm font-bold">
                               ✓
@@ -187,7 +187,7 @@ export function BonusCalculator({
                           {result.breakdown.map((tier, index) => (
                             <div
                               key={index}
-                              className="bg-gray-50 border border-gray-200 rounded-lg p-4"
+                              className="surface-muted border border-gray-200 rounded-lg p-4"
                             >
                               <div className="flex items-start justify-between mb-2">
                                 <div>

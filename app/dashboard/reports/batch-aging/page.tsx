@@ -94,31 +94,31 @@ export default function BatchAgingReport() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Batch Aging</h1>
         <p className="text-gray-600">Monitoring umur batch produk</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Fresh Batches</h3>
           <p className="text-4xl font-bold text-green-600 mt-2">{freshCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Good Batches</h3>
           <p className="text-4xl font-bold text-blue-600 mt-2">{goodCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Aging Batches</h3>
           <p className="text-4xl font-bold text-yellow-600 mt-2">{agingCount}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Critical</h3>
           <p className="text-4xl font-bold text-red-600 mt-2">{criticalCount}</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="surface-card rounded-lg shadow-md overflow-hidden">
         {loading ? (
           <div className="p-6 text-center text-gray-500">Loading batch data...</div>
         ) : batchData.length === 0 ? (

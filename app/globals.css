@@ -52,7 +52,8 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  /* Slightly off-white background: 70% white to avoid pure white in light mode */
+  --background: color-mix(in srgb, white 70%, black 30%);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -84,14 +85,39 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* page surface gradient for light theme */
+  --surface-start: oklch(0.99 0 0);
+  --surface-end: oklch(0.99 0 0);
+  /* accent and sidebar gradients (light) */
+  --accent-start: #F59E0B;
+  --accent-end: #FFB703;
+  --sidebar-start: #1F4E5F;
+  --sidebar-end: #163944;
+  /* Button text color for accent buttons in light mode (black) */
+  --accent-button-foreground: #000000;
 }
 
+/* New semantic utility classes to enforce consistent surfaces and gradients (light / default) */
+.surface { background: linear-gradient(135deg, var(--surface-start), var(--surface-end)); color: var(--foreground) !important; }
+.surface-card { background: var(--card) !important; color: var(--card-foreground) !important; border: 1px solid var(--border) !important; }
+.surface-muted { background: color-mix(in srgb, var(--card) 92%, white 8%) !important; color: var(--muted-foreground) !important; }
+.accent-gradient { background: linear-gradient(90deg, var(--accent-start), var(--accent-end)) !important; color: var(--accent-button-foreground) !important; }
+.btn-accent { background: linear-gradient(90deg, var(--accent-start), var(--accent-end)) !important; color: var(--accent-button-foreground) !important; border: none !important; }
+
+/* Ensure accent buttons in light mode use black text for contrast */
+body:not(.dark) .btn-primary, body:not(.dark) .btn-accent, body:not(.dark) .accent-gradient {
+  color: var(--accent-button-foreground) !important;
+}
+.sidebar-gradient { background: linear-gradient(180deg, var(--sidebar-start), var(--sidebar-end)) !important; color: var(--sidebar-foreground) !important; }
+.text-accent { color: var(--accent-foreground) !important; }
+
 .dark {
-  --background: oklch(0.145 0 0);
+  /* Moderate dark tones (not pure black) for better readability */
+  --background: oklch(0.22 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.30 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.28 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
@@ -102,7 +128,7 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 30%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
@@ -110,14 +136,97 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.26 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(1 0 0 / 30%);
   --sidebar-ring: oklch(0.556 0 0);
+  /* moderate surface gradient for dark theme */
+  --surface-start: oklch(0.28 0 0);
+  --surface-end: oklch(0.34 0 0);
+  --accent-start: #F59E0B;
+  --accent-end: #FFB703;
+  --sidebar-start: #0f3a45;
+  --sidebar-end: #0c2d33;
+  /* Use accent foreground for accent button text in dark mode */
+  --accent-button-foreground: var(--accent-foreground);
+}
+
+/* Prefer the user's OS/browser preference for dark mode automatically. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Moderate dark tones (not pure black) for prefers-color-scheme */
+    --background: oklch(0.22 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.30 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.28 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 30%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.26 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 30%);
+    --sidebar-ring: oklch(0.556 0 0);
+    --surface-start: oklch(0.28 0 0);
+    --surface-end: oklch(0.34 0 0);
+  }
+
+  /* Map common Tailwind utility colors to CSS variables for dark mode so existing bg-white/text-gray classes adapt. */
+  .bg-white { background-color: var(--card) !important; color: var(--card-foreground) !important; border: 1px solid var(--border) !important; }
+  .bg-gray-50 { background-color: var(--card) !important; color: var(--card-foreground) !important; border: 1px solid var(--border) !important; }
+
+  /* Ensure rounded containers (cards) also get a subtle border and correct text color */
+  .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl { background-color: var(--card) !important; color: var(--card-foreground) !important; border: 1px solid var(--border) !important; }
+
+  /* Table header specific: make header background moderately lighter than card for separation */
+  thead, .bg-gray-100, thead.bg-gray-100 {
+    background-color: color-mix(in srgb, var(--card) 86%, black 14%) !important;
+    color: var(--card-foreground) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* Text contrast mappings */
+  .text-gray-900, .text-gray-800 { color: var(--foreground) !important; }
+  .text-gray-700 { color: var(--card-foreground) !important; }
+  .text-gray-600 { color: var(--muted-foreground) !important; }
+  .text-gray-500 { color: var(--muted-foreground) !important; }
+  .text-gray-400 { color: color-mix(in srgb, var(--muted-foreground) 70%, transparent) !important; }
+
+  .border-gray-200, .border-gray-100 { border-color: var(--border) !important; }
+  hr { border-color: var(--border) !important; }
+
+  /* Stronger shadows for elevated elements in dark mode */
+  .shadow, .shadow-lg, .shadow-xl { box-shadow: 0 8px 28px rgba(0,0,0,0.45) !important; }
+
+  /* Inputs and popovers */
+  input, textarea, select, .popover, .card { background-color: var(--card) !important; color: var(--card-foreground) !important; border: 1px solid var(--border) !important; }
+
+  .bg-gradient-to-r, .bg-gradient-to-b { /* keep gradients readable in dark */ }
+
+  
 }
 
 @layer base {
@@ -127,8 +236,24 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    transition: background-color 160ms ease, color 160ms ease;
   }
   html {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
+}
+
+/* Table row hover: neutral medium-light gray for better contrast in both themes */
+table tbody tr:hover,
+table tr:hover {
+  background-color: color-mix(in srgb, var(--card) 88%, black 12%) !important;
+  color: var(--foreground) !important;
+}
+
+/* Ensure table cell text inherits color on hover */
+table tbody tr:hover td,
+table tr:hover td,
+table tbody tr:hover th,
+table tr:hover th {
+  color: inherit !important;
 }

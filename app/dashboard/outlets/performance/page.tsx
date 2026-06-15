@@ -84,7 +84,7 @@ export default function PerformancePage() {
   const topOutlet = performances[0];
 
   return (
-    <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 min-h-screen">
+    <div className="p-6 surface min-h-screen">
       <div className="mb-6">
         <button
           onClick={() => router.back()}
@@ -104,7 +104,7 @@ export default function PerformancePage() {
       </div>
 
       {loading && (
-        <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+        <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
           <div className="relative">
             <Target size={64} className="text-indigo-600 opacity-20 animate-pulse mx-auto" />
             <div className="absolute inset-0 flex items-center justify-center">
@@ -122,7 +122,7 @@ export default function PerformancePage() {
       )}
 
       {!loading && !error && performances.length === 0 && (
-        <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+        <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
           <Target size={64} className="mx-auto text-gray-300 mb-4" />
           <h3 className="text-xl font-semibold text-gray-600 mb-2">No Performance Data</h3>
           <p className="text-gray-500">Performance metrics will appear here once outlets have sales.</p>
@@ -133,7 +133,7 @@ export default function PerformancePage() {
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-2xl shadow-lg p-6">
+            <div className="surface-card rounded-2xl shadow-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Total Revenue</p>
@@ -144,8 +144,7 @@ export default function PerformancePage() {
                 <TrendingUp size={48} className="text-indigo-100" />
               </div>
             </div>
-
-            <div className="bg-white rounded-2xl shadow-lg p-6">
+            <div className="surface-card rounded-2xl shadow-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Total Profit</p>
@@ -156,8 +155,7 @@ export default function PerformancePage() {
                 <TrendingUp size={48} className="text-green-100" />
               </div>
             </div>
-
-            <div className="bg-white rounded-2xl shadow-lg p-6">
+            <div className="surface-card rounded-2xl shadow-lg p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Total Outlets</p>
@@ -170,24 +168,24 @@ export default function PerformancePage() {
 
           {/* Top Outlet */}
           {topOutlet && (
-            <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-2xl shadow-lg p-8 mb-8 text-white">
-              <p className="text-indigo-100 mb-2">Top Performing Outlet</p>
+            <div className="surface-card rounded-2xl shadow-lg p-8 mb-8">
+              <p className="text-sm text-gray-500 mb-2">Top Performing Outlet</p>
               <h2 className="text-3xl font-bold mb-4">{topOutlet.outlet_name}</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
-                  <p className="text-indigo-100 text-sm mb-1">Revenue</p>
+                  <p className="text-sm mb-1">Revenue</p>
                   <p className="text-xl font-bold">Rp {topOutlet.total_revenue.toLocaleString('id-ID')}</p>
                 </div>
                 <div>
-                  <p className="text-indigo-100 text-sm mb-1">Profit</p>
+                  <p className="text-sm mb-1">Profit</p>
                   <p className="text-xl font-bold">Rp {topOutlet.total_profit.toLocaleString('id-ID')}</p>
                 </div>
                 <div>
-                  <p className="text-indigo-100 text-sm mb-1">Transactions</p>
+                  <p className="text-sm mb-1">Transactions</p>
                   <p className="text-xl font-bold">{topOutlet.transaction_count}</p>
                 </div>
                 <div>
-                  <p className="text-indigo-100 text-sm mb-1">Baristas</p>
+                  <p className="text-sm mb-1">Baristas</p>
                   <p className="text-xl font-bold">{topOutlet.barista_count}</p>
                 </div>
               </div>
@@ -195,14 +193,14 @@ export default function PerformancePage() {
           )}
 
           {/* Performance Table */}
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="surface-card rounded-2xl shadow-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 surface-muted">
               <h3 className="text-lg font-semibold text-gray-800">All Outlets Performance</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
+                  <tr className="border-b border-gray-200 surface-muted">
                     <th className="text-left px-6 py-4 font-semibold text-gray-700">Outlet</th>
                     <th className="text-right px-6 py-4 font-semibold text-gray-700">Revenue</th>
                     <th className="text-right px-6 py-4 font-semibold text-gray-700">Profit</th>
@@ -213,7 +211,7 @@ export default function PerformancePage() {
                 </thead>
                 <tbody>
                   {performances.map((p, idx) => (
-                    <tr key={p.outlet_id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <tr key={p.outlet_id} className={idx % 2 === 0 ? 'surface-card' : 'surface-muted'}>
                       <td className="px-6 py-4 font-semibold text-gray-800">{p.outlet_name}</td>
                       <td className="text-right px-6 py-4 text-indigo-600 font-semibold">
                         Rp {p.total_revenue.toLocaleString('id-ID')}

@@ -189,7 +189,7 @@ export default function OutletComparisonReport() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="surface-card rounded-lg shadow-md p-6">
           <p className="text-gray-600">Loading outlet data...</p>
         </div>
       </div>
@@ -198,13 +198,13 @@ export default function OutletComparisonReport() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Outlet Comparison</h1>
         <p className="text-gray-600">Perbandingan performa antar outlet</p>
       </div>
 
       {/* Period Selector */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Pilih Periode</h2>
         <div className="flex gap-2 mb-4 flex-wrap">
           <button

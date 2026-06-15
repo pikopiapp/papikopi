@@ -109,7 +109,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="bg-white rounded-lg shadow-md border-b">
+      <div className="surface-card rounded-lg shadow-md border-b">
         <div className="flex gap-0">
           <button
             onClick={() => setActiveTab('sales')}
@@ -138,7 +138,7 @@ export default function ReportsPage() {
       {activeTab === 'sales' && (
         <>
           {/* Report Type Selection */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="surface-card p-6 rounded-lg shadow-md">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Filter size={20} />
               Tipe Laporan
@@ -166,7 +166,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Report Content */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="surface-card p-6 rounded-lg shadow-md">
             <h3 className="text-lg font-semibold mb-4">Ringkasan Penjualan</h3>
             {loading ? (
               <p className="text-gray-600">Loading data...</p>
@@ -191,7 +191,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Sales Detail Table */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="surface-card rounded-lg shadow-md overflow-hidden">
             <div className="p-6 border-b">
               <h3 className="text-lg font-semibold">Penjualan Detail ({salesData.length})</h3>
             </div>
@@ -242,7 +242,7 @@ export default function ReportsPage() {
       {/* BONUS TAB */}
       {activeTab === 'bonus' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="surface-card rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold mb-2 text-green-700">📊 Sistem Perhitungan Bonus Berjenjang</h2>
             <p className="text-gray-600 mb-6">
               Hitung bonus penjualan berdasarkan metode berjenjang (progressive). Semakin besar omset, semakin banyak layer bonus yang didapat.
@@ -252,22 +252,22 @@ export default function ReportsPage() {
             <div className="mb-8 p-4 bg-green-50 rounded-lg border border-green-200">
               <h3 className="font-semibold text-lg mb-3">📋 Struktur Tier Bonus</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-white p-3 rounded border border-green-300">
+                <div className="surface-card p-3 rounded border border-green-300">
                   <p className="text-xs text-gray-600">Tier 1</p>
                   <p className="font-bold text-green-600">10%</p>
                   <p className="text-xs text-gray-500">0 - 200rb</p>
                 </div>
-                <div className="bg-white p-3 rounded border border-green-300">
+                <div className="surface-card p-3 rounded border border-green-300">
                   <p className="text-xs text-gray-600">Tier 2</p>
                   <p className="font-bold text-green-600">12%</p>
                   <p className="text-xs text-gray-500">200rb - 350rb</p>
                 </div>
-                <div className="bg-white p-3 rounded border border-green-300">
+                <div className="surface-card p-3 rounded border border-green-300">
                   <p className="text-xs text-gray-600">Tier 3</p>
                   <p className="font-bold text-green-600">15%</p>
                   <p className="text-xs text-gray-500">350rb - 500rb</p>
                 </div>
-                <div className="bg-white p-3 rounded border border-green-300">
+                <div className="surface-card p-3 rounded border border-green-300">
                   <p className="text-xs text-gray-600">Tier 4</p>
                   <p className="font-bold text-green-600">20%</p>
                   <p className="text-xs text-gray-500">500rb+</p>

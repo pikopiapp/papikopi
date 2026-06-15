@@ -80,12 +80,12 @@ export default function OutletStockReport() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Stok Outlet</h1>
         <p className="text-gray-600">Inventory per outlet (Real Data)</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="surface-card rounded-lg shadow-md overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-100 border-b">
             <tr>

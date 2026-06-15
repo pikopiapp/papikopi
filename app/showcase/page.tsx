@@ -218,7 +218,7 @@ export default function ShowcasePage() {
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+          <div className="surface-card rounded-lg p-6 max-w-sm mx-4 shadow-xl">
             <div className="flex items-center gap-3 mb-4">
               <AlertCircle className="text-red-500" size={28} />
               <h3 className="text-2xl font-bold">Reset Showcase?</h3>
@@ -273,9 +273,9 @@ export default function ShowcasePage() {
             const isExpanded = expandedId === product.id;
 
             return (
-              <div key={product.id} className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 hover:shadow-lg transition">
+              <div key={product.id} className="surface-card rounded-lg shadow-md overflow-hidden border border-gray-200 hover:shadow-lg transition">
                 {/* Card Header */}
-                <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b">
+                <div className="p-4 surface-muted border-b">
                   <h3 className="font-bold text-2xl">{product.product_name}</h3>
                 </div>
 
@@ -349,7 +349,7 @@ export default function ShowcasePage() {
 
                 {/* Expanded Details */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 border-t bg-gray-50">
+                  <div className="px-4 pb-4 border-t surface-muted">
                     <div className="text-sm text-gray-600 mt-3">
                       <p className="font-semibold mb-2">Allocation Details:</p>
                       <p className="text-xs">Product ID: {product.product_id}</p>
@@ -366,7 +366,7 @@ export default function ShowcasePage() {
       {/* Modal */}
       {showModal && selectedProduct && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+          <div className="surface-card rounded-lg shadow-lg max-w-md w-full p-6">
             {/* Close Button */}
             <button
               onClick={() => setShowModal(false)}
