@@ -3,6 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { typeLabel, outletTypes } from '@/lib/utils/outletTypes';
 import { useAuthStore } from '@/lib/store/auth';
 import { Building2, Plus, Edit2, Trash2, MapPin, Tag, Users, X, ShoppingBag, Info, DollarSign, TrendingUp, Package } from 'lucide-react';
 
@@ -96,6 +97,9 @@ export default function OutletsPage() {
   const [selectedOutletForDetails, setSelectedOutletForDetails] = useState<string | null>(null);
   const [outletDetails, setOutletDetails] = useState<OutletDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchOutlets = useCallback(async () => {
     try {
@@ -157,9 +161,11 @@ export default function OutletsPage() {
       }
 
       const method = editingId ? 'PUT' : 'POST';
+      // Ensure `type` is sent as string (prevents numeric values from slipping through)
+      const normalizedType = String(formData.type);
       const body = editingId
-        ? { id: editingId, ...formData }
-        : formData;
+        ? { id: editingId, ...formData, type: normalizedType }
+        : { ...formData, type: normalizedType };
 
       console.log('Submitting outlet form:', { method, body });
 
@@ -198,14 +204,24 @@ export default function OutletsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this outlet?')) return;
+    // legacy: use modal-based confirmation now
+    setDeleteTargetId(id);
+    setShowDeleteConfirm(true);
+  };
+
+  const performDelete = async (id: string) => {
     try {
+      setDeleting(true);
       const res = await fetch(`/api/outlets?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       await fetchOutlets();
+      setShowDeleteConfirm(false);
+      setDeleteTargetId(null);
     } catch (error) {
       console.error('Failed to delete outlet:', error);
-      setError('Failed to delete outlet');
+      setError('Gagal menghapus outlet');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -350,7 +366,7 @@ export default function OutletsPage() {
     void fetchDetails(outletId);
   };
 
-  const outletTypes = ['e-trike', 'coffee_stand'];
+  // use shared `typeLabel` from `lib/utils/outletTypes`
 
   if (loading) {
     return <div className="p-6 text-center">Loading outlets...</div>;
@@ -361,7 +377,7 @@ export default function OutletsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 size={32} className="text-[#F59E0B]" />
-          <h1 className="text-3xl font-bold text-[#1F4E5F]">Outlets</h1>
+          <h1 className="text-3xl font-bold text-[#1F4E5F]">Outlet</h1>
         </div>
       </div>
 
@@ -379,13 +395,13 @@ export default function OutletsPage() {
 
       {showForm && (
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-lg font-semibold mb-4">{editingId ? 'Edit Outlet' : 'Add New Outlet'}</h2>
+          <h2 className="text-lg font-semibold mb-4">{editingId ? 'Ubah Outlet' : 'Tambah Outlet Baru'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
             <div>
-              <label className="block text-sm font-medium mb-1">Outlet Name *</label>
+                <label className="block text-sm font-medium mb-1">Nama Outlet *</label>
               <input
                 type="text"
-                placeholder="e.g., Gerobak Kopi 1"
+                placeholder="e.g., E-trike Kopi 1"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
@@ -394,22 +410,22 @@ export default function OutletsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Type *</label>
+              <label className="block text-sm font-medium mb-1">Tipe *</label>
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                 className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
-                {outletTypes.map(type => (
-                  <option key={type} value={type}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                {outletTypes.map(t => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Address</label>
+              <label className="block text-sm font-medium mb-1">Alamat</label>
               <textarea
                 placeholder="Outlet address"
                 value={formData.address}
@@ -424,7 +440,7 @@ export default function OutletsPage() {
                 type="submit"
                 className="flex-1 bg-gradient-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-[#F59E0B]/30"
               >
-                {editingId ? 'Update' : 'Create'} Outlet
+                {editingId ? 'Simpan Perubahan' : 'Buat Outlet'}
               </button>
               <button
                 type="button"
@@ -435,7 +451,7 @@ export default function OutletsPage() {
                 }}
                 className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition"
               >
-                Cancel
+                Batal
               </button>
             </div>
           </form>
@@ -451,13 +467,13 @@ export default function OutletsPage() {
         className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg flex items-center gap-2 transition shadow-lg shadow-[#F59E0B]/30"
       >
         <Plus size={20} />
-        Add Outlet
+        Tambah Outlet
       </button>
 
       {outlets.length === 0 ? (
         <div className="text-center py-12">
           <Building2 size={48} className="mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">No outlets yet. Create one to get started.</p>
+          <p className="text-gray-500">Belum ada outlet. Buat outlet untuk memulai.</p>
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -477,7 +493,7 @@ export default function OutletsPage() {
                 <h3 className="text-xl font-bold text-white mt-3">{outlet.name}</h3>
                 <div className="flex items-center gap-2 text-white/80 text-sm mt-1">
                   <Tag size={14} />
-                  <span className="capitalize">{outlet.type.replace('_', ' ')}</span>
+                  <span className="capitalize">{typeLabel(outlet.type)}</span>
                 </div>
               </div>
 
@@ -505,12 +521,12 @@ export default function OutletsPage() {
                       </button>
                     )}
                   </div>
-                  {outletBaristasMap.get(outlet.id) ? (
+                    {outletBaristasMap.get(outlet.id) ? (
                     <div className="bg-amber-100 text-amber-800 px-3 py-2 rounded-lg text-sm font-medium">
                       {outletBaristasMap.get(outlet.id)?.name}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400">No barista assigned</p>
+                    <p className="text-xs text-gray-400">Belum ada barista</p>
                   )}
                 </div>
 
@@ -531,7 +547,7 @@ export default function OutletsPage() {
                     className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-all hover:scale-105 active:scale-95"
                   >
                     <ShoppingBag size={16} />
-                    Products
+                    Produk
                   </button>
                   <button
                     onClick={() => handleOpenAssignModal(outlet.id)}
@@ -545,7 +561,7 @@ export default function OutletsPage() {
                     className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-all hover:scale-105 active:scale-95"
                   >
                     <Edit2 size={16} />
-                    Edit
+                    Ubah
                   </button>
                 </div>
 
@@ -554,7 +570,7 @@ export default function OutletsPage() {
                   className="w-full mt-1 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-xl flex items-center justify-center gap-2 font-medium transition-all"
                 >
                   <Trash2 size={16} />
-                  Delete Outlet
+                  Hapus Outlet
                 </button>
               </div>
             </div>
@@ -566,7 +582,7 @@ export default function OutletsPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold">Assign Barista to {outlets.find(o => o.id === selectedOutletId)?.name}</h3>
+              <h3 className="text-xl font-semibold">Tugaskan Barista ke {outlets.find(o => o.id === selectedOutletId)?.name}</h3>
               <button
                 onClick={() => setShowAssignModal(false)}
                 className="text-gray-500 hover:text-gray-700"
@@ -581,12 +597,12 @@ export default function OutletsPage() {
               </div>
             )}
 
-            {baristasLoading ? (
-              <div className="text-center py-4">Loading baristas...</div>
+                {baristasLoading ? (
+              <div className="text-center py-4">Memuat barista...</div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {baristas.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No baristas available</p>
+                  <p className="text-gray-500 text-center py-4">Tidak ada barista tersedia</p>
                 ) : (
                   baristas.map((barista: Barista) => {
                     const isAssignedToAnotherOutlet = assignedBaristas.has(barista.id);
@@ -623,8 +639,35 @@ export default function OutletsPage() {
               onClick={() => setShowAssignModal(false)}
               className="w-full mt-4 bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition"
             >
-              Close
+              Tutup
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && deleteTargetId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-3">Konfirmasi Hapus</h3>
+            <p className="text-sm text-gray-700 mb-4">Anda yakin ingin menghapus outlet ini? Semua data terkait akan dihapus permanen.</p>
+            {error && <div className="mb-3 text-sm text-red-700">{error}</div>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => deleteTargetId && performDelete(deleteTargetId)}
+                disabled={deleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium"
+              >
+                {deleting ? 'Menghapus...' : 'Hapus'}
+              </button>
+              <button
+                onClick={() => { setShowDeleteConfirm(false); setDeleteTargetId(null); }}
+                disabled={deleting}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
+              >
+                Batal
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -633,7 +676,7 @@ export default function OutletsPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 sticky top-0 bg-white">
-              <h3 className="text-xl font-semibold">Products - {outlets.find(o => o.id === selectedOutletForProducts)?.name}</h3>
+              <h3 className="text-xl font-semibold">Produk - {outlets.find(o => o.id === selectedOutletForProducts)?.name}</h3>
               <button
                 onClick={() => setShowProductsModal(false)}
                 className="text-gray-500 hover:text-gray-700"
@@ -643,11 +686,11 @@ export default function OutletsPage() {
             </div>
 
             {productsLoading ? (
-              <div className="text-center py-8">Loading products...</div>
+              <div className="text-center py-8">Memuat produk...</div>
             ) : (
               <div className="space-y-3">
                 {products.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No products available</p>
+                  <p className="text-gray-500 text-center py-8">Tidak ada produk</p>
                 ) : (
                   products.map((product: Product) => (
                     <div key={product.id} className="p-4 rounded-lg border-2 border-green-200 bg-green-50">
@@ -675,7 +718,7 @@ export default function OutletsPage() {
               onClick={() => setShowProductsModal(false)}
               className="w-full mt-6 bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition"
             >
-              Close
+              Tutup
             </button>
           </div>
         </div>
@@ -695,7 +738,7 @@ export default function OutletsPage() {
             </div>
 
             {detailsLoading ? (
-              <div className="text-center py-8">Loading details...</div>
+              <div className="text-center py-8">Memuat detail...</div>
             ) : outletDetails ? (
               <div className="space-y-6">
                 <div className="bg-amber-50 p-4 rounded-lg">
@@ -793,14 +836,14 @@ export default function OutletsPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">No details available</p>
+              <p className="text-gray-500 text-center py-8">Tidak ada detail</p>
             )}
 
             <button
               onClick={() => setShowDetailsModal(false)}
               className="w-full mt-6 bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition"
             >
-              Close
+              Tutup
             </button>
           </div>
         </div>

@@ -124,68 +124,23 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <div
-            onClick={() => router.push("/dashboard/pos")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <ShoppingCart className="w-8 h-8 text-amber-600 mb-4" />
-            <h3 className="font-bold text-gray-800">POS</h3>
-            <p className="text-sm text-gray-600">Transaksi Penjualan</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/sales")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <TrendingUp className="w-8 h-8 text-green-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Laporan</h3>
-            <p className="text-sm text-gray-600">Penjualan & Profit</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/products")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <ShoppingCart className="w-8 h-8 text-blue-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Menu</h3>
-            <p className="text-sm text-gray-600">Kelola Produk</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/users")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <Users className="w-8 h-8 text-purple-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Tim</h3>
-            <p className="text-sm text-gray-600">Manajemen Pengguna</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/wages")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <DollarSign className="w-8 h-8 text-emerald-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Gajian</h3>
-            <p className="text-sm text-gray-600">Kelola Produk</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/users")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <Users className="w-8 h-8 text-purple-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Tim</h3>
-            <p className="text-sm text-gray-600">Manajemen Pengguna</p>
-          </div>
-
-          <div
-            onClick={() => router.push("/dashboard/wages")}
-            className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-          >
-            <DollarSign className="w-8 h-8 text-emerald-600 mb-4" />
-            <h3 className="font-bold text-gray-800">Gajian</h3>
-            <p className="text-sm text-gray-600">Upah & Pembayaran</p>
-          </div>
+          {[
+            { href: '/dashboard/pos', icon: ShoppingCart, title: 'POS', desc: 'Transaksi Penjualan' },
+            { href: '/dashboard/sales', icon: TrendingUp, title: 'Laporan', desc: 'Penjualan & Profit' },
+            { href: '/dashboard/products', icon: ShoppingCart, title: 'Produk', desc: 'Kelola Produk' },
+            { href: '/dashboard/users', icon: Users, title: 'Tim', desc: 'Manajemen Pengguna' },
+            { href: '/dashboard/wages', icon: DollarSign, title: 'Gajian', desc: 'Upah & Pembayaran' },
+          ].map((a) => (
+            <div
+              key={a.href}
+              onClick={() => router.push(a.href)}
+              className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
+            >
+              <a.icon className="w-8 h-8 text-amber-600 mb-4" />
+              <h3 className="font-bold text-gray-800">{a.title}</h3>
+              <p className="text-sm text-gray-600">{a.desc}</p>
+            </div>
+          ))}
         </div>
 
         {/* Status Cards */}
@@ -253,7 +208,7 @@ export default function DashboardPage() {
         {/* Error Message */}
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg mb-8 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <p className="text-red-800">{error}</p>
           </div>
         )}

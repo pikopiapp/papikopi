@@ -39,13 +39,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, role, outlet_id } = body;
+    console.log('POST /api/staff body:', JSON.stringify(body));
+    const { name, email, role, outlet_id, phone } = body;
 
-    if (!name || !email || !role || !outlet_id) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const missing: string[] = [];
+    if (!name) missing.push('name');
+    if (!email) missing.push('email');
+    if (!role) missing.push('role');
+
+    if (missing.length > 0) {
+      const msg = `Missing required fields: ${missing.join(', ')}`;
+      console.error('Create staff validation failed:', msg);
+      return NextResponse.json({ error: msg, received: Object.keys(body || {}) }, { status: 400 });
     }
 
-    const userData: Record<string, unknown> = { name, email, role, outlet_id, is_active: true };
+    // Allow creating staff without an assigned outlet (unassigned staff)
+    const userData: Record<string, unknown> = { name, email, role, is_active: true };
+    if (outlet_id) userData.outlet_id = outlet_id;
+    if (phone) userData.phone = phone;
 
     const { data, error } = await supabase
       .from('users')

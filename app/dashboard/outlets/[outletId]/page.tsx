@@ -3,6 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { typeLabel } from '@/lib/utils/outletTypes';
 import { Building2, ArrowLeft, DollarSign, TrendingUp, Package, Calendar, User, CreditCard, Flame } from 'lucide-react';
 
 interface Outlet {
@@ -132,7 +133,7 @@ export default function OutletDetailPage() {
             </button>
             <div>
               <h1 className="text-3xl font-bold">{details.outlet.name}</h1>
-              <p className="text-white/80 capitalize">{details.outlet.type.replace('_', ' ')}</p>
+              <p className="text-white/80 capitalize">{typeLabel(details.outlet.type)}</p>
             </div>
           </div>
           {details.assigned_barista && (

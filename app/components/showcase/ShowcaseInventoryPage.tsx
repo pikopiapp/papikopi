@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { ChevronDown, X } from 'lucide-react';
+import { typeLabel } from '@/lib/utils/outletTypes';
 
 interface Outlet {
   id: string;
@@ -188,7 +189,7 @@ export default function ShowcaseInventoryPage() {
                               <div className="flex justify-between items-start">
                                 <div>
                                   <p className="font-semibold text-gray-900">{allocation.outlet.name}</p>
-                                  <p className="text-sm text-gray-600">{allocation.outlet.type}</p>
+                                  <p className="text-sm text-gray-600">{typeLabel(allocation.outlet.type)}</p>
                                   <p className="text-xs text-gray-500">{allocation.outlet.address}</p>
                                 </div>
                                 <div className="text-right">
