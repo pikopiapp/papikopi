@@ -36,7 +36,12 @@ export function getBusinessDayDate(
   };
 
   const utc = parseAsUtc(timestamp);
-  const jakarta = new Date(utc.getTime() + JAKARTA_OFFSET * 60 * 60 * 1000);
+  // `parseAsUtc` already treats timezone-naive timestamps as Asia/Jakarta (+07:00)
+  // so `utc` already represents the correct instant. Do NOT add the offset
+  // again (that caused dates to be shifted incorrectly and produced empty
+  // business-day groups). Use the parsed instant directly as Jakarta time
+  // for computing the business-day boundary.
+  const jakarta = new Date(utc.getTime());
 
   const hour = jakarta.getHours();
   if (hour < businessDayStartHour) jakarta.setDate(jakarta.getDate() - 1);

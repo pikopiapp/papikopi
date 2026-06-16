@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -50,6 +50,56 @@ export function DatePicker({ onDateChange, selectedDate }: DatePickerProps) {
   for (let i = 1; i <= totalDays; i++) {
     days.push(i);
   }
+
+  // holidays state (national & custom)
+  const [customHolidays, setCustomHolidays] = useState<Map<string, string>>(new Map());
+  const [nationalHolidays, setNationalHolidays] = useState<Map<string, string>>(new Map());
+
+  function toIsoLocal(date: Date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const res = await fetch('/api/holidays');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!mounted) return;
+        if (json && json.success && Array.isArray(json.data)) {
+          const custom = new Map<string, string>();
+          const national = new Map<string, string>();
+          for (const r of json.data as Array<{ date: string; description?: string; is_national?: boolean }>) {
+            if (!r || !r.date) continue;
+            const iso = r.date;
+            const desc = r.description ?? '';
+            if (r.is_national) national.set(iso, desc);
+            else custom.set(iso, desc);
+          }
+          // merge local fallback
+          try {
+            const raw = localStorage.getItem('customHolidays');
+            if (raw) {
+              const arr = JSON.parse(raw);
+              if (Array.isArray(arr)) {
+                for (const a of arr) {
+                  if (a && a.date) custom.set(a.date, a.description ?? '');
+                }
+              }
+            }
+          } catch {}
+          setCustomHolidays(custom);
+          setNationalHolidays(national);
+        }
+      } catch {}
+    }
+    load();
+    return () => { mounted = false; };
+  }, []);
 
   const monthName = currentMonth.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -116,32 +166,37 @@ export function DatePicker({ onDateChange, selectedDate }: DatePickerProps) {
 
               {/* Calendar Days */}
               <div className="grid grid-cols-7 gap-2">
-                {days.map((day, index) => (
-                  <button
-                    key={index}
-                    onClick={() => {
-                      if (day) {
+                {days.map((day, index) => {
+                  if (!day) return <button key={index} className="h-8 invisible" disabled />;
+                  const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+                  const iso = toIsoLocal(date);
+                  const isNationalNow = nationalHolidays.has(iso);
+                  const isCustomNow = customHolidays.has(iso);
+                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                  const isHolidayDate = isNationalNow || isCustomNow || isWeekend;
+                  const title = isHolidayDate ? (isCustomNow ? `Libur: ${customHolidays.get(iso)}` : (isNationalNow ? `Libur: ${nationalHolidays.get(iso)}` : 'Weekend')) : '';
+
+                  const baseClass = `h-8 text-sm rounded font-medium transition-colors`;
+                  const cls = isHolidayDate
+                    ? (isNationalNow ? `${baseClass} bg-red-100 text-red-700 border-2 border-red-500 hover:bg-red-200` : (isWeekend ? `${baseClass} bg-orange-100 text-orange-700 hover:bg-orange-200` : `${baseClass} bg-red-100 text-red-700`))
+                    : (selected.getFullYear() === currentMonth.getFullYear() && selected.getMonth() === currentMonth.getMonth() && selected.getDate() === day
+                      ? `${baseClass} bg-blue-500 text-white hover:bg-blue-600`
+                      : `${baseClass} hover:bg-gray-100 text-gray-700`);
+
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => {
                         handleDateClick(day);
                         setIsOpen(false);
-                      }
-                    }}
-                    disabled={!day}
-                    className={`
-                      h-8 text-sm rounded font-medium transition-colors
-                      ${!day ? 'invisible' : ''}
-                      ${
-                        day &&
-                        selected.getFullYear() === currentMonth.getFullYear() &&
-                        selected.getMonth() === currentMonth.getMonth() &&
-                        selected.getDate() === day
-                          ? 'bg-blue-500 text-white hover:bg-blue-600'
-                          : 'hover:bg-gray-100 text-gray-700'
-                      }
-                    `}
-                  >
-                    {day}
-                  </button>
-                ))}
+                      }}
+                      title={title}
+                      className={cls}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Quick Select Buttons */}
