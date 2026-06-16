@@ -33,11 +33,9 @@ export default function WarehouseSummaryReport() {
     activeProducts: 0,
   });
 
-  useEffect(() => {
-    fetchWarehouseData();
-  }, []);
+  // initial fetch moved after function declaration
 
-  const fetchWarehouseData = async () => {
+  async function fetchWarehouseData() {
     try {
       setLoading(true);
 
@@ -159,7 +157,14 @@ export default function WarehouseSummaryReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchWarehouseData();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="space-y-6">

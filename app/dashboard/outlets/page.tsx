@@ -66,7 +66,7 @@ interface OutletDetails {
     production_date: string;
     expired_date: string;
   }>;
-  recent_sales: any[];
+  recent_sales: Record<string, unknown>[];
 }
 
 export default function OutletsPage() {
@@ -146,7 +146,8 @@ export default function OutletsPage() {
   }, []);
 
   useEffect(() => {
-    void fetchOutlets();
+    const t = setTimeout(() => void fetchOutlets(), 0);
+    return () => clearTimeout(t);
   }, [fetchOutlets]);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { Database } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -24,17 +25,19 @@ export async function GET(request: NextRequest) {
 
     // If profile doesn't exist, create a default one
     if (userError?.code === 'PGRST116') {
+      const payload: Database['users']['Insert'][] = [
+        {
+          id: user.id,
+          name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+          email: user.email,
+          role: 'barista', // Default role
+          is_active: true,
+        },
+      ];
+
       const { data: newUser, error: createError } = await supabase
         .from('users')
-        .insert([
-          {
-            id: user.id,
-            name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
-            email: user.email,
-            role: 'barista', // Default role
-            is_active: true,
-          },
-        ])
+        .insert(payload)
         .select()
         .single();
 

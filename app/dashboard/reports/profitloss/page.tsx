@@ -27,9 +27,7 @@ export default function ProfitLossReport() {
   const [customStartDate, setCustomStartDate] = useState<string>(format(startOfYear(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
-  useEffect(() => {
-    fetchProfitLossData();
-  }, [period, customStartDate, customEndDate]);
+  // initial fetch moved below function declaration
 
   const getDateRange = () => {
     const now = new Date();
@@ -61,7 +59,7 @@ export default function ProfitLossReport() {
     return { startDate, endDate };
   };
 
-  const fetchProfitLossData = async () => {
+  async function fetchProfitLossData() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
@@ -168,7 +166,7 @@ export default function ProfitLossReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('id-ID', {
@@ -188,6 +186,10 @@ export default function ProfitLossReport() {
       </div>
     );
   }
+
+  useEffect(() => {
+    fetchProfitLossData();
+  }, [period, customStartDate, customEndDate]);
 
   return (
     <div className="space-y-6">

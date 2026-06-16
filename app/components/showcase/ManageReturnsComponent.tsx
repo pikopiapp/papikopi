@@ -102,8 +102,8 @@ export function ManageReturnsComponent() {
   const enrichReturnsData = async (returns: any[]) => {
     const outletIds = [...new Set(returns.map(r => r.outlet_id).filter(Boolean))];
 
-    let outletMap: Record<string, { name: string }> = {};
-    let baristaMap: Record<string, string> = {};
+    const outletMap: Record<string, { name: string }> = {};
+    const baristaMap: Record<string, string> = {};
 
     if (outletIds.length > 0) {
       const { data: outlets } = await supabase

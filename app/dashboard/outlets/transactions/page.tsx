@@ -87,13 +87,20 @@ export default function TransactionsPage() {
     void init();
   }, []);
 
-  // Use helper to compute Jakarta-aware business day range and comparisons
-  const BUSINESS_DAY_START_HOUR = 4;
-  const selectedBizDate = getBusinessDayDate(selectedDate, BUSINESS_DAY_START_HOUR);
+  // Match `daily-summary` behaviour: filter by calendar day (server groups by yyyy-MM-dd)
+  // Use local date string comparison to avoid business-day offset differences.
+  // Fallback: use simple date part comparison
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatLocalKey = (d: Date | string) => {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  };
+
+  const selectedDateKey = formatLocalKey(selectedDate);
 
   const filteredSales = sales.filter((sale) => {
-    const saleBizDate = getBusinessDayDate(sale.created_at, BUSINESS_DAY_START_HOUR);
-    return saleBizDate.getTime() === selectedBizDate.getTime();
+    const saleKey = formatLocalKey(sale.created_at);
+    return saleKey === selectedDateKey;
   });
 
   // Group by outlet - initialize ALL outlets first
@@ -162,18 +169,29 @@ export default function TransactionsPage() {
     totalsMap[id] = { today: 0, week: 0, month: 0 };
   });
 
-  const ref = selectedBizDate;
-  const { start: startOfDay, end: endOfDay } = getBusinessDayRange(ref, BUSINESS_DAY_START_HOUR);
+  // Compute local calendar ranges (start/end of day, week(Mon-Sun), month) based on selectedDate
+  const ref = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const startOfDay = new Date(ref);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(ref);
+  endOfDay.setHours(23, 59, 59, 999);
 
-  // week start = Monday 04:00
+  // week start = Monday
   const day = ref.getDay(); // 0 (Sun) - 6 (Sat)
   const diffToMonday = (day + 6) % 7; // days to subtract to get Monday
   const monday = new Date(ref);
   monday.setDate(ref.getDate() - diffToMonday);
-  const { start: startOfWeek, end: endOfWeek } = getBusinessDayRange(monday, BUSINESS_DAY_START_HOUR);
+  const startOfWeek = new Date(monday);
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(monday);
+  endOfWeek.setDate(monday.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
 
-  // month: first day 04:00 to next month's first day 03:59:59.999
-  const { start: startOfMonth, end: endOfMonth } = getBusinessDayRange(new Date(ref.getFullYear(), ref.getMonth(), 1), BUSINESS_DAY_START_HOUR);
+  // month: first day to last day
+  const startOfMonth = new Date(ref.getFullYear(), ref.getMonth(), 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endOfMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+  endOfMonth.setHours(23, 59, 59, 999);
 
   // Use ALL sales, not just filtered
   sales.forEach((sale) => {
@@ -202,7 +220,7 @@ export default function TransactionsPage() {
     return outlet.omset_today || 0;
   };
 
-  let sortedOutlets = Object.values(outletGroups).sort((a, b) => {
+  const sortedOutlets = Object.values(outletGroups).sort((a, b) => {
     if (sortOrder === 'highest') {
       return getOmsetByPeriod(b) - getOmsetByPeriod(a);
     } else if (sortOrder === 'lowest') {

@@ -237,7 +237,9 @@ export default function WagesPage() {
     const filtered = statusFilter === 'all'
       ? allPayments
       : allPayments.filter(p => p.status === statusFilter);
-    setPayments(filtered);
+    // defer setting state to avoid synchronous setState in effect
+    const t = setTimeout(() => setPayments(filtered), 0);
+    return () => clearTimeout(t);
   }, [statusFilter, allPayments]);
 
   const getStatusColor = (status: string) => {

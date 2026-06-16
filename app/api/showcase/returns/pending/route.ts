@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // Get all unique product_ids
     const productIds = [...new Set(returns?.map(r => r.product_id).filter(Boolean))];
     
-    let productsMap: Record<string, any> = {};
+    const productsMap: Record<string, any> = {};
     
     // Fetch products with details
     if (productIds.length > 0) {

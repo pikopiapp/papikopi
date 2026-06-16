@@ -55,10 +55,6 @@ export default function ProductsPage() {
     selectedIngredients: [] as Array<{ ingredient_id: string; quantity: number }>,
   });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -78,6 +74,13 @@ export default function ProductsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchData();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const resetForm = () => {
     setFormData({

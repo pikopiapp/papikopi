@@ -26,9 +26,7 @@ export default function ProductPerformanceReport() {
   const [customStartDate, setCustomStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
-  useEffect(() => {
-    fetchProductData();
-  }, [period, customStartDate, customEndDate]);
+  // initial fetch moved below function declaration
 
   const getDateRange = () => {
     const now = new Date();
@@ -60,7 +58,7 @@ export default function ProductPerformanceReport() {
     return { startDate, endDate };
   };
 
-  const fetchProductData = async () => {
+  async function fetchProductData() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
@@ -134,7 +132,7 @@ export default function ProductPerformanceReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('id-ID', {
@@ -154,6 +152,10 @@ export default function ProductPerformanceReport() {
       </div>
     );
   }
+
+  useEffect(() => {
+    fetchProductData();
+  }, [period, customStartDate, customEndDate]);
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { DollarSign, ArrowLeft, TrendingUp, User, Calendar, RefreshCw } from 'lucide-react';
@@ -46,7 +48,25 @@ interface SessionData {
 }
 
 export default function CashHandoverPage() {
+  return <CashHandoverPageContent />;
+}
+
+function CashHandoverPageContent() {
   const router = useRouter();
+
+  // Avoid useSearchParams during prerender to prevent Suspense boundary errors.
+  // If you need the date query param later, re-introduce it behind a <Suspense> boundary.
+  const dateParam: string | null = null;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatLocalKey = (d: Date | string | null | undefined) => {
+    if (!d) return '';
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  };
+
+  const selectedDateKey = formatLocalKey(dateParam || new Date());
+  const selectedDateStr = (dateParam ? new Date(dateParam) : new Date()).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const [sessions, setSessions] = useState<CashHandoverSession[]>([]);
   const [allSessions, setAllSessions] = useState<CashHandoverSession[]>([]);
   const [stats, setStats] = useState<CashHandoverStats>({
@@ -102,13 +122,23 @@ export default function CashHandoverPage() {
   }, [page, limit]);
 
   useEffect(() => {
-    fetchSessions();
+    const t = setTimeout(() => void fetchSessions(), 0);
+    return () => clearTimeout(t);
   }, [fetchSessions]);
 
   useEffect(() => {
-    let filtered = statusFilter === 'all'
-      ? [...allSessions]
-      : allSessions.filter(s => s.status === statusFilter);
+    // start from all sessions
+    let filtered = [...allSessions];
+
+    // apply optional calendar-date filter (yyyy-MM-dd) to match daily-summary grouping
+    if (dateParam) {
+      filtered = filtered.filter(s => formatLocalKey(s.created_at) === selectedDateKey);
+    }
+
+    // status filter
+    filtered = statusFilter === 'all'
+      ? filtered
+      : filtered.filter(s => s.status === statusFilter);
 
     if (baristaFilter !== 'all') {
       filtered = filtered.filter(s => (s.handled_by || '').includes(baristaFilter));
@@ -120,13 +150,17 @@ export default function CashHandoverPage() {
       filtered.sort((a, b) => (b.handled_by || '').localeCompare(a.handled_by || ''));
     }
 
-    setSessions(filtered);
-  }, [statusFilter, allSessions, sortBy, baristaFilter]);
+    const t = setTimeout(() => setSessions(filtered), 0);
+    return () => clearTimeout(t);
+  }, [statusFilter, allSessions, sortBy, baristaFilter, dateParam, selectedDateKey]);
 
   useEffect(() => {
     // refetch when page or limit changes
-    setLoading(true);
-    fetchSessions();
+    const t = setTimeout(() => {
+      setLoading(true);
+      void fetchSessions();
+    }, 0);
+    return () => clearTimeout(t);
   }, [page, limit]);
 
   const getStatusColor = (status: string) => {
@@ -155,6 +189,7 @@ export default function CashHandoverPage() {
 
   return (
     <div className="p-6 min-h-screen" style={{ background: 'linear-gradient(135deg, var(--surface-start), var(--surface-end))' }}>
+
       <div className="mb-6">
         <button
           onClick={() => router.back()}
@@ -342,7 +377,7 @@ export default function CashHandoverPage() {
                         </div>
                         <div className="flex items-center justify-between text-sm mt-1">
                           <div className="text-gray-600">└─ QRIS</div>
-                          <div className="text-gray-600">Rp {Number((session as any).qris_amount || 0).toLocaleString('id-ID')}</div>
+                          <div className="text-gray-600">Rp {Number(session.qris_amount ?? 0).toLocaleString('id-ID')}</div>
                         </div>
                       </div>
                     </div>
@@ -350,11 +385,11 @@ export default function CashHandoverPage() {
 
                   <div className="h-full">
                     {(() => {
-                      const bonus = Number((session as any).bonus || 0);
-                      const meal = Number((session as any).meal_allowance || 0);
+                      const bonus = Number((session as CashHandoverSession).bonus ?? 0);
+                      const meal = Number((session as CashHandoverSession).meal_allowance ?? 0);
                       const cash = Number(session.cash_received || 0);
                       const netCash = cash - (bonus + meal);
-                      const qris = Number((session as any).qris_amount || 0);
+                      const qris = Number((session as CashHandoverSession).qris_amount ?? 0);
 
                       return (
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4 h-full flex flex-col justify-between">

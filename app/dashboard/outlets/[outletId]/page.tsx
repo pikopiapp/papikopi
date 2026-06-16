@@ -69,7 +69,7 @@ export default function OutletDetailPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/outlets/${outletId}/details`);
+      const res = await fetch(`/api/outlets/${outletId}/details?limit=100`);
       if (!res.ok) throw new Error('Failed to fetch details');
       const data = await res.json();
       setDetails(data);
@@ -83,7 +83,8 @@ export default function OutletDetailPage() {
 
   useEffect(() => {
     if (outletId) {
-      void fetchDetails();
+      const t = setTimeout(() => void fetchDetails(), 0);
+      return () => clearTimeout(t);
     }
   }, [outletId, fetchDetails]);
 

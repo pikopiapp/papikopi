@@ -83,9 +83,13 @@ export default function WarehousePage() {
   };
 
   useEffect(() => {
-    fetchBatches();
-    fetchProducts();
-    fetchOutlets();
+    // Call fetch functions asynchronously to avoid synchronous setState in effect
+    const t = setTimeout(() => {
+      fetchBatches();
+      fetchProducts();
+      fetchOutlets();
+    }, 0);
+    return () => clearTimeout(t);
   }, [fetchBatches]);
 
   const handleSubmit = async (e: React.FormEvent) => {

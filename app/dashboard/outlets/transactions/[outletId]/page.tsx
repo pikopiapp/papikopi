@@ -44,14 +44,19 @@ export default function TransactionDetailPage() {
   const dateParam = searchParams.get('date');
   const selectedDate = dateParam ? new Date(parseInt(dateParam)) : new Date();
 
-  const BUSINESS_DAY_START_HOUR = 4;
-  const selectedBizDate = getBusinessDayDate(selectedDate, BUSINESS_DAY_START_HOUR);
-  const { start: businessStart, end: businessEnd } = getBusinessDayRange(selectedBizDate, BUSINESS_DAY_START_HOUR);
+  // Use calendar local date (yyyy-MM-dd) to match `/api/reports/daily-summary` grouping
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatLocalKey = (d: Date | string) => {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  };
+
+  const selectedDateKey = formatLocalKey(selectedDate);
 
   // Use centralized parser that handles microseconds and Jakarta offset
   const parseAsJakarta = (s: string) => parseTimestampAsJakarta(s);
 
-  const selectedDateStr = `${formatBusinessDay(selectedBizDate)} (business day 04:00–03:59)`;
+  const selectedDateStr = new Date(selectedDate).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   useEffect(() => {
     const fetchSales = async () => {
@@ -65,10 +70,10 @@ export default function TransactionDetailPage() {
         const data = await res.json();
         const salesData = Array.isArray(data) ? data : [];
 
-        // Filter by outlet and business-day using Jakarta-aware helper
+        // Filter by outlet and calendar date (local) to match daily-summary
         const filtered = salesData.filter((sale: Sale) => {
-          const saleBizDate = getBusinessDayDate(sale.created_at, BUSINESS_DAY_START_HOUR);
-          return sale.outlet_id === outletId && saleBizDate.getTime() === selectedBizDate.getTime();
+          const saleKey = formatLocalKey(sale.created_at);
+          return sale.outlet_id === outletId && saleKey === selectedDateKey;
         });
 
         const sorted = filtered.sort(
@@ -85,7 +90,7 @@ export default function TransactionDetailPage() {
     };
 
     fetchSales();
-  }, [outletId, selectedDateStr]);
+  }, [outletId, selectedDateKey]);
 
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);

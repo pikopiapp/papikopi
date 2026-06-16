@@ -1,11 +1,22 @@
 import { create } from "zustand";
 
+export type AppUser = {
+  id?: string;
+  email?: string | null;
+  user_metadata?: {
+    role?: string | null;
+    full_name?: string | null;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+} | null;
+
 interface AuthStore {
-  user: any | null; // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user: AppUser;
   role: string | null;
   outletId: string | null;
   loading: boolean;
-  setUser: (user: any) => void; // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setUser: (user: AppUser) => void;  
   setRole: (role: string | null) => void;
   setOutletId: (outletId: string | null) => void;
   setLoading: (loading: boolean) => void;

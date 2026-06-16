@@ -25,13 +25,9 @@ export default function ReportsPage() {
     totalTransactions: 0,
   });
 
-  useEffect(() => {
-    if (activeTab === 'sales') {
-      fetchSalesData();
-    }
-  }, [activeTab, reportType]);
+  // initial fetch will be triggered after functions are declared
 
-  const fetchSalesData = async () => {
+  async function fetchSalesData() {
     try {
       setLoading(true);
       
@@ -87,7 +83,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('id-ID', {
@@ -283,3 +279,5 @@ export default function ReportsPage() {
     </div>
   );
 }
+
+

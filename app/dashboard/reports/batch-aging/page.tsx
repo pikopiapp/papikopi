@@ -19,10 +19,6 @@ export default function BatchAgingReport() {
   const [batchData, setBatchData] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchBatchData();
-  }, []);
-
   const fetchBatchData = async () => {
     try {
       // Fetch batches
@@ -57,6 +53,13 @@ export default function BatchAgingReport() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchBatchData();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const getAgingStatus = (productionDate: string, expiredDate: string | null): string => {
     const today = new Date();

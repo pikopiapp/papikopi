@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
-import { getBusinessDayDate } from '@/lib/helpers/business-day';
+import { getBusinessDayDate, parseTimestampAsJakarta, getBusinessDayRange } from '@/lib/helpers/business-day';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (salesError) throw salesError;
 
     // Get barista names for sales
-    let baristMap = new Map<string, string>();
+    const baristMap = new Map<string, string>();
     if (sales && sales.length > 0) {
       const baristaIds = [...new Set((sales || []).map((s: any) => s.barista_id))];
       const { data: baristas } = await supabase
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Get sale items for all sales
     const saleIds = (sales || []).map((s: any) => s.id);
-    let saleItemsMap = new Map<string, any[]>();
+    const saleItemsMap = new Map<string, any[]>();
     if (saleIds.length > 0) {
       const { data: items } = await supabase
         .from('sale_items')
@@ -60,12 +60,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       });
     }
 
-    // Reconstruct sales with related data
-    const salesWithData = (sales || []).map((sale: any) => ({
-      ...sale,
-      sale_items: saleItemsMap.get(sale.id) || [],
-      users: { name: baristMap.get(sale.barista_id) }
-    }));
+    // Reconstruct sales with related data and add normalized timestamp fields
+    const salesWithData = (sales || []).map((sale: any) => {
+      const jakartaInstant = parseTimestampAsJakarta(sale.created_at);
+      const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+      const createdAtJakarta = `${jakartaInstant.getFullYear()}-${pad(jakartaInstant.getMonth() + 1)}-${pad(jakartaInstant.getDate())}T${pad(jakartaInstant.getHours())}:${pad(jakartaInstant.getMinutes())}:${pad(jakartaInstant.getSeconds())}.${String(jakartaInstant.getMilliseconds()).padStart(3,'0')}+07:00`;
+      const createdAtUtc = jakartaInstant.toISOString();
+      const bizDate = getBusinessDayDate(jakartaInstant, 4);
+      const { start: bizStart, end: bizEnd } = getBusinessDayRange(bizDate, 4);
+
+      return {
+        ...sale,
+        sale_items: saleItemsMap.get(sale.id) || [],
+        users: { name: baristMap.get(sale.barista_id) },
+        created_at_jakarta: createdAtJakarta,
+        created_at_utc: createdAtUtc,
+        business_day: bizDate.toISOString().slice(0, 10),
+        business_day_start_utc: bizStart.toISOString(),
+        business_day_end_utc: bizEnd.toISOString(),
+      };
+    });
 
     // Calculate metrics
     const totalRevenue = (salesWithData || []).reduce((sum, s) => sum + Number(s.total_amount), 0);
@@ -77,8 +91,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Today's sales (business day in Asia/Jakarta with start hour 04:00)
     const BUSINESS_DAY_START_HOUR = 4;
     const selectedBizDate = getBusinessDayDate(new Date(), BUSINESS_DAY_START_HOUR);
+    // Prefer API-provided UTC business-day window per sale when available
     const todaysSales = (salesWithData || []).filter((s: any) => {
       try {
+        const startUtc = s.business_day_start_utc;
+        const endUtc = s.business_day_end_utc;
+        const createdUtc = s.created_at_utc || (s.created_at_jakarta ? parseTimestampAsJakarta(s.created_at_jakarta).toISOString() : s.created_at);
+        if (startUtc && endUtc && createdUtc) {
+          const t = new Date(createdUtc).getTime();
+          return t >= new Date(startUtc).getTime() && t <= new Date(endUtc).getTime();
+        }
         const saleBizDate = getBusinessDayDate(s.created_at, BUSINESS_DAY_START_HOUR);
         return saleBizDate.getTime() === selectedBizDate.getTime();
       } catch (err) {
@@ -141,7 +163,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Get product names for batch
-    let productBatchMap = new Map<string, string>();
+    const productBatchMap = new Map<string, string>();
     if (batches && batches.length > 0) {
       const productIds = [...new Set((batches || []).map((b: any) => b.product_id))];
       const { data: products } = await supabase
@@ -185,6 +207,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .filter((s: any) => String(s.payment_method || '').toLowerCase() === 'qris')
       .reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
 
+    // Respect optional `limit` query param to control how many recent sales to return.
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam, 10) : 10;
+
+    const recentSalesToReturn = (limit && limit > 0) ? (salesWithData?.slice(0, limit) || []) : (salesWithData || []);
+
     return NextResponse.json({
       outlet,
       assigned_barista: assignedBarista?.[0] || null,
@@ -204,7 +233,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
       product_sales: productSalesSummary,
       product_batches: productsWithQuantity,
-      recent_sales: salesWithData?.slice(0, 10) || []
+      recent_sales: recentSalesToReturn
     });
   } catch (error) {
     console.error('Get outlet details error:', error);

@@ -37,9 +37,11 @@ export async function POST(request: NextRequest) {
     if (bonusTiersError) throw bonusTiersError;
 
     let bonusAmount = 0;
+    let bonusPercentage = 0;
     if (bonusTiers && Array.isArray(bonusTiers) && bonusTiers.length > 0) {
       const bonusResult = calculateBonusFromJson(total_amount, bonusTiers as any[]);
       bonusAmount = Math.round(bonusResult.totalBonus || 0);
+      bonusPercentage = Math.round((bonusResult.effectivePercentage || 0) * 10) / 10;
     }
 
     // Operational and meal costs: prefer explicit values from request, fallback to 0

@@ -56,7 +56,7 @@ export default function ShowcasePage() {
     fetchReturnCounts();
   }, []);
 
-  const fetchProducts = async () => {
+  async function fetchProducts() {
     try {
       setLoading(true);
       const res = await fetch('/api/showcase/inventory');
@@ -69,9 +69,9 @@ export default function ShowcasePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const fetchOutlets = async () => {
+  async function fetchOutlets() {
     try {
       const res = await fetch('/api/outlets');
       const data = await res.json();
@@ -79,9 +79,9 @@ export default function ShowcasePage() {
     } catch (err) {
       console.error('Fetch outlets error:', err);
     }
-  };
+  }
 
-  const fetchReturnCounts = async () => {
+  async function fetchReturnCounts() {
     try {
       const res = await fetch('/api/showcase/returns/count');
       if (!res.ok) {
@@ -96,7 +96,7 @@ export default function ShowcasePage() {
       console.error('Fetch return counts error:', err);
       // Don't break the page, just log the error
     }
-  };
+  }
 
   const openAssignModal = (product: ShowcaseProduct) => {
     setSelectedProduct(product);

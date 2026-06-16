@@ -27,6 +27,10 @@ export async function GET(
       );
     }
 
+    if (!user.id) {
+      return NextResponse.json(errorResponse('Unauthorized'), { status: 401 });
+    }
+
     const result = await callRpc(
       'get_showcase_inventory_summary',
       {

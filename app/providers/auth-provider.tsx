@@ -1,11 +1,12 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import type { AppUser } from '@/lib/store/auth';
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store/auth";
 
 interface AuthContextType {
-  user: any | null; // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user: AppUser;  
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (data.session?.user) {
           // Set user immediately without waiting for profile
-          setUser(data.session.user);
+          setUser(data.session.user as unknown as AppUser);
           
           // Try to fetch profile in background
           const userData = await fetchUserProfile(data.session.user.id);
@@ -101,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
 
         if (session?.user) {
-          setUser(session.user);
+          setUser(session.user as unknown as AppUser);
           
           // Fetch profile in background
           const userData = await fetchUserProfile(session.user.id);
@@ -135,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Set user immediately after login
       if (data.user) {
-        setUser(data.user);
+        setUser(data.user as unknown as AppUser);
         // Profile will be fetched by auth state listener
       }
     } catch (err) {

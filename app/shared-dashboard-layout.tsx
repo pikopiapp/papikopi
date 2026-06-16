@@ -10,6 +10,7 @@ import {
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
   Package, RotateCw, Eye, Calendar, Zap, BarChart3, Clock, AlertCircle,
   Target, DollarSign, Receipt, Users, Briefcase, Calculator, Menu, X, HardDrive
+  , ChevronDown, ChevronRight
 } from 'lucide-react';
 
 export default function GenericDashboardLayout({ children }: { children: ReactNode }) {
@@ -21,14 +22,20 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
-    setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-    
+    // Defer state updates to avoid synchronous setState inside effect (cascading renders)
+    const init = setTimeout(() => {
+      setIsMounted(true);
+      setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+    }, 0);
+
     const timer = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-    }, 1000);
+    }, 60_000);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(init);
+      clearInterval(timer);
+    };
   }, []);
 
   // Keep HTML `dark` class in sync with OS/browser preference so components using `.dark` or `dark:` work.
@@ -107,14 +114,17 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     {
       title: 'Laporan',
       items: [
-        { href: '/dashboard/reports/daily-summary', label: 'Ringkasan Harian', icon: Calendar },
-        { href: '/dashboard/reports/sales', label: 'Penjualan', icon: ClipboardList },
-        { href: '/dashboard/reports/profitloss', label: 'Rugi Laba', icon: TrendingDown },
-        { href: '/dashboard/reports/outlet-stock', label: 'Stok Outlet', icon: Archive },
-        { href: '/dashboard/reports/product-performance', label: 'Performa Produk', icon: Zap },
-        { href: '/dashboard/reports/outlet-comparison', label: 'Perbandingan Outlet', icon: BarChart3 },
-        { href: '/dashboard/reports/batch-aging', label: 'Umur Batch', icon: Clock },
-        { href: '/dashboard/reports/returns-analysis', label: 'Analisis Returns', icon: AlertCircle },
+        { href: '/dashboard/reports', label: 'Overview', icon: BarChart3 },
+        { href: '/dashboard/reports/daily-summary', label: 'Daily Summary', icon: Calendar },
+        { href: '/dashboard/reports/sales', label: 'Sales', icon: Receipt },
+        { href: '/dashboard/reports/profitloss', label: 'Profit & Loss', icon: DollarSign },
+        { href: '/dashboard/reports/product-performance', label: 'Product Performance', icon: Target },
+        { href: '/dashboard/reports/returns-analysis', label: 'Returns Analysis', icon: RotateCw },
+        { href: '/dashboard/reports/outlet-comparison', label: 'Outlet Comparison', icon: Store },
+        { href: '/dashboard/reports/outlet-stock', label: 'Outlet Stock', icon: Archive },
+        { href: '/dashboard/reports/allocation', label: 'Allocation', icon: Package },
+        { href: '/dashboard/reports/warehouse', label: 'Warehouse', icon: Factory },
+        { href: '/dashboard/reports/batch-aging', label: 'Batch Aging', icon: Clock },
       ]
     },
     {
@@ -130,6 +140,52 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
   ];
 
   const allNavItems = navGroups.flatMap(group => group.items);
+
+  const [openGroups, setOpenGroups] = useState<Record<number, boolean>>(() => {
+    // Always render collapsed on first render (server and initial client) to keep HTML deterministic.
+    const serverInitial: Record<number, boolean> = {};
+    navGroups.forEach((_, i) => (serverInitial[i] = false));
+    return serverInitial;
+  });
+
+  // After hydration, hydrate openGroups from localStorage and open group containing active route.
+  useEffect(() => {
+    if (!isMounted) return;
+
+    // load persisted state (if any)
+    let persisted: Record<number, boolean> | null = null;
+    try {
+      const raw = localStorage.getItem('pk:openReportGroups');
+      if (raw) persisted = JSON.parse(raw);
+    } catch (e) {
+      // ignore
+    }
+
+    if (persisted) {
+      // defer to avoid synchronous setState in effect
+      const t = setTimeout(() => setOpenGroups(persisted), 0);
+      return () => clearTimeout(t);
+    }
+
+    // If a group contains the active route and the persisted state doesn't mention it,
+    // open that group. Do not overwrite user's persisted choices.
+    navGroups.forEach((g, i) => {
+      const hasActive = g.items.some(item => isActive(item.href));
+      const persistedHas = persisted ? Object.prototype.hasOwnProperty.call(persisted, String(i)) : false;
+      if (hasActive && !persistedHas) {
+        setOpenGroups(prev => ({ ...prev, [i]: true }));
+      }
+    });
+  }, [isMounted, pathname]);
+
+  // Persist openGroups to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('pk:openReportGroups', JSON.stringify(openGroups));
+    } catch (e) {
+      // ignore
+    }
+  }, [openGroups]);
 
   return (
     <div className="flex h-screen">
@@ -182,43 +238,54 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         {user && (
           <div className="px-6 py-4 border-b border-white/10">
             <div className="surface-muted rounded-xl p-3">
-              <p className="text-sm font-medium text-white hidden lg:block">{user.name}</p>
-              <p className="text-xs text-white/60 capitalize hidden lg:block">{user.role}</p>
-              <p className="text-xs text-white/60 lg:hidden">{user.role}</p>
-            </div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white hidden lg:block">{user.user_metadata?.full_name ?? user.email}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 capitalize hidden lg:block">{user.user_metadata?.role ?? ''}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 lg:hidden">{user.user_metadata?.role ?? ''}</p>
+                </div>
           </div>
         )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-4 md:space-y-6">
-          {navGroups.map((group, idx) => (
-            <div key={idx}>
-              <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3 px-3">
-                {group.title}
-              </h3>
-              <div className="space-y-1">
-                {group.items.map(({ href, label, icon: Icon }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
-                      isActive(href)
-                        ? 'accent-gradient text-accent shadow-lg font-semibold'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white'
-                    }`}
-                    title={label}
-                  >
-                    <Icon size={18} className="shrink-0" />
-                    <span className="font-medium text-xs md:text-sm">{label}</span>
-                    {isActive(href) && (
-                      <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
-                    )}
-                  </Link>
-                ))}
+            {navGroups.map((group, idx) => (
+              <div key={idx}>
+                <button
+                  onClick={() => setOpenGroups(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                  className="w-full flex items-center justify-between px-3 md:px-4 py-2 md:py-3 rounded-md hover:bg-white/05"
+                  aria-expanded={isMounted ? !!openGroups[idx] : false}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">{group.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ChevronDown size={16} className={`${isMounted && openGroups[idx] ? 'rotate-180 transform' : ''} text-white/60 transition-transform duration-200`} />
+                  </div>
+                </button>
+                  <div className={`overflow-hidden transition-all duration-300 mt-2 px-1 ${isMounted && openGroups[idx] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <div className="space-y-1">
+                    {group.items.map(({ href, label, icon: Icon }) => (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
+                          isActive(href)
+                            ? 'accent-gradient text-accent shadow-lg font-semibold'
+                            : 'text-white/70 hover:bg-white/10 hover:text-white'
+                        }`}
+                        title={label}
+                      >
+                        <Icon size={18} className="shrink-0" />
+                        <span className="font-medium text-xs md:text-sm">{label}</span>
+                        {isActive(href) && (
+                          <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
+                        )}
+                      </Link>
+                    ))}
+                    </div>
+                  </div>
               </div>
-            </div>
-          ))}
+            ))}
         </nav>
 
         {/* Logout */}

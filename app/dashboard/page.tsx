@@ -29,10 +29,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchDashboardStats();
-  }, []);
-
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
@@ -90,12 +86,19 @@ export default function DashboardPage() {
     }
   };
 
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchDashboardStats();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   const handleLogout = async () => {
     await logout();
     router.push("/login");
   };
 
-  const role = user?.role as string;
+  const role = (user?.user_metadata?.role ?? '') as string;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -116,7 +119,7 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-6">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.name}!</h2>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
           <p className="text-gray-600">
             Role: <span className="font-semibold capitalize">{role}</span>
           </p>

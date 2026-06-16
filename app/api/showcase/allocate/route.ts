@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let quantityDifference = quantity;
-    let newAllocationQuantity = quantity;
+    const quantityDifference = quantity;
+    const newAllocationQuantity = quantity;
 
     // Update showcase product allocated quantity (always add the requested quantity)
     const newProductAllocated = product.allocated_quantity + quantityDifference;

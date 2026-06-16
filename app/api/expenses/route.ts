@@ -9,8 +9,8 @@ const supabase = createClient(
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
-  let from = date ? `${date}T00:00:00+07:00` : undefined;
-  let to = date ? `${date}T23:59:59+07:00` : undefined;
+  const from = date ? `${date}T00:00:00+07:00` : undefined;
+  const to = date ? `${date}T23:59:59+07:00` : undefined;
   let query = supabase.from("expenses").select("*").order("created_at", { ascending: false });
   if (from && to) {
     query = query.gte("created_at", from).lte("created_at", to);

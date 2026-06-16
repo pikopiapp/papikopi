@@ -65,7 +65,7 @@ export default function ManageUsersPage() {
     fetchUsers();
   }, []);
 
-  const fetchUsers = async () => {
+  async function fetchUsers() {
     try {
       setLoading(true);
       const response = await fetch('/api/users');
@@ -80,7 +80,7 @@ export default function ManageUsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||

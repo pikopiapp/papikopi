@@ -44,7 +44,7 @@ export interface ReassignProductRequest {
   notes?: string;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message: string;
   data?: T;
@@ -54,7 +54,9 @@ export interface ApiResponse<T = any> {
 // AUTH HELPERS
 // ===================================
 
-export async function getAuthUser(request: NextRequest) {
+export type AuthUser = { id?: string; email?: string | null; role?: string } | null;
+
+export async function getAuthUser(request: NextRequest): Promise<AuthUser> {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
     
@@ -92,13 +94,13 @@ export async function getAuthUser(request: NextRequest) {
   }
 }
 
-export function requireAuth(user: any | null) {
+export function requireAuth(user: AuthUser) {
   if (!user) {
     throw new Error('UNAUTHORIZED');
   }
 }
 
-export async function requireRole(user: any, requiredRoles: string[]) {
+export async function requireRole(user: AuthUser, requiredRoles: string[]) {
   if (!user) {
     throw new Error('UNAUTHORIZED');
   }
@@ -152,10 +154,13 @@ export function errorResponse(message: string): ApiResponse {
 
 export async function callRpc(
   functionName: string,
-  params: Record<string, any>,
-  userId: string
+  params: Record<string, unknown>,
+  userId?: string
 ) {
   try {
+    if (!userId) {
+      throw new Error('UNAUTHORIZED');
+    }
     // Add user context if not present
     if (!params.p_assigned_by && !params.p_received_by && !params.p_initiated_by && !params.p_checked_by && !params.p_moved_by) {
       // Some functions might need user_id, store it for later
@@ -180,8 +185,8 @@ export async function callRpc(
 // VALIDATION HELPERS
 // ===================================
 
-export function validateAssignProductRequest(body: any): AssignProductRequest {
-  const { product_unit_id, outlet_id, notes } = body;
+export function validateAssignProductRequest(body: Record<string, unknown>): AssignProductRequest {
+  const { product_unit_id, outlet_id, notes } = body as Record<string, unknown>;
 
   if (!product_unit_id || !outlet_id) {
     throw new Error('product_unit_id dan outlet_id harus diisi');
@@ -191,11 +196,12 @@ export function validateAssignProductRequest(body: any): AssignProductRequest {
     throw new Error('product_unit_id dan outlet_id harus berupa number');
   }
 
-  return { product_unit_id, outlet_id, notes };
+  const notesVal = typeof notes === 'string' ? notes : undefined;
+  return { product_unit_id: product_unit_id as number, outlet_id: outlet_id as number, notes: notesVal };
 }
 
-export function validateReceiveProductRequest(body: any): ReceiveProductRequest {
-  const { assignment_id, notes } = body;
+export function validateReceiveProductRequest(body: Record<string, unknown>): ReceiveProductRequest {
+  const { assignment_id, notes } = body as Record<string, unknown>;
 
   if (!assignment_id) {
     throw new Error('assignment_id harus diisi');
@@ -205,11 +211,12 @@ export function validateReceiveProductRequest(body: any): ReceiveProductRequest 
     throw new Error('assignment_id harus berupa number');
   }
 
-  return { assignment_id, notes };
+  const notesVal = typeof notes === 'string' ? notes : undefined;
+  return { assignment_id: assignment_id as number, notes: notesVal };
 }
 
-export function validateInitiateReturnRequest(body: any): InitiateReturnRequest {
-  const { product_unit_id, outlet_id, return_reason } = body;
+export function validateInitiateReturnRequest(body: Record<string, unknown>): InitiateReturnRequest {
+  const { product_unit_id, outlet_id, return_reason } = body as Record<string, unknown>;
 
   if (!product_unit_id || !outlet_id || !return_reason) {
     throw new Error('product_unit_id, outlet_id, dan return_reason harus diisi');
@@ -229,28 +236,29 @@ export function validateInitiateReturnRequest(body: any): InitiateReturnRequest 
     throw new Error('return_reason harus berupa string yang tidak kosong');
   }
 
-  return { product_unit_id, outlet_id, return_reason };
+  return { product_unit_id: product_unit_id as number, outlet_id: outlet_id as string, return_reason: return_reason as string };
 }
 
-export function validateCheckReturnRequest(body: any): Omit<CheckReturnRequest, 'return_id'> {
-  const { condition_status, condition_notes, resolution_action } = body;
+export function validateCheckReturnRequest(body: Record<string, unknown>): Omit<CheckReturnRequest, 'return_id'> {
+  const { condition_status, condition_notes, resolution_action } = body as Record<string, unknown>;
 
   const validConditions = ['sellable', 'damaged', 'partially_damaged'];
   const validActions = ['return_to_showcase', 'archive_as_damaged', 'credit_outlet'];
 
-  if (!condition_status || !validConditions.includes(condition_status)) {
+  if (typeof condition_status !== 'string' || !validConditions.includes(condition_status)) {
     throw new Error('condition_status harus salah satu dari: sellable, damaged, partially_damaged');
   }
 
-  if (!resolution_action || !validActions.includes(resolution_action)) {
+  if (typeof resolution_action !== 'string' || !validActions.includes(resolution_action)) {
     throw new Error('resolution_action harus salah satu dari: return_to_showcase, archive_as_damaged, credit_outlet');
   }
 
-  return { condition_status, condition_notes, resolution_action };
+  const notesVal = typeof condition_notes === 'string' ? condition_notes : '';
+  return { condition_status: condition_status as 'sellable' | 'damaged' | 'partially_damaged', condition_notes: notesVal, resolution_action: resolution_action as 'return_to_showcase' | 'archive_as_damaged' | 'credit_outlet' };
 }
 
-export function validateReassignProductRequest(body: any): ReassignProductRequest {
-  const { product_unit_id, old_outlet_id, new_outlet_id, notes } = body;
+export function validateReassignProductRequest(body: Record<string, unknown>): ReassignProductRequest {
+  const { product_unit_id, old_outlet_id, new_outlet_id, notes } = body as Record<string, unknown>;
 
   if (!product_unit_id || !old_outlet_id || !new_outlet_id) {
     throw new Error('product_unit_id, old_outlet_id, dan new_outlet_id harus diisi');
@@ -260,5 +268,6 @@ export function validateReassignProductRequest(body: any): ReassignProductReques
     throw new Error('Semua ID harus berupa number');
   }
 
-  return { product_unit_id, old_outlet_id, new_outlet_id, notes };
+  const notesVal = typeof notes === 'string' ? notes : undefined;
+  return { product_unit_id: product_unit_id as number, old_outlet_id: old_outlet_id as number, new_outlet_id: new_outlet_id as number, notes: notesVal };
 }

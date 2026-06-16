@@ -31,9 +31,7 @@ export default function ReturnsAnalysisReport() {
   const [customStartDate, setCustomStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
-  useEffect(() => {
-    fetchReturnsData();
-  }, [period, customStartDate, customEndDate]);
+  // initial fetch moved below function declaration
 
   const getDateRange = () => {
     const now = new Date();
@@ -65,7 +63,7 @@ export default function ReturnsAnalysisReport() {
     return { startDate, endDate };
   };
 
-  const fetchReturnsData = async () => {
+  async function fetchReturnsData() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
@@ -90,7 +88,7 @@ export default function ReturnsAnalysisReport() {
 
       // Group returns by reason
       const reasonMap: { [key: string]: number } = {};
-      let totalReturnValue = 0;
+      const totalReturnValue = 0;
 
       if (returns) {
         for (const ret of returns) {
@@ -134,7 +132,7 @@ export default function ReturnsAnalysisReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const getImpactColor = (impact: string) => {
     switch(impact) {
@@ -143,6 +141,10 @@ export default function ReturnsAnalysisReport() {
       case 'Low': return 'text-green-600';
       default: return 'text-gray-600';
     }
+
+    useEffect(() => {
+      fetchReturnsData();
+    }, [period, customStartDate, customEndDate]);
   };
 
   const formatCurrency = (value: number) => {

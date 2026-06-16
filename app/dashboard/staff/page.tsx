@@ -73,8 +73,12 @@ const fetchStaff = useCallback(async () => {
   }, []);
 
 useEffect(() => {
-    fetchStaff();
-    fetchOutlets();
+    // defer to avoid synchronous setState inside effect
+    const t = setTimeout(() => {
+      fetchStaff();
+      fetchOutlets();
+    }, 0);
+    return () => clearTimeout(t);
   }, [fetchStaff, fetchOutlets]);
 
   const handleSubmit = async (e: React.FormEvent) => {

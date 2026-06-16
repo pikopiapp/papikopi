@@ -57,7 +57,7 @@ export default function InvestorManagementPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       setLoading(true);
 
@@ -119,7 +119,7 @@ export default function InvestorManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleAddAssignment = async () => {
     if (!formData.investor_id || !formData.outlet_id || !formData.investment_amount || !formData.margin_percentage) {

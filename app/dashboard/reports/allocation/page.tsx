@@ -20,10 +20,6 @@ export default function AllocationReport() {
     avgUtilization: 0,
   });
 
-  useEffect(() => {
-    fetchAllocationData();
-  }, []);
-
   const fetchAllocationData = async () => {
     try {
       setLoading(true);
@@ -75,6 +71,13 @@ export default function AllocationReport() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchAllocationData();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="space-y-6">

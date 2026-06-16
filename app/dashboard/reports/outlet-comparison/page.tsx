@@ -30,9 +30,7 @@ export default function OutletComparisonReport() {
   const [customStartDate, setCustomStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
-  useEffect(() => {
-    fetchOutletData();
-  }, [period, customStartDate, customEndDate]);
+  // initial fetch moved below function declarations
 
   const getDateRange = () => {
     const now = new Date();
@@ -64,7 +62,7 @@ export default function OutletComparisonReport() {
     return { startDate, endDate };
   };
 
-  const fetchOutletData = async () => {
+  async function fetchOutletData() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
@@ -175,7 +173,7 @@ export default function OutletComparisonReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('id-ID', {
@@ -185,6 +183,10 @@ export default function OutletComparisonReport() {
       maximumFractionDigits: 0,
     }).format(amount);
   };
+
+  useEffect(() => {
+    fetchOutletData();
+  }, [period, customStartDate, customEndDate]);
 
   if (loading) {
     return (
