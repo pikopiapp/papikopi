@@ -190,15 +190,7 @@ function CashHandoverPageContent() {
   return (
     <div className="p-6 min-h-screen" style={{ background: 'linear-gradient(135deg, var(--surface-start), var(--surface-end))' }}>
 
-      <div className="mb-6">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center text-amber-600 hover:text-amber-700 transition-colors"
-        >
-          <ArrowLeft size={20} className="mr-2" />
-          Kembali
-        </button>
-      </div>
+
 
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">

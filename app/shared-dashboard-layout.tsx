@@ -77,8 +77,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       title: 'Beranda',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      ]
+      ],
     },
+
     {
       title: 'Toko & Penjualan',
       items: [
@@ -90,8 +91,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/wages', label: 'Gajian', icon: DollarSign },
         { href: '/dashboard/bonus-calculator', label: 'Bonus Calculator', icon: Calculator },
         { href: '/dashboard/outlets/performance', label: 'Performance', icon: Target },
-      ]
+      ],
     },
+
     {
       title: 'Produksi & Stok',
       items: [
@@ -100,8 +102,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/showcase', label: 'Showcase', icon: LayoutDashboard },
         { href: '/showcase/assign', label: 'Alokasi Produk', icon: Package },
         { href: '/showcase/returns', label: 'Returns', icon: RotateCw },
-      ]
+      ],
     },
+
     {
       title: 'Investor',
       items: [
@@ -109,8 +112,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/investor/outlets', label: 'Outlet Investasi', icon: Store },
         { href: '/dashboard/investor/profit-history', label: 'Laporan Profit', icon: TrendingDown },
         { href: '/dashboard/investor/settings', label: 'Pengaturan', icon: Settings },
-      ]
+      ],
     },
+
     {
       title: 'Laporan',
       items: [
@@ -125,8 +129,9 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/reports/allocation', label: 'Allocation', icon: Package },
         { href: '/dashboard/reports/warehouse', label: 'Warehouse', icon: Factory },
         { href: '/dashboard/reports/batch-aging', label: 'Batch Aging', icon: Clock },
-      ]
+      ],
     },
+
     {
       title: 'Kelola Sistem',
       items: [
@@ -135,7 +140,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         { href: '/dashboard/products', label: 'Produk', icon: ShoppingBag },
         { href: '/dashboard/messaging', label: 'Chat', icon: MessageSquare },
         { href: '/dashboard/settings', label: 'Pengaturan Sistem', icon: Settings },
-      ]
+      ],
     }
   ];
 
@@ -247,45 +252,83 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-4 md:space-y-6">
-            {navGroups.map((group, idx) => (
-              <div key={idx}>
-                <button
-                  onClick={() => setOpenGroups(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                  className="w-full flex items-center justify-between px-3 md:px-4 py-2 md:py-3 rounded-md hover:bg-white/05"
-                  aria-expanded={isMounted ? !!openGroups[idx] : false}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">{group.title}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <ChevronDown size={16} className={`${isMounted && openGroups[idx] ? 'rotate-180 transform' : ''} text-white/60 transition-transform duration-200`} />
-                  </div>
-                </button>
-                  <div className={`overflow-hidden transition-all duration-300 mt-2 px-1 ${isMounted && openGroups[idx] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-                    <div className="space-y-1">
-                    {group.items.map(({ href, label, icon: Icon }) => (
+            {navGroups.map((group, idx) => {
+              // If group only has 1 item (e.g. Beranda), don't render collapsible UI.
+              if (group.items.length === 1) {
+                const item = group.items[0];
+                return (
+                  <div key={idx}>
+                    <div className="px-3 md:px-4 py-2 md:py-3">
+                      <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">{group.title}</div>
                       <Link
-                        key={href}
-                        href={href}
+                        href={item.href}
                         onClick={() => setSidebarOpen(false)}
                         className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
-                          isActive(href)
+                          isActive(item.href)
                             ? 'accent-gradient text-accent shadow-lg font-semibold'
                             : 'text-white/70 hover:bg-white/10 hover:text-white'
                         }`}
-                        title={label}
+                        title={item.label}
                       >
-                        <Icon size={18} className="shrink-0" />
-                        <span className="font-medium text-xs md:text-sm">{label}</span>
-                        {isActive(href) && (
+                        <item.icon size={18} className="shrink-0" />
+                        <span className="font-medium text-xs md:text-sm">{item.label}</span>
+                        {isActive(item.href) && (
                           <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
                         )}
                       </Link>
-                    ))}
                     </div>
                   </div>
-              </div>
-            ))}
+                );
+              }
+
+              return (
+                <div key={idx}>
+                  <button
+                    onClick={() => setOpenGroups(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                    className="w-full flex items-center justify-between px-3 md:px-4 py-2 md:py-3 rounded-md hover:bg-white/05"
+                    aria-expanded={isMounted ? !!openGroups[idx] : false}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">{group.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <ChevronDown
+                        size={16}
+                        className={`${isMounted && openGroups[idx] ? 'rotate-180 transform' : ''} text-white/60 transition-transform duration-200`}
+                      />
+                    </div>
+                  </button>
+
+                  <div
+                    className={`overflow-hidden transition-all duration-300 mt-2 px-1 ${
+                      isMounted && openGroups[idx] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      {group.items.map(({ href, label, icon: Icon }) => (
+                        <Link
+                          key={href}
+                          href={href}
+                          onClick={() => setSidebarOpen(false)}
+                          className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
+                            isActive(href)
+                              ? 'accent-gradient text-accent shadow-lg font-semibold'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white'
+                          }`}
+                          title={label}
+                        >
+                          <Icon size={18} className="shrink-0" />
+                          <span className="font-medium text-xs md:text-sm">{label}</span>
+                          {isActive(href) && (
+                            <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
         </nav>
 
         {/* Logout */}
