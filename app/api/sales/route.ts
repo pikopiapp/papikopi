@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { calculateBonusFromJson } from '@/lib/bonus-calculator';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +11,8 @@ export async function POST(request: NextRequest) {
       total_amount,
       payment_method,
       items,
+      operational_cost: operationalCostFromBody,
+      meal_amount: mealAmountFromBody,
     } = body;
 
     if (!outlet_id || !barista_id || !total_amount || !payment_method || !items) {
@@ -25,34 +28,26 @@ export async function POST(request: NextRequest) {
       hppTotal += item.hpp * item.quantity;
     }
 
-    // Get bonus tiers
-    const { data: bonusTiers } = await supabase
+    // Get bonus tiers from DB and calculate progressive bonus
+    const { data: bonusTiers, error: bonusTiersError } = await supabase
       .from("bonus_tiers")
-      .select("*")
+      .select("min, max, percentage")
       .order("min", { ascending: true });
 
-    // Calculate bonus (progressive omzet)
-    let bonusPercentage = 0;
-    if (bonusTiers) {
-      for (const tier of bonusTiers) {
-        if (total_amount >= tier.min && total_amount < tier.max) {
-          bonusPercentage = tier.percentage;
-          break;
-        }
-        if (tier.max === null && total_amount >= tier.min) {
-          bonusPercentage = tier.percentage;
-          break;
-        }
-      }
+    if (bonusTiersError) throw bonusTiersError;
+
+    let bonusAmount = 0;
+    if (bonusTiers && Array.isArray(bonusTiers) && bonusTiers.length > 0) {
+      const bonusResult = calculateBonusFromJson(total_amount, bonusTiers as any[]);
+      bonusAmount = Math.round(bonusResult.totalBonus || 0);
     }
 
-    const bonusAmount = (total_amount * bonusPercentage) / 100;
-
-    // Assume operational cost for now (can be fetched from DB)
-    const operationalCost = 0;
+    // Operational and meal costs: prefer explicit values from request, fallback to 0
+    const operationalCost = Number(operationalCostFromBody ?? 0);
+    const mealAmount = Number(mealAmountFromBody ?? 0);
 
     // Calculate profit
-    const profit = total_amount - hppTotal - bonusAmount - operationalCost;
+    const profit = total_amount - hppTotal - bonusAmount - operationalCost - mealAmount;
 
     // Create sale
     const { data: saleData, error: saleError } = await supabase
@@ -64,6 +59,8 @@ export async function POST(request: NextRequest) {
         payment_method,
         hpp_total: hppTotal,
         bonus_amount: bonusAmount,
+        operational_cost: operationalCost,
+        meal_amount: mealAmount,
         profit,
       })
       .select()

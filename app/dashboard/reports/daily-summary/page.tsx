@@ -11,6 +11,9 @@ interface DailySalesData {
   revenue: number;
   orders: number;
   profit: number;
+  hpp?: number;
+  bonus?: number;
+  meal?: number;
 }
 
 export default function DailySummaryReport() {
@@ -18,84 +21,83 @@ export default function DailySummaryReport() {
   const [data, setData] = useState<DailySalesData[]>([]);
   const [todayStats, setTodayStats] = useState({ totalSales: 0, totalOrders: 0, avgOrderValue: 0, profit: 0 });
   const [yesterdayStats, setYesterdayStats] = useState({ totalSales: 0, totalOrders: 0 });
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [outletId, setOutletId] = useState<string | null>(null);
+  const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
+    fetchOutlets();
     fetchSalesData();
   }, []);
 
-  const fetchSalesData = async () => {
+  const fetchOutlets = async () => {
     try {
+      const { data: odata } = await supabase.from('outlets').select('id, name').order('name');
+      if (odata) setOutlets(odata as any);
+    } catch (err) {
+      console.error('Error fetching outlets', err);
+    }
+  };
+
+  const fetchSalesData = async (opts?: { start?: string; end?: string; outlet?: string | null }) => {
+    try {
+      console.time('fetchSalesData');
       setLoading(true);
-      
-      // Get last 7 days of sales data
-      const sevenDaysAgo = subDays(new Date(), 6);
-      const startDate = startOfDay(sevenDaysAgo).toISOString();
-      
-      // Fetch all sales for the past 7 days
-      const { data: salesData, error } = await supabase
-        .from('sales')
-        .select('id, total_amount, profit, created_at')
-        .gte('created_at', startDate)
-        .order('created_at', { ascending: false });
+      const s = opts?.start ?? startDate;
+      const e = opts?.end ?? endDate;
+      const outlet = opts?.outlet ?? outletId;
 
-      if (error) throw error;
+      const q = new URLSearchParams();
+      if (s) q.set('start', s);
+      if (e) q.set('end', e);
+      if (outlet) q.set('outlet', outlet);
 
-      // Group sales by date
-      const salesByDate: { [key: string]: DailySalesData } = {};
-      
-      for (let i = 0; i < 7; i++) {
-        const date = subDays(new Date(), 6 - i);
-        const dateKey = format(date, 'yyyy-MM-dd');
-        const dayName = format(date, 'EEE');
-        
-        salesByDate[dateKey] = {
-          date: dayName.substring(0, 3),
-          sales: 0,
-          revenue: 0,
-          orders: 0,
-          profit: 0
-        };
+      const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
+      const json = await res.json();
+      if (json?.data) {
+        // convert date key to label (Mon/Tue)
+        const chartData = (json.data as any[]).map((r) => ({
+          date: format(new Date(r.date), 'EEE').substring(0, 3),
+          sales: r.revenue,
+          revenue: r.revenue,
+          orders: r.orders,
+          profit: r.profit,
+          hpp: r.hpp || 0,
+          bonus: r.bonus || 0,
+          meal: r.meal || 0,
+        }));
+        setData(chartData);
       }
-
-      // Process sales data
-      if (salesData) {
-        for (const sale of salesData) {
-          const dateKey = format(new Date(sale.created_at), 'yyyy-MM-dd');
-          if (salesByDate[dateKey]) {
-            salesByDate[dateKey].sales += Number(sale.total_amount);
-            salesByDate[dateKey].revenue += Number(sale.total_amount);
-            salesByDate[dateKey].orders += 1;
-            salesByDate[dateKey].profit += Number(sale.profit);
-          }
-        }
-      }
-
-      const chartData = Object.values(salesByDate);
-      setData(chartData);
 
       // Calculate today's stats
       const today = format(new Date(), 'yyyy-MM-dd');
-      const todayData = salesByDate[today];
-      const avgValue = todayData.orders > 0 ? todayData.sales / todayData.orders : 0;
+      const todayData = json?.data?.find((d: any) => d.date === today) || { revenue: 0, orders: 0, profit: 0, hpp: 0, bonus: 0, meal: 0 };
+      const avgValue = todayData.orders > 0 ? (todayData.revenue || 0) / todayData.orders : 0;
       setTodayStats({
-        totalSales: todayData.sales,
-        totalOrders: todayData.orders,
+        totalSales: todayData.revenue || 0,
+        totalOrders: todayData.orders || 0,
         avgOrderValue: avgValue,
-        profit: todayData.profit
+        profit: todayData.profit || 0
       });
 
       // Calculate yesterday's stats for comparison
       const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-      const yesterdayData = salesByDate[yesterday];
+      const yesterdayData = json?.data?.find((d: any) => d.date === yesterday) || { revenue: 0, orders: 0, hpp: 0 };
       setYesterdayStats({
-        totalSales: yesterdayData.sales,
-        totalOrders: yesterdayData.orders
+        totalSales: yesterdayData.revenue || 0,
+        totalOrders: yesterdayData.orders || 0
       });
 
     } catch (err) {
       console.error('Error fetching sales data:', err);
     } finally {
       setLoading(false);
+      console.timeEnd('fetchSalesData');
     }
   };
 
@@ -127,6 +129,35 @@ export default function DailySummaryReport() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex gap-3 items-end">
+          <div>
+            <label className="text-sm text-gray-600">Start</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 p-2 border rounded" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">End</label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 p-2 border rounded" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Outlet</label>
+            <select value={outletId ?? ''} onChange={(e) => setOutletId(e.target.value || null)} className="mt-1 p-2 border rounded">
+              <option value="">All outlets</option>
+              {outlets.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={() => fetchSalesData({ start: startDate, end: endDate, outlet: outletId })}
+              className="bg-blue-600 text-white px-4 py-2 rounded"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Daily Summary</h1>
         <p className="text-gray-600">Ringkasan penjualan harian</p>
       </div>
@@ -156,6 +187,21 @@ export default function DailySummaryReport() {
           <p className="text-4xl font-bold text-purple-600 mt-2">{formatCurrency(todayStats.profit)}</p>
           <p className="text-sm text-gray-500 mt-1">Today's profit</p>
         </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-700">Total HPP</h3>
+          <p className="text-4xl font-bold text-red-600 mt-2">{formatCurrency((data.reduce((s, d) => s + (d.hpp || 0), 0) as number))}</p>
+          <p className="text-sm text-gray-500 mt-1">Total cost of goods sold (range)</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-700">Total Bonus</h3>
+          <p className="text-4xl font-bold text-indigo-600 mt-2">{formatCurrency((data.reduce((s, d) => s + (d.bonus || 0), 0) as number))}</p>
+          <p className="text-sm text-gray-500 mt-1">Total bonus paid (range)</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-700">Total Meal</h3>
+          <p className="text-4xl font-bold text-yellow-600 mt-2">{formatCurrency((data.reduce((s, d) => s + (d.meal || 0), 0) as number))}</p>
+          <p className="text-sm text-gray-500 mt-1">Total meal allowances (range)</p>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -171,6 +217,9 @@ export default function DailySummaryReport() {
             />
             <Legend />
             <Bar dataKey="revenue" fill="#8884d8" name="Revenue" />
+            <Bar dataKey="hpp" fill="#ff7300" name="HPP" />
+            <Bar dataKey="bonus" fill="#5b21b6" name="Bonus" />
+            <Bar dataKey="meal" fill="#f59e0b" name="Meal" />
             <Bar dataKey="profit" fill="#82ca9d" name="Profit" />
           </BarChart>
         </ResponsiveContainer>

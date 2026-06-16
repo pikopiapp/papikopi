@@ -59,6 +59,8 @@ export interface Sale {
   payment_method: "cash" | "qris";
   hpp_total: number;
   bonus_amount: number;
+  operational_cost?: number;
+  meal_amount?: number;
   profit: number;
   created_at: string;
 }

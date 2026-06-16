@@ -74,41 +74,37 @@ export default function POSPage() {
         setLoading(false);
         return;
       }
-      // Create sale
-      const { data: saleData, error: saleError } = await supabase
-        .from("sales")
-        .insert({
+      // Send full sale to server API which computes HPP and inserts sale + items atomically
+      const itemsPayload = cart.items.map((it) => ({
+        product_id: it.product.id,
+        quantity: it.quantity,
+        price: it.product.price,
+        hpp: it.product.hpp,
+      }));
+
+      const res = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           outlet_id: outletId,
           barista_id: user.id,
           total_amount: cart.getTotal(),
           payment_method: paymentMethod,
-          hpp_total: 0,
-          bonus_amount: 0,
-          profit: 0,
-        })
-        .select()
-        .single();
+          items: itemsPayload,
+        }),
+      });
 
-      if (saleError) throw saleError;
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to create sale');
 
+      const saleId = json.sale_id;
       // Create QR code
-      const qrData = `/o/${saleData.id}`;
+      const qrData = `/o/${saleId}`;
       const qrImage = await QRCode.toDataURL(qrData);
       setQrCode(qrImage);
 
-      // Add sale items
-      for (const item of cart.items) {
-        await supabase.from("sale_items").insert({
-          sale_id: saleData.id,
-          product_id: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-          hpp: item.product.hpp,
-        });
-      }
-
       // Save sale total before clearing cart
-      const total = saleData.total_amount || cart.getTotal();
+      const total = cart.getTotal();
       setSaleTotal(Number(total));
       setSaleSaved(true);
       cart.clear();

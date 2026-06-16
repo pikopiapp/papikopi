@@ -116,6 +116,7 @@ export function calculateBonus(
   isHoliday = false,
   customTiers?: BonusTier[]
 ): BonusCalculationResult {
+  // Special override: treat `isHoliday` as a single flat 20% override
   const tiers = customTiers ?? (isHoliday ? HOLIDAY_BONUS_TIERS : DEFAULT_BONUS_TIERS);
 
   // Validate input
@@ -126,6 +127,31 @@ export function calculateBonus(
       breakdown: [],
       effectivePercentage: 0,
       isSpecial: false,
+    };
+  }
+
+  // If special override (holiday/special), apply a single flat tier of 20%
+  if (isHoliday) {
+    const totalBonus = omset * 0.2;
+    const breakdown: TierBreakdown[] = [];
+    if (omset > 0) {
+      breakdown.push({
+        tierNumber: 1,
+        label: "Special Override",
+        fromAmount: 0,
+        toAmount: omset,
+        amount: omset,
+        percentage: 20,
+        bonus: totalBonus,
+      });
+    }
+
+    return {
+      omset,
+      totalBonus,
+      breakdown,
+      effectivePercentage: omset > 0 ? 20 : 0,
+      isSpecial: true,
     };
   }
 
@@ -266,6 +292,9 @@ export function calculateMealAllowance(
   omset: number,
   allowanceConfig: MealAllowance = MEAL_ALLOWANCE
 ): number {
+  // If no sales, no meal allowance
+  if (!omset || omset === 0) return 0;
+
   return omset >= allowanceConfig.threshold
     ? allowanceConfig.aboveThreshold
     : allowanceConfig.belowThreshold;
