@@ -118,7 +118,6 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     {
       title: 'Laporan',
       items: [
-        { href: '/dashboard/reports', label: 'Overview', icon: BarChart3 },
         { href: '/dashboard/reports/daily-summary', label: 'Daily Summary', icon: Calendar },
         { href: '/dashboard/reports/sales', label: 'Sales', icon: Receipt },
         { href: '/dashboard/reports/profitloss', label: 'Profit & Loss', icon: DollarSign },
