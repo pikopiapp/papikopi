@@ -58,6 +58,12 @@ export default function TransactionDetailPage() {
 
   const selectedDateStr = new Date(selectedDate).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
+  const formatRupiah = (v: number) => {
+    if (!Number.isFinite(v)) return 'Rp0';
+    // Format as Indonesian Rupiah with no fractional digits, e.g. "Rp12.500"
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(v));
+  };
+
   useEffect(() => {
     const fetchSales = async () => {
       try {
@@ -146,7 +152,7 @@ export default function TransactionDetailPage() {
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <p className="text-gray-600 text-sm">Total Omset</p>
-          <p className="text-2xl font-bold text-blue-600">Rp{(totalSales / 1000).toLocaleString('id-ID')}.000,-</p>
+          <p className="text-2xl font-bold text-blue-600">{formatRupiah(totalSales)}</p>
         </div>
       </div>
 
@@ -200,10 +206,10 @@ export default function TransactionDetailPage() {
                             {item.product_name}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-800">
-                            Rp{(item.price / 1000).toLocaleString('id-ID')}.000,-
+                            {formatRupiah(item.price)}
                           </td>
                           <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">
-                            Rp{((item.price * item.quantity) / 1000).toLocaleString('id-ID')}.000,-
+                            {formatRupiah(item.price * item.quantity)}
                           </td>
                         </tr>
                       );
