@@ -84,6 +84,9 @@ export async function GET(req: Request) {
         map[key].profit += Number(r.profit || 0);
         map[key].orders += 1;
         map[key].hpp += Number(r.hpp_total || 0);
+        // prefer stored bonus/meal values when available (sum per sale)
+        map[key].bonus += Number(r.bonus_amount || 0);
+        map[key].meal += Number(r.meal_amount || 0);
       }
     }
 
@@ -102,9 +105,11 @@ export async function GET(req: Request) {
     const aggregated = Object.values(map).map((v) => {
       const revenue = Math.round(v.revenue);
       const hpp = Math.round(v.hpp);
-      const bonusCalc = calculateBonusFromJson(revenue, bonusTiers as any[]);
-      const bonus = Math.round(bonusCalc.totalBonus || 0);
-      const meal = Math.round(calculateMealAllowance(revenue));
+      // If stored bonus/meal exist (sum of sale-level columns), prefer them; otherwise compute from revenue
+      const storedBonus = Math.round(v.bonus || 0);
+      const storedMeal = Math.round(v.meal || 0);
+      const bonus = storedBonus > 0 ? storedBonus : Math.round((calculateBonusFromJson(revenue, bonusTiers as any[])?.totalBonus) || 0);
+      const meal = storedMeal > 0 ? storedMeal : Math.round(calculateMealAllowance(revenue));
       const profit = Math.round(revenue - hpp - bonus - meal);
 
       return {
