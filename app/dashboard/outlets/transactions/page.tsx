@@ -261,22 +261,20 @@ export default function TransactionsPage() {
     const rank = rankMap.get(outletId) ?? totalOutlets - 1;
     const darkGreen = '#065f46';
 
-    // Requested mapping:
-    // 1 -> dark green (100%)
-    // 2 -> dark green (60% strength)
-    // 3 -> dark green (30% strength)
-    // others -> muted light gray
+    // Map top 3 to green shades and ensure readable text:
+    // rank 0..2 -> white text (high contrast)
+    // others -> gray text in light mode, medium gray in dark mode
     if (rank === 0) {
       return { background: `linear-gradient(90deg, ${darkGreen} 0%, ${darkGreen} 100%)`, textClass: 'text-white' };
     }
     if (rank === 1) {
-      return { background: `linear-gradient(90deg, rgba(6,95,70,0.6) 0%, rgba(6,95,70,0.2) 100%)`, textClass: 'text-gray-800' };
+      return { background: `linear-gradient(90deg, rgba(6,95,70,0.6) 0%, rgba(6,95,70,0.2) 100%)`, textClass: 'text-white' };
     }
     if (rank === 2) {
-      return { background: `linear-gradient(90deg, rgba(6,95,70,0.3) 0%, rgba(6,95,70,0.1) 100%)`, textClass: 'text-gray-800' };
+      return { background: `linear-gradient(90deg, rgba(6,95,70,0.3) 0%, rgba(6,95,70,0.1) 100%)`, textClass: 'text-white' };
     }
 
-    return { background: '#f3f4f6', textClass: 'text-gray-800' };
+    return { background: '#374151', textClass: 'text-white' };
   };
 
   // Calculate min/max for heatmap coloring (based on omset_today)
@@ -388,7 +386,9 @@ export default function TransactionsPage() {
             {sortedOutlets.length} outlet {sortedOutlets.filter(o => (o.omset_today || 0) > 0).length > 0 ? `(${sortedOutlets.filter(o => (o.omset_today || 0) > 0).length} dengan penjualan)` : '(belum ada penjualan)'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sortedOutlets.map((outlet) => (
+            {sortedOutlets.map((outlet) => {
+              const headerStyle = getGradientStyle(outlet.outlet_id);
+              return (
               <div
                 key={outlet.outlet_id}
                 className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden hover:shadow-md transition-all"
@@ -396,8 +396,8 @@ export default function TransactionsPage() {
                 {/* Colored Header - Outlet Name & Barista */}
                 <div
                   // Apply mapped background and text color per rank
-                  style={{ background: getGradientStyle(outlet.outlet_id).background }}
-                  className={`p-4 ${getGradientStyle(outlet.outlet_id).textClass} dark:text-gray-300 relative`}
+                  style={{ background: headerStyle.background }}
+                  className={`p-4 ${headerStyle.textClass} relative`}
                 >
                   {/* Trophy Badge */}
                   {getTopBadge(outlet.outlet_id, 0) && (
@@ -468,7 +468,8 @@ export default function TransactionsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
