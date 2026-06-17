@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from 'react';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
 
@@ -21,6 +21,11 @@ interface OutletStats {
 type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
 const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0'];
+
+const OutletRadarChart = dynamic(() => import('../components/Charts/OutletRadarChart'), {
+  ssr: false,
+  loading: () => <div className="text-center py-8 text-gray-500">Memuat chart...</div>,
+});
 
 export default function OutletComparisonReport() {
   const [loading, setLoading] = useState(true);
@@ -66,90 +71,13 @@ export default function OutletComparisonReport() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
-
-      // Fetch all sales with outlet info
-      const { data: salesData, error } = await supabase
-        .from('sales')
-        .select(`
-          id,
-          outlet_id,
-          total_amount,
-          profit,
-          created_at,
-          outlets (
-            id,
-            name
-          )
-        `)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString());
-
-      if (error) throw error;
-
-      // Get all outlets for reference
-      const { data: allOutlets } = await supabase
-        .from('outlets')
-        .select('id, name');
-
-      const outletMap: { [key: string]: { name: string; sales: number; profit: number; count: number; yesterday: number } } = {};
-
-      // Initialize all outlets
-      allOutlets?.forEach(outlet => {
-        outletMap[outlet.id] = { name: outlet.name, sales: 0, profit: 0, count: 0, yesterday: 0 };
-      });
-
-      // Process current period data
-      if (salesData) {
-        for (const sale of salesData) {
-          const outletId = sale.outlet_id;
-          if (outletMap[outletId]) {
-            outletMap[outletId].sales += Number(sale.total_amount);
-            outletMap[outletId].profit += Number(sale.profit);
-            outletMap[outletId].count += 1;
-          }
-        }
-      }
-
-      // Fetch yesterday's data for growth calculation
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStart = startOfMonth(yesterday);
-      
-      const { data: yesterdayData } = await supabase
-        .from('sales')
-        .select('outlet_id, total_amount')
-        .gte('created_at', yesterdayStart.toISOString())
-        .lte('created_at', yesterday.toISOString());
-
-      if (yesterdayData) {
-        for (const sale of yesterdayData) {
-          if (outletMap[sale.outlet_id]) {
-            outletMap[sale.outlet_id].yesterday += Number(sale.total_amount);
-          }
-        }
-      }
-
-      // Convert to stats array
-      const stats: OutletStats[] = Object.values(outletMap)
-        .filter(o => o.count > 0)
-        .map(outlet => {
-          const growth = outlet.yesterday > 0 
-            ? (((outlet.sales - outlet.yesterday) / outlet.yesterday) * 100).toFixed(1)
-            : '0';
-          
-          return {
-            outlet: outlet.name,
-            sales: outlet.sales,
-            growth: `${Number(growth) >= 0 ? '+' : ''}${growth}%`,
-            transactions: outlet.count,
-            avgTransactionValue: outlet.sales / outlet.count,
-          };
-        })
-        .sort((a, b) => b.sales - a.sales);
+      const q = new URLSearchParams({ start: startDate.toISOString(), end: endDate.toISOString() });
+      const resp = await fetch(`/api/reports/outlet-comparison?${q.toString()}`);
+      const json = await resp.json();
+      const stats: OutletStats[] = json?.data || [];
 
       setOutletStats(stats);
 
-      // Calculate normalized metrics for radar chart
       const maxSales = Math.max(...stats.map(s => s.sales), 1);
       const maxTransactions = Math.max(...stats.map(s => s.transactions), 1);
       const maxAvgValue = Math.max(...stats.map(s => s.avgTransactionValue), 1);
@@ -279,24 +207,7 @@ export default function OutletComparisonReport() {
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">Performance Metrics (Normalized 0-100)</h2>
         {radarData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={400}>
-            <RadarChart data={radarData}>
-              <PolarGrid />
-              <PolarAngleAxis dataKey="category" />
-              <PolarRadiusAxis angle={90} domain={[0, 100]} />
-              {outletStats.map((outlet, idx) => (
-                <Radar 
-                  key={outlet.outlet}
-                  name={outlet.outlet} 
-                  dataKey={outlet.outlet} 
-                  stroke={colors[idx % colors.length]} 
-                  fill={colors[idx % colors.length]} 
-                  fillOpacity={0.25} 
-                />
-              ))}
-              <Legend />
-            </RadarChart>
-          </ResponsiveContainer>
+          <OutletRadarChart data={radarData} outlets={outletStats.map(s => s.outlet)} colors={colors} />
         ) : (
           <div className="text-center py-8 text-gray-500">
             <p>Belum ada data outlet untuk periode terpilih</p>

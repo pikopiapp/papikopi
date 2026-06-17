@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { format, subDays, startOfDay } from 'date-fns';
 
@@ -279,23 +278,23 @@ export default function DailySummaryReport() {
 
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">7-Day Sales Trend</h2>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip 
-              formatter={(value) => formatCurrency(Number(value))}
-              labelFormatter={(label) => `Day: ${label}`}
-            />
-            <Legend />
-            <Bar dataKey="revenue" fill="#8884d8" name="Revenue" />
-            <Bar dataKey="hpp" fill="#ff7300" name="HPP" />
-            <Bar dataKey="bonus" fill="#5b21b6" name="Bonus" />
-            <Bar dataKey="meal" fill="#f59e0b" name="Meal" />
-            <Bar dataKey="profit" fill="#82ca9d" name="Profit" />
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <svg viewBox={`0 0 800 400`} width="100%" height={400} preserveAspectRatio="xMinYMid meet">
+            <line x1={60} y1={20} x2={60} y2={360} stroke="#eee" />
+            {data.map((d, i) => {
+              const barW = (680 / Math.max(1, data.length));
+              const x = 60 + i * barW + barW * 0.1;
+              const max = Math.max(1, ...data.map((dd) => dd.revenue || 0));
+              const hVal = ((d.revenue || 0) / max) * 300;
+              return (
+                <g key={d.date}>
+                  <rect x={x} y={360 - hVal} width={barW * 0.7} height={hVal} fill="#8884d8" />
+                  <text x={x + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${x + barW * 0.35},378)`}>{d.date}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
       </div>
     </div>
   );

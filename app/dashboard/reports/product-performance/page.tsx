@@ -1,9 +1,7 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { supabase } from '@/lib/supabase';
 import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
+import { supabaseServer } from '@/lib/supabaseServer';
+import PeriodSelector from '../components/PeriodSelector.client';
+import ProductPerformanceChartServer from '../components/Charts/ProductPerformanceChart.server';
 
 interface ProductData {
   product: string;
@@ -13,149 +11,105 @@ interface ProductData {
 
 type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
-export default function ProductPerformanceReport() {
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodType>('mtd');
-  const [chartData, setChartData] = useState<ProductData[]>([]);
-  const [stats, setStats] = useState({
-    topProduct: '',
-    topProductSold: 0,
-    avgRevenue: 0,
-    totalSold: 0,
-  });
-  const [customStartDate, setCustomStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+async function getProductAggregated(startIso: string, endIso: string) {
+  try {
+    const rpc = await supabaseServer.rpc('reports_product_performance', { start_ts: startIso, end_ts: endIso, limit_count: 10 });
+    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data;
 
-  // initial fetch moved below function declaration
+    const res = await supabaseServer
+      .from('sale_items')
+      .select(`
+        quantity,
+        price,
+        products(id, name),
+        sales(created_at)
+      `)
+      .gte('sales.created_at', startIso)
+      .lte('sales.created_at', endIso);
 
-  const getDateRange = () => {
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date;
-
-    switch (period) {
-      case 'ytd':
-        startDate = startOfYear(now);
-        endDate = now;
-        break;
-      case 'mtd':
-        startDate = startOfMonth(now);
-        endDate = now;
-        break;
-      case 'wtd':
-        startDate = startOfWeek(now);
-        endDate = now;
-        break;
-      case 'custom':
-        startDate = new Date(customStartDate);
-        endDate = new Date(customEndDate);
-        break;
-      default:
-        startDate = startOfMonth(now);
-        endDate = now;
+    if (res.error) return [];
+    const items = res.data || [];
+    const map: Record<string, { sold: number; revenue: number }> = {};
+    for (const it of items) {
+      const prod = Array.isArray(it.products) ? it.products[0] : it.products;
+      const name = prod?.name || 'Unknown';
+      const qty = Number(it.quantity || 0);
+      const rev = Number(it.price || 0) * qty;
+      if (!map[name]) map[name] = { sold: 0, revenue: 0 };
+      map[name].sold += qty;
+      map[name].revenue += rev;
     }
 
-    return { startDate, endDate };
-  };
+    const out = Object.entries(map)
+      .map(([product, v]) => ({ product, sold: v.sold, revenue: v.revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
 
-  async function fetchProductData() {
-    try {
-      setLoading(true);
-      const { startDate, endDate } = getDateRange();
+    return out;
+  } catch (err) {
+    console.error('server aggregation error', err);
+    return [];
+  }
+}
 
-      // Fetch all sale items with product info and sales data
-      const { data: saleItems, error } = await supabase
-        .from('sale_items')
-        .select(`
-          id,
-          quantity,
-          price,
-          products (
-            id,
-            name
-          ),
-          sales (
-            created_at
-          )
-        `)
-        .gte('sales.created_at', startDate.toISOString())
-        .lte('sales.created_at', endDate.toISOString());
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
 
-      if (error) throw error;
+export default async function ProductPerformanceReport({ searchParams }: { searchParams?: { period?: string; start?: string; end?: string } }) {
+  const maybe = searchParams as any;
+  const params = maybe && typeof maybe.then === 'function' ? (await maybe) || {} : (searchParams || {});
+  const period = (params.period as PeriodType) || 'wtd';
 
-      // Group by product
-      const productMap: { [key: string]: { name: string; sold: number; revenue: number } } = {};
+  let startDate = new Date();
+  let endDate = new Date();
+  switch (period) {
+    case 'ytd':
+      startDate = startOfYear(new Date());
+      endDate = new Date();
+      break;
+    case 'mtd':
+      startDate = startOfMonth(new Date());
+      endDate = new Date();
+      break;
+    case 'wtd':
+      startDate = startOfWeek(new Date());
+      endDate = new Date();
+      break;
+    case 'custom':
+      if (params.start) startDate = new Date(params.start);
+      if (params.end) endDate = new Date(params.end);
+      break;
+  }
 
-      if (saleItems) {
-        for (const item of saleItems) {
-          const products = Array.isArray(item.products) ? item.products[0] : item.products;
-          const productName = products?.name || 'Unknown';
-          const quantity = item.quantity || 0;
-          const revenue = (item.price || 0) * quantity;
-
-          if (!productMap[productName]) {
-            productMap[productName] = { name: productName, sold: 0, revenue: 0 };
-          }
-
-          productMap[productName].sold += quantity;
-          productMap[productName].revenue += revenue;
-        }
-      }
-
-      // Convert to array and sort by revenue
-      const chartArray: ProductData[] = Object.values(productMap)
-        .map(p => ({
-          product: p.name,
-          sold: p.sold,
-          revenue: p.revenue,
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 10); // Top 10 products
-
-      setChartData(chartArray);
-
-      // Calculate stats
-      const totalSold = chartArray.reduce((sum, p) => sum + p.sold, 0);
-      const totalRevenue = chartArray.reduce((sum, p) => sum + p.revenue, 0);
-      const avgRevenue = totalSold > 0 ? totalRevenue / totalSold : 0;
-      const topProduct = chartArray[0];
-
-      setStats({
-        topProduct: topProduct?.product || 'N/A',
-        topProductSold: topProduct?.sold || 0,
-        avgRevenue,
-        totalSold,
-      });
-
-    } catch (err) {
-      console.error('Error fetching product data:', err);
-    } finally {
-      setLoading(false);
+  let raw: any[] = [];
+  let apiUrl = '';
+  try {
+    apiUrl = `/api/reports/product-performance?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}`;
+    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const body = await apiRes.json();
+      raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+    } else {
+      raw = await getProductAggregated(startDate.toISOString(), endDate.toISOString());
     }
+  } catch (e) {
+    raw = await getProductAggregated(startDate.toISOString(), endDate.toISOString());
   }
 
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const chartArray: ProductData[] = raw.map((r: any) => ({ product: r.product, sold: Number(r.sold || 0), revenue: Number(r.revenue || 0) }));
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="surface-card rounded-lg shadow-md p-6">
-          <p className="text-gray-600">Loading product data...</p>
-        </div>
-      </div>
-    );
-  }
+  const totalSold = chartArray.reduce((sum, p) => sum + p.sold, 0);
+  const totalRevenue = chartArray.reduce((sum, p) => sum + p.revenue, 0);
+  const avgRevenue = totalSold > 0 ? totalRevenue / totalSold : 0;
+  const top = chartArray[0] || { product: 'N/A', sold: 0 };
 
-  useEffect(() => {
-    fetchProductData();
-  }, [period, customStartDate, customEndDate]);
+  const stats = { topProduct: top.product, topProductSold: top.sold, avgRevenue, totalSold };
 
   return (
     <div className="space-y-6">
@@ -164,75 +118,17 @@ export default function ProductPerformanceReport() {
         <p className="text-gray-600">Analisis performa produk dengan periode fleksibel</p>
       </div>
 
-      {/* Period Selector */}
       <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Pilih Periode</h2>
-        <div className="flex gap-2 mb-4 flex-wrap">
-          <button
-            onClick={() => setPeriod('ytd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'ytd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Year to Date
-          </button>
-          <button
-            onClick={() => setPeriod('mtd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'mtd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Month to Date
-          </button>
-          <button
-            onClick={() => setPeriod('wtd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'wtd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Week to Date
-          </button>
-          <button
-            onClick={() => setPeriod('custom')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'custom'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Custom Range
-          </button>
+        <div className="mt-2">
+          <PeriodSelector initialPeriod={period} initialStart={params.start} initialEnd={params.end} />
         </div>
-
-        {/* Custom Date Picker */}
-        {period === 'custom' && (
-          <div className="flex gap-4 items-end">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Dari</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sampai</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-        )}
+        <div className="mt-3 text-sm text-gray-500">
+          <div>Debug: start = {startDate.toISOString()}</div>
+          <div>Debug: end = {endDate.toISOString()}</div>
+          <div>Debug: api = {apiUrl}</div>
+          <div>Debug: rows = {raw.length}</div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -255,28 +151,8 @@ export default function ProductPerformanceReport() {
 
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">Sales by Product (Top 10)</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="product" angle={-45} textAnchor="end" height={80} />
-              <YAxis yAxisId="left" label={{ value: 'Units Sold', angle: -90, position: 'insideLeft' }} />
-              <YAxis 
-                yAxisId="right" 
-                orientation="right" 
-                label={{ value: 'Revenue (Rp)', angle: 90, position: 'insideRight' }}
-              />
-              <Tooltip 
-                formatter={(value) => typeof value === 'number' && value > 1000 
-                  ? formatCurrency(value) 
-                  : value}
-                labelFormatter={(label) => `Product: ${label}`}
-              />
-              <Legend />
-              <Bar yAxisId="left" dataKey="sold" fill="#8884d8" name="Units Sold" />
-              <Bar yAxisId="right" dataKey="revenue" fill="#82ca9d" name="Revenue" />
-            </BarChart>
-          </ResponsiveContainer>
+        {chartArray.length > 0 ? (
+          <ProductPerformanceChartServer data={chartArray} formatCurrency={formatCurrency} />
         ) : (
           <div className="text-center py-8 text-gray-500">
             <p>Belum ada data produk untuk periode terpilih</p>

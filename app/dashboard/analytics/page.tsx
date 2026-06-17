@@ -1,6 +1,5 @@
-'use client';
+"use client";
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DollarSign, TrendingUp, Calendar, Users } from 'lucide-react';
 
 const COLORS = ['#f59e0b', '#3b82f6'];
@@ -22,6 +21,47 @@ const SAMPLE_BARISTA_DATA = [
   { name: 'Siti', transactions: 12, revenue: 1200000, profit: 360000 },
   { name: 'Ahmad', transactions: 18, revenue: 1800000, profit: 540000 },
 ];
+
+function MiniLine({ data, keys = ['revenue', 'profit'], colors = ['#f59e0b', '#10b981'] }: any) {
+  const w = 700;
+  const h = 300;
+  const pad = 40;
+  const max = Math.max(1, ...data.flatMap((d: any) => keys.map((k: string) => Number(d[k] ?? 0))));
+  const stepX = w / Math.max(1, data.length - 1 || 1);
+  const scaleY = (v: number) => h - pad - (v / max) * (h - pad * 2);
+  const pathFor = (k: string) => data.map((d: any, i: number) => `${i === 0 ? 'M' : 'L'} ${i * stepX} ${scaleY(d[k] ?? 0)}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
+      <line x1={0} y1={h - pad} x2={w} y2={h - pad} stroke="#eee" />
+      {keys.map((k: string, idx: number) => <path key={k} d={pathFor(k)} fill="none" stroke={colors[idx]} strokeWidth={2} />)}
+    </svg>
+  );
+}
+
+function MiniPie({ data, colors = ['#f59e0b', '#3b82f6'] }: any) {
+  const w = 300;
+  const h = 300;
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = 80;
+  const total = data.reduce((s: number, d: any) => s + (d.value || 0), 0) || 1;
+  let angle = -Math.PI / 2;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
+      {data.map((d: any, i: number) => {
+        const slice = (d.value / total) * Math.PI * 2;
+        const x1 = cx + Math.cos(angle) * r;
+        const y1 = cy + Math.sin(angle) * r;
+        angle += slice;
+        const x2 = cx + Math.cos(angle) * r;
+        const y2 = cy + Math.sin(angle) * r;
+        const large = slice > Math.PI ? 1 : 0;
+        const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+        return <path key={i} d={path} fill={colors[i % colors.length]} />;
+      })}
+    </svg>
+  );
+}
 
 export default function AnalyticsPage() {
   return (
@@ -76,41 +116,17 @@ export default function AnalyticsPage() {
         {/* Daily Revenue */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h3 className="text-lg font-semibold mb-4">Daily Revenue Trend</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={SAMPLE_DAILY_DATA}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#f59e0b" strokeWidth={2} />
-              <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div>
+            <MiniLine data={SAMPLE_DAILY_DATA} />
+          </div>
         </div>
 
         {/* Payment Breakdown */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h3 className="text-lg font-semibold mb-4">Payment Method</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={SAMPLE_PAYMENT_DATA}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ value }: { value: number }) => `${(value / 1000).toFixed(0)}K`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {SAMPLE_PAYMENT_DATA.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+          <div style={{ width: 300 }}>
+            <MiniPie data={SAMPLE_PAYMENT_DATA} />
+          </div>
         </div>
       </div>
 

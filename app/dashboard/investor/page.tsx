@@ -1,10 +1,42 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
 import { TrendingUp, DollarSign, Store, Calendar } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+function MiniLine({ data }: { data: any[] }) {
+  const w = 700;
+  const h = 300;
+  const pad = 40;
+  const max = Math.max(1, ...data.map((d) => Number(d.profit ?? 0)));
+  const stepX = w / Math.max(1, data.length - 1 || 1);
+  const scaleY = (v: number) => h - pad - (v / max) * (h - pad * 2);
+  const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${i * stepX} ${scaleY(d.profit ?? 0)}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
+      <line x1={0} y1={h - pad} x2={w} y2={h - pad} stroke="#eee" />
+      <path d={path} fill="none" stroke="#F59E0B" strokeWidth={2} />
+    </svg>
+  );
+}
+
+function MiniBar({ data }: { data: any[] }) {
+  const w = 700;
+  const h = 300;
+  const pad = 60;
+  const barW = (w - pad * 2) / Math.max(1, data.length);
+  const max = Math.max(1, ...data.map((d) => Number(d.profit ?? 0)));
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
+      <line x1={pad} y1={20} x2={pad} y2={h - pad} stroke="#eee" />
+      {data.map((d, i) => {
+        const x = pad + i * barW + barW * 0.1;
+        const hVal = ((d.profit ?? 0) / max) * (h - pad * 2);
+        return <rect key={d.outlet_id || d.name} x={x} y={h - pad - hVal} width={barW * 0.7} height={hVal} fill="#F59E0B" />;
+      })}
+    </svg>
+  );
+}
 
 interface KPIData {
   totalInvestment: number;
@@ -223,26 +255,9 @@ export default function InvestorDashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Profit Trend (Last 30 Days)</h3>
           {profitTrend.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={profitTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip
-                  formatter={(value) => `Rp ${(value as number).toLocaleString('id-ID')}`}
-                  contentStyle={{ backgroundColor: '#f9fafb', border: '1px solid #e5e7eb' }}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="profit"
-                  stroke="#F59E0B"
-                  name="Daily Profit"
-                  dot={false}
-                  strokeWidth={2}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div>
+              <MiniLine data={profitTrend} />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-300 text-gray-500">
               No profit data available
@@ -254,20 +269,9 @@ export default function InvestorDashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Profit Share by Outlet</h3>
           {outlets.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={outlets.map((o) => ({
-                  name: o.outlet_name,
-                  profit: Math.round(o.investor_share),
-                }))}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                <YAxis />
-                <Tooltip formatter={(value) => `Rp ${(value as number).toLocaleString('id-ID')}`} />
-                <Bar dataKey="profit" fill="#F59E0B" name="Investor Share" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div>
+              <MiniBar data={outlets.map((o) => ({ name: o.outlet_name, profit: Math.round(o.investor_share) }))} />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-300 text-gray-500">
               No outlet data available

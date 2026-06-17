@@ -1,9 +1,7 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { supabase } from '@/lib/supabase';
 import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
+import { supabaseServer } from '@/lib/supabaseServer';
+import PeriodSelector from '../components/PeriodSelector.client';
+import ProfitLossChartServer from '../components/Charts/ProfitLossChart.server';
 
 interface ProfitLossData {
   month: string;
@@ -14,182 +12,126 @@ interface ProfitLossData {
 
 type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
-export default function ProfitLossReport() {
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodType>('ytd');
-  const [chartData, setChartData] = useState<ProfitLossData[]>([]);
-  const [stats, setStats] = useState({
-    totalRevenue: 0,
-    totalCost: 0,
-    totalProfit: 0,
-    profitMargin: '0',
-  });
-  const [customStartDate, setCustomStartDate] = useState<string>(format(startOfYear(new Date()), 'yyyy-MM-dd'));
-  const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+async function getProfitLossAggregated(startIso: string, endIso: string, group: 'day' | 'month') {
+  try {
+    const rpc = await supabaseServer.rpc('reports_profitloss_agg', { start_ts: startIso, end_ts: endIso, grp: group });
+    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data;
 
-  // initial fetch moved below function declaration
+    const res = await supabaseServer
+      .from('sales')
+      .select('created_at, total_amount, hpp_total, profit')
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
+      .order('created_at', { ascending: true });
 
-  const getDateRange = () => {
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date;
+    if (res.error) return [];
+    const rows = res.data || [];
+    const map: Record<string, { revenue: number; cost: number; profit: number; count: number }> = {};
 
-    switch (period) {
-      case 'ytd':
-        startDate = startOfYear(now);
-        endDate = now;
-        break;
-      case 'mtd':
-        startDate = startOfMonth(now);
-        endDate = now;
-        break;
-      case 'wtd':
-        startDate = startOfWeek(now);
-        endDate = now;
-        break;
-      case 'custom':
-        startDate = new Date(customStartDate);
-        endDate = new Date(customEndDate);
-        break;
-      default:
-        startDate = startOfYear(now);
-        endDate = now;
+    for (const r of rows) {
+      const dt = new Date(r.created_at);
+      const key = group === 'day'
+        ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+        : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+      if (!map[key]) map[key] = { revenue: 0, cost: 0, profit: 0, count: 0 };
+      map[key].revenue += Number(r.total_amount || 0);
+      map[key].cost += Number(r.hpp_total || 0);
+      map[key].profit += Number(r.profit || 0);
+      map[key].count += 1;
     }
 
-    return { startDate, endDate };
-  };
+    const out = Object.entries(map).map(([period, v]) => ({ period, revenue: v.revenue, cost: v.cost, profit: v.profit, count: v.count }));
+    out.sort((a, b) => (a.period > b.period ? 1 : -1));
+    return out;
+  } catch (err) {
+    console.error('server aggregation error', err);
+    return [];
+  }
+}
 
-  async function fetchProfitLossData() {
-    try {
-      setLoading(true);
-      const { startDate, endDate } = getDateRange();
+function formatCurrency(amount: number | string): string {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(amount));
+}
 
-      // Fetch sales data with HPP (Cost of Goods Sold)
-      const { data: salesData, error } = await supabase
-        .from('sales')
-        .select('total_amount, hpp_total, profit, created_at')
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString())
-        .order('created_at', { ascending: true });
+export default async function ProfitLossReport({ searchParams }: { searchParams?: { period?: string; start?: string; end?: string } }) {
+  const maybe = searchParams as any;
+  const params = maybe && typeof maybe.then === 'function' ? (await maybe) || {} : (searchParams || {});
+  const period = (params.period as PeriodType) || 'wtd';
 
-      if (error) throw error;
+  let startDate = new Date();
+  let endDate = new Date();
+  switch (period) {
+    case 'ytd':
+      startDate = startOfYear(new Date());
+      endDate = new Date();
+      break;
+    case 'mtd':
+      startDate = startOfMonth(new Date());
+      endDate = new Date();
+      break;
+    case 'wtd':
+      startDate = startOfWeek(new Date());
+      endDate = new Date();
+      break;
+    case 'custom':
+      if (params.start) startDate = new Date(params.start);
+      if (params.end) endDate = new Date(params.end);
+      break;
+  }
 
-      // Determine if grouping by day or month
-      const isShortPeriod = period === 'wtd' || (period === 'custom' && 
-        (new Date(customEndDate).getTime() - new Date(customStartDate).getTime()) / (1000 * 60 * 60 * 24) <= 7);
+  const isShortPeriod = period === 'wtd';
+  const groupParam: 'day' | 'month' = isShortPeriod ? 'day' : 'month';
 
-      const groupedData: { [key: string]: { revenue: number; cost: number; profit: number; count: number } } = {};
-
-      if (isShortPeriod) {
-        // Group by day for short periods
-        const currentDate = new Date(startDate);
-        while (currentDate <= endDate) {
-          const dayKey = format(currentDate, 'yyyy-MM-dd');
-          groupedData[dayKey] = { revenue: 0, cost: 0, profit: 0, count: 0 };
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      } else {
-        // Group by month for longer periods
-        for (let i = 0; i < 12; i++) {
-          const date = new Date(startDate);
-          date.setMonth(date.getMonth() + i);
-          if (date <= endDate) {
-            const monthKey = format(date, 'yyyy-MM');
-            groupedData[monthKey] = { revenue: 0, cost: 0, profit: 0, count: 0 };
-          }
-        }
-      }
-
-      // Process sales data
-      if (salesData) {
-        for (const sale of salesData) {
-          const key = isShortPeriod 
-            ? format(new Date(sale.created_at), 'yyyy-MM-dd')
-            : format(new Date(sale.created_at), 'yyyy-MM');
-
-          if (groupedData[key]) {
-            groupedData[key].revenue += Number(sale.total_amount);
-            groupedData[key].cost += Number(sale.hpp_total) || 0;
-            groupedData[key].profit += Number(sale.profit);
-            groupedData[key].count += 1;
-          }
-        }
-      }
-
-      // Convert to chart format
-      const chartArray: ProfitLossData[] = [];
-      let totalRevenue = 0;
-      let totalCost = 0;
-      let totalProfit = 0;
-
-      Object.entries(groupedData).forEach(([dateKey, data]) => {
-        if (data.count > 0 || chartArray.length > 0) {
-          let label: string;
-
-          if (isShortPeriod) {
-            // Show day label
-            label = format(new Date(dateKey), 'MMM dd');
-          } else {
-            // Show month label
-            const monthNum = parseInt(dateKey.split('-')[1]);
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            label = monthNames[monthNum - 1];
-          }
-
-          chartArray.push({
-            month: label,
-            revenue: data.revenue,
-            cost: data.cost,
-            profit: data.profit,
-          });
-
-          totalRevenue += data.revenue;
-          totalCost += data.cost;
-          totalProfit += data.profit;
-        }
-      });
-
-      setChartData(chartArray);
-
-      // Calculate profit margin
-      const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0';
-
-      setStats({
-        totalRevenue,
-        totalCost,
-        totalProfit,
-        profitMargin,
-      });
-
-    } catch (err) {
-      console.error('Error fetching P&L data:', err);
-    } finally {
-      setLoading(false);
+  let raw: any[] = [];
+  try {
+    const apiRes = await fetch(`/api/reports/profitloss?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&group=${groupParam}`, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const body = await apiRes.json();
+      raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+    } else {
+      raw = await getProfitLossAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
     }
+  } catch (e) {
+    raw = await getProfitLossAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
   }
 
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const chartArray: ProfitLossData[] = [];
+  let totalRevenue = 0;
+  let totalCost = 0;
+  let totalProfit = 0;
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="surface-card rounded-lg shadow-md p-6">
-          <p className="text-gray-600">Loading P&L data...</p>
-        </div>
-      </div>
-    );
+  for (const row of raw) {
+    const periodKey = row.period;
+    let label = periodKey;
+    if (!isShortPeriod) {
+      const monthNum = parseInt(periodKey.split('-')[1]);
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      label = monthNames[monthNum - 1] || periodKey;
+    } else {
+      const d = new Date(periodKey);
+      label = format(d, 'MMM dd');
+    }
+
+    chartArray.push({
+      month: label,
+      revenue: Number(row.revenue || 0),
+      cost: Number(row.cost || 0),
+      profit: Number(row.profit || 0),
+    });
+
+    totalRevenue += Number(row.revenue || 0);
+    totalCost += Number(row.cost || 0);
+    totalProfit += Number(row.profit || 0);
   }
 
-  useEffect(() => {
-    fetchProfitLossData();
-  }, [period, customStartDate, customEndDate]);
+  const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0';
+
+  const stats = { totalRevenue, totalCost, totalProfit, profitMargin };
 
   return (
     <div className="space-y-6">
@@ -198,75 +140,15 @@ export default function ProfitLossReport() {
         <p className="text-gray-600">Analisis profit dan loss dengan periode fleksibel</p>
       </div>
 
-      {/* Period Selector */}
       <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Pilih Periode</h2>
-        <div className="flex gap-2 mb-4 flex-wrap">
-          <button
-            onClick={() => setPeriod('ytd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'ytd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Year to Date
-          </button>
-          <button
-            onClick={() => setPeriod('mtd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'mtd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Month to Date
-          </button>
-          <button
-            onClick={() => setPeriod('wtd')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'wtd'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Week to Date
-          </button>
-          <button
-            onClick={() => setPeriod('custom')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              period === 'custom'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Custom Range
-          </button>
+        <p className="text-sm text-gray-700">{period === 'ytd' ? 'Year to Date' : period === 'mtd' ? 'Month to Date' : period === 'wtd' ? 'Week to Date' : 'Custom Range'}</p>
+        {period === 'custom' && (params.start || params.end) ? (
+          <p className="text-sm text-gray-500">{params.start || ''} — {params.end || ''}</p>
+        ) : null}
+        <div className="mt-2">
+          <PeriodSelector initialPeriod={period} initialStart={params.start} initialEnd={params.end} />
         </div>
-
-        {/* Custom Date Picker */}
-        {period === 'custom' && (
-          <div className="flex gap-4 items-end">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Dari</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sampai</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -294,40 +176,8 @@ export default function ProfitLossReport() {
 
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">Analisis P&L</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={400}>
-            <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip 
-                formatter={(value) => formatCurrency(Number(value))}
-                labelFormatter={(label) => `${label}`}
-              />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="revenue" 
-                stackId="1" 
-                fill="#8884d8" 
-                name="Pendapatan"
-              />
-              <Area 
-                type="monotone" 
-                dataKey="cost" 
-                stackId="1" 
-                fill="#ffc658" 
-                name="Biaya (HPP)"
-              />
-              <Area 
-                type="monotone" 
-                dataKey="profit" 
-                stackId="1" 
-                fill="#82ca9d" 
-                name="Profit"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+        {chartArray.length > 0 ? (
+          <ProfitLossChartServer data={chartArray} formatCurrency={formatCurrency} />
         ) : (
           <div className="text-center py-8 text-gray-500">
             <p>Belum ada data P&L untuk periode terpilih</p>
