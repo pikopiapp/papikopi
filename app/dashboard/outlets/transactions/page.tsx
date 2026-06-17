@@ -37,7 +37,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [sortOrder, setSortOrder] = useState<'default' | 'highest' | 'lowest'>('default');
+  const [sortOrder, setSortOrder] = useState<'default' | 'highest' | 'lowest'>('highest');
   const [sortPeriod, setSortPeriod] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
 
   const fetchSales = async () => {
@@ -256,40 +256,27 @@ export default function TransactionsPage() {
   const rankMap = new Map(rankedByOmset.map(o => [o.outlet_id, o.rank]));
   const totalOutlets = Object.keys(outletGroups).length;
 
-  // Function to get gradient background based on rank
-  const getGradientStyle = (outletId: string): React.CSSProperties => {
+  // Function to get header background and text color based on rank
+  const getGradientStyle = (outletId: string): { background: string; textClass: string } => {
     const rank = rankMap.get(outletId) ?? totalOutlets - 1;
-    const percentile = totalOutlets > 1 ? rank / (totalOutlets - 1) : 0; // 0 = highest, 1 = lowest
+    const darkGreen = '#065f46';
 
-    let bgColor = '';
-    if (percentile <= 0.2) {
-      // Top 20%: Dark blue
-      bgColor = '#1e3a8a';
-    } else if (percentile <= 0.4) {
-      // 20-40%: Medium blue
-      bgColor = '#3b82f6';
-    } else if (percentile <= 0.6) {
-      // 40-60%: Light blue to yellow
-      const localPercentile = (percentile - 0.4) / 0.2;
-      const r = Math.round(255 * localPercentile);
-      const g = 200;
-      const b = Math.round(50 * (1 - localPercentile));
-      bgColor = `rgb(${r}, ${g}, ${b})`;
-    } else if (percentile <= 0.8) {
-      // 60-80%: Yellow to orange-red
-      const localPercentile = (percentile - 0.6) / 0.2;
-      const r = Math.round(255);
-      const g = Math.round(200 * (1 - localPercentile));
-      const b = 0;
-      bgColor = `rgb(${r}, ${g}, ${b})`;
-    } else {
-      // 80-100%: Dark red
-      bgColor = '#7f1d1d';
+    // Requested mapping:
+    // 1 -> dark green (100%)
+    // 2 -> dark green (60% strength)
+    // 3 -> dark green (30% strength)
+    // others -> muted light gray
+    if (rank === 0) {
+      return { background: `linear-gradient(90deg, ${darkGreen} 0%, ${darkGreen} 100%)`, textClass: 'text-white' };
+    }
+    if (rank === 1) {
+      return { background: `linear-gradient(90deg, rgba(6,95,70,0.6) 0%, rgba(6,95,70,0.2) 100%)`, textClass: 'text-gray-800' };
+    }
+    if (rank === 2) {
+      return { background: `linear-gradient(90deg, rgba(6,95,70,0.3) 0%, rgba(6,95,70,0.1) 100%)`, textClass: 'text-gray-800' };
     }
 
-    return {
-      background: bgColor,
-    };
+    return { background: '#f3f4f6', textClass: 'text-gray-800' };
   };
 
   // Calculate min/max for heatmap coloring (based on omset_today)
@@ -408,8 +395,9 @@ export default function TransactionsPage() {
               >
                 {/* Colored Header - Outlet Name & Barista */}
                 <div
-                  style={getGradientStyle(outlet.outlet_id)}
-                  className="p-4 text-white relative"
+                  // Apply mapped background and text color per rank
+                  style={{ background: getGradientStyle(outlet.outlet_id).background }}
+                  className={`p-4 ${getGradientStyle(outlet.outlet_id).textClass} relative`}
                 >
                   {/* Trophy Badge */}
                   {getTopBadge(outlet.outlet_id, 0) && (
@@ -473,7 +461,7 @@ export default function TransactionsPage() {
                     className={`w-full font-medium py-2 rounded transition-colors ${
                       outlet.transaction_count === 0
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-sky-200 text-sky-800 hover:bg-sky-300'
                     }`}
                   >
                     {outlet.transaction_count === 0 ? 'Belum ada data' : 'Lihat Detail'}
