@@ -96,8 +96,8 @@ export default function TransactionDetailPage() {
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
   const totalUnits = sales.reduce((sum, s) => sum + (s.items ? s.items.reduce((u, it) => u + (it.quantity || 0), 0) : 0), 0);
 
-  // Running row index for table numbering
-  let rowIndex = 0;
+  // Running transaction index for table numbering (one number per transaction)
+  let transactionIndex = 0;
 
   if (loading) {
     return (
@@ -179,37 +179,42 @@ export default function TransactionDetailPage() {
                 const time = formatTimestampFromUTC(sale.created_at, { hour: '2-digit', minute: '2-digit' });
 
                 return items.length > 0 ? (
-                  items.map((item, itemIdx) => {
-                    const rowNo = ++rowIndex;
-                    return (
-                      <tr key={`${sale.id}-${itemIdx}`} className={(itemIdx + sales.findIndex(s => s.id === sale.id)) % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-4 py-3 text-sm text-gray-800 font-medium">{rowNo}</td>
-                        {itemIdx === 0 && (
-                          <td rowSpan={items.length} className="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 font-medium">
-                            {time}
+                  (() => {
+                    const txnNo = ++transactionIndex;
+                    return items.map((item, itemIdx) => {
+                      const isLastItem = itemIdx === items.length - 1;
+                      const rowClass = `${(itemIdx + sales.findIndex(s => s.id === sale.id)) % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${isLastItem ? 'border-b border-gray-300' : ''}`.trim();
+
+                      return (
+                        <tr key={`${sale.id}-${itemIdx}`} className={rowClass}>
+                          <td className="px-4 py-3 text-sm text-gray-800 font-medium">{itemIdx === 0 ? txnNo : ''}</td>
+                          {itemIdx === 0 && (
+                            <td rowSpan={items.length} className="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 font-medium">
+                              {time}
+                            </td>
+                          )}
+                          <td className="px-4 py-3 text-sm text-right text-gray-800 font-medium">
+                            {item.quantity}
                           </td>
-                        )}
-                        <td className="px-4 py-3 text-sm text-right text-gray-800 font-medium">
-                          {item.quantity}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-800">
-                          {item.product_name}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right text-gray-800">
-                          Rp{(item.price / 1000).toLocaleString('id-ID')}.000,-
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">
-                          Rp{((item.price * item.quantity) / 1000).toLocaleString('id-ID')}.000,-
-                        </td>
-                      </tr>
-                    );
-                  })
+                          <td className="px-4 py-3 text-sm text-gray-800">
+                            {item.product_name}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-800">
+                            Rp{(item.price / 1000).toLocaleString('id-ID')}.000,-
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-semibold text-blue-600">
+                            Rp{((item.price * item.quantity) / 1000).toLocaleString('id-ID')}.000,-
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()
                 ) : (
                   (() => {
-                    const rowNo = ++rowIndex;
+                    const txnNo = ++transactionIndex;
                     return (
                       <tr key={sale.id} className="bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-800 font-medium">{rowNo}</td>
+                        <td className="px-4 py-3 text-sm text-gray-800 font-medium">{txnNo}</td>
                         <td className="px-4 py-3 text-sm text-gray-800">{time}</td>
                         <td colSpan={4} className="px-4 py-3 text-sm text-gray-500">No items</td>
                       </tr>
