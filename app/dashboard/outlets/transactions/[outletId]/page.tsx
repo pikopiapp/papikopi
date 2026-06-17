@@ -138,8 +138,8 @@ export default function TransactionDetailPage() {
           <p className="text-2xl font-bold text-blue-600">{sales.length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <p className="text-gray-600 text-sm">Total Unit Terjual</p>
-          <p className="text-2xl font-bold text-blue-600">{totalUnits}</p>
+          <p className="text-gray-600 text-sm">Total Unit (cup)</p>
+          <p className="text-2xl font-bold text-blue-600">{totalUnits} unit (cup)</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <p className="text-gray-600 text-sm">Total Omset</p>
@@ -151,13 +151,13 @@ export default function TransactionDetailPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Jam</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Qty</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Produk</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Harga Satuan</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Total</th>
-            </tr>
+              <tr>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Jam</th>
+                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Unit (cup)</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-800">Produk</th>
+                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Harga Satuan</th>
+                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800">Total</th>
+              </tr>
           </thead>
           <tbody>
             {sales.length === 0 ? (

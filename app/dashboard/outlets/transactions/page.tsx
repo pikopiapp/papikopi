@@ -448,9 +448,19 @@ export default function TransactionsPage() {
                 {/* Stats */}
                 <div className="p-4 bg-gray-50 border-b border-gray-200">
                   <div className="space-y-2 text-sm">
-                    <p className="text-gray-600">Total Produk Terjual</p>
+                    <p className="text-gray-600">Total Unit (cup)</p>
                     <p className="text-2xl font-bold text-gray-800">
-                      {outlet.transaction_count === 0 ? '-' : outlet.transactions.reduce((sum, t) => sum + (t.items?.length || 0), 0)} item
+                      {outlet.transaction_count === 0
+                        ? '-'
+                        : (
+                            outlet.transactions.reduce(
+                              (sum, t) =>
+                                sum + (t.items?.reduce((s, it) => s + (Number(it.quantity) || 0), 0) || 0),
+                              0
+                            )
+                          ).toLocaleString('id-ID')}
+                      {' '}
+                      unit (cup)
                     </p>
                   </div>
                 </div>
