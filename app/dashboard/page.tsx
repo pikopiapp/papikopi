@@ -56,10 +56,12 @@ const IconAvg = ({ className = "" }: { className?: string }) => (
 type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
 function use7DaySummary() {
   const [data, setData] = React.useState<SummaryItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
     let mounted = true;
     const fetchIt = async () => {
       try {
+        setLoading(true);
         const end = new Date();
         const start = new Date();
         start.setDate(end.getDate() - 6);
@@ -92,11 +94,12 @@ function use7DaySummary() {
       } catch (err) {
         console.error('use7DaySummary', err);
       }
+      if (mounted) setLoading(false);
     };
     void fetchIt();
     return () => { mounted = false; };
   }, []);
-  return data;
+  return { data, loading };
 }
 
 // Fetch KPI totals for current 7-day period and previous 7-day period, compute changes
@@ -113,6 +116,7 @@ function useKpis() {
     profitChange: number;
     unitsChange: number;
   }>(null);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     let mounted = true;
@@ -219,6 +223,7 @@ function useKpis() {
           profitChange: change(cur.profit, prev.profit),
           unitsChange: change(unitsCur || 0, unitsPrev || 0),
         });
+        if (mounted) setLoading(false);
       } catch (err) {
         console.error('useKpis', err);
       }
@@ -226,9 +231,11 @@ function useKpis() {
 
     void load();
     return () => { mounted = false; };
+    void load();
+    return () => { mounted = false; };
   }, []);
 
-  return kpis;
+  return { kpis, loading };
 }
 
 function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
@@ -287,14 +294,14 @@ function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
 /* ProfitGauge removed — replaced by ProfitBarChart in the layout */
 
 export default function DashboardPage() {
-  const summary = use7DaySummary();
-  const kpis = useKpis();
+  const { data: summary, loading: summaryLoading } = use7DaySummary();
+  const { kpis, loading: kpisLoading } = useKpis();
 
   return (
     <main className="page">
       <header className="header">
         <div>
-          <h1>Ringkasan performa bisnis </h1>
+          <h1>Ringkasan Performa Papi Kopi</h1>
         </div>
         <div className="date-range">29 Mei — 04 Jun 2025 ▾</div>
       </header>
@@ -313,8 +320,17 @@ export default function DashboardPage() {
               </svg>
             </Link>
           </div>
-          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.sales) : '—'}</div>
-          <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+          {kpisLoading ? (
+            <div>
+              <div className="skeleton skeleton-text" style={{ width: 140, height: 28 }} />
+              <div className="skeleton skeleton-sub" style={{ width: 160, height: 12, marginTop: 8 }} />
+            </div>
+          ) : (
+            <>
+              <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.sales) : '—'}</div>
+              <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+            </>
+          )}
         </div>
 
         <div className="kpi card">
@@ -330,8 +346,17 @@ export default function DashboardPage() {
               </svg>
             </Link>
           </div>
-          <div className="value">{kpis ? kpis.units : '—'}</div>
-          <div className={"trend " + (kpis && kpis.unitsChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.unitsChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.unitsChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+          {kpisLoading ? (
+            <div>
+              <div className="skeleton skeleton-text" style={{ width: 72, height: 28 }} />
+              <div className="skeleton skeleton-sub" style={{ width: 120, height: 12, marginTop: 8 }} />
+            </div>
+          ) : (
+            <>
+              <div className="value">{kpis ? kpis.units : '—'}</div>
+              <div className={"trend " + (kpis && kpis.unitsChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.unitsChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.unitsChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+            </>
+          )}
         </div>
 
         <div className="kpi card">
@@ -347,8 +372,17 @@ export default function DashboardPage() {
               </svg>
             </Link>
           </div>
-          <div className="value">{kpis ? kpis.orders : '—'}</div>
-          <div className={"trend " + (kpis && kpis.ordersChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.ordersChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.ordersChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+          {kpisLoading ? (
+            <div>
+              <div className="skeleton skeleton-text" style={{ width: 64, height: 28 }} />
+              <div className="skeleton skeleton-sub" style={{ width: 120, height: 12, marginTop: 8 }} />
+            </div>
+          ) : (
+            <>
+              <div className="value">{kpis ? kpis.orders : '—'}</div>
+              <div className={"trend " + (kpis && kpis.ordersChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.ordersChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.ordersChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+            </>
+          )}
         </div>
 
         <div className="kpi card">
@@ -364,8 +398,17 @@ export default function DashboardPage() {
               </svg>
             </Link>
           </div>
-          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.profit) : '—'}</div>
-          <div className={"trend " + (kpis && kpis.profitChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.profitChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.profitChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+          {kpisLoading ? (
+            <div>
+              <div className="skeleton skeleton-text" style={{ width: 100, height: 28 }} />
+              <div className="skeleton skeleton-sub" style={{ width: 140, height: 12, marginTop: 8 }} />
+            </div>
+          ) : (
+            <>
+              <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.profit) : '—'}</div>
+              <div className={"trend " + (kpis && kpis.profitChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.profitChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.profitChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+            </>
+          )}
         </div>
 
         <div className="kpi card">
@@ -381,8 +424,17 @@ export default function DashboardPage() {
               </svg>
             </Link>
           </div>
-          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.aov) : '—'}</div>
-          <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+          {kpisLoading ? (
+            <div>
+              <div className="skeleton skeleton-text" style={{ width: 92, height: 28 }} />
+              <div className="skeleton skeleton-sub" style={{ width: 140, height: 12, marginTop: 8 }} />
+            </div>
+          ) : (
+            <>
+              <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.aov) : '—'}</div>
+              <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+            </>
+          )}
         </div>
       </section>
 
@@ -393,7 +445,19 @@ export default function DashboardPage() {
             <div className="card cost-breakdown">
               <h3>Cost Breakdown</h3>
               <div className="donut-area">
-                <CostDoughnut summary={summary} />
+                {summaryLoading ? (
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', height: '100%' }}>
+                    <div className="skeleton" style={{ flex: '0 0 60%', minWidth: 160, height: '100%' }} />
+                    <div style={{ flex: '0 0 40%', minWidth: 120 }}>
+                      <div className="skeleton skeleton-text" style={{ width: '80%', height: 20, marginBottom: 12 }} />
+                      <div className="skeleton skeleton-sub" style={{ width: '60%', height: 14, marginBottom: 8 }} />
+                      <div className="skeleton skeleton-sub" style={{ width: '60%', height: 14, marginBottom: 8 }} />
+                      <div className="skeleton skeleton-sub" style={{ width: '60%', height: 14 }} />
+                    </div>
+                  </div>
+                ) : (
+                  <CostDoughnut summary={summary} />
+                )}
                 {/* legend moved into CostDoughnut */}
               </div>
             </div>
@@ -418,7 +482,7 @@ export default function DashboardPage() {
               <div className="chart-row">
                     <div className="bar-chart">
                       {/* Bar chart: revenue + hpp/bonus/meal */}
-                      <SalesBarChart summary={summary} />
+                      {summaryLoading ? <div className="skeleton" style={{ height: 260 }} /> : <SalesBarChart summary={summary} />}
                     </div>
                   </div>
             </div>
@@ -426,7 +490,7 @@ export default function DashboardPage() {
             <div className="card orders-trend">
               <h3>Orders Trend (7 Hari)</h3>
                 <div className="orders-chart">
-                  <OrdersLineChart summary={summary} />
+                  {summaryLoading ? <div className="skeleton" style={{ height: 260 }} /> : <OrdersLineChart summary={summary} />}
                 </div>
             </div>
           </div>
@@ -674,6 +738,23 @@ export default function DashboardPage() {
   letter-spacing: -0.6px;
 
   color: #0f172a;
+}
+
+/* =========================
+   SKELETON
+========================= */
+.skeleton {
+  background: linear-gradient(90deg, #f3f4f6 0%, #eceff6 50%, #f3f4f6 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+  border-radius: 8px;
+}
+.skeleton-text { border-radius: 6px; }
+.skeleton-sub { border-radius: 6px; opacity: 0.9; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .trend {
