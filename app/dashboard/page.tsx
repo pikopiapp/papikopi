@@ -112,10 +112,12 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-6">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
-          <p className="text-gray-600">
-            Role: <span className="font-semibold capitalize">{role}</span>
-          </p>
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
+            <p className="text-gray-600">
+              Role: <span className="font-semibold capitalize">{role}</span>
+            </p>
+          </div>
         </div>
 
         {/* Quick Actions */}
