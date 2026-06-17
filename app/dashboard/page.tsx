@@ -476,6 +476,40 @@ export default function DashboardPage() {
             })()}
           </ul>
 
+          {/* Laporan lainnya: quick access with contrasting icon badges */}
+          <div className="shortcuts card small" style={{ marginTop: 14 }}>
+            <h4>Laporan lainnya</h4>
+            <div className="shortcut-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 10, marginTop: 8 }}>
+              <Link href="/dashboard/reports/returns-analysis" aria-label="Returns Analysis" style={{ display: 'inline-flex', gap:12, alignItems:'center', padding:'8px 12px', borderRadius:12, background:'#fff', textDecoration:'none', color:'#0f172a', width: '100%', boxShadow:'0 1px 2px rgba(0,0,0,0.04)' }}>
+                <span style={{ width:36, height:36, borderRadius:8, display:'inline-flex', alignItems:'center', justifyContent:'center', background:'#ef4444' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v8l3-3" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </span>
+                <span style={{ fontSize:13, fontWeight:700 }}>Returns Analysis</span>
+              </Link>
+
+              <Link href="/dashboard/reports/allocation" aria-label="Allocation" style={{ display: 'inline-flex', gap:12, alignItems:'center', padding:'8px 12px', borderRadius:12, background:'#fff', textDecoration:'none', color:'#0f172a', width: '100%', boxShadow:'0 1px 2px rgba(0,0,0,0.04)' }}>
+                <span style={{ width:36, height:36, borderRadius:8, display:'inline-flex', alignItems:'center', justifyContent:'center', background:'#2563eb' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12h18" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/></svg>
+                </span>
+                <span style={{ fontSize:13, fontWeight:700 }}>Allocation</span>
+              </Link>
+
+              <Link href="/dashboard/reports/warehouse" aria-label="Warehouse" style={{ display: 'inline-flex', gap:12, alignItems:'center', padding:'8px 12px', borderRadius:12, background:'#fff', textDecoration:'none', color:'#0f172a', width: '100%', boxShadow:'0 1px 2px rgba(0,0,0,0.04)' }}>
+                <span style={{ width:36, height:36, borderRadius:8, display:'inline-flex', alignItems:'center', justifyContent:'center', background:'#059669' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 9l9-5 9 5v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round"/></svg>
+                </span>
+                <span style={{ fontSize:13, fontWeight:700 }}>Warehouse</span>
+              </Link>
+
+              <Link href="/dashboard/reports/batch-aging" aria-label="Batch Aging" style={{ display: 'inline-flex', gap:12, alignItems:'center', padding:'8px 12px', borderRadius:12, background:'#fff', textDecoration:'none', color:'#0f172a', width: '100%', boxShadow:'0 1px 2px rgba(0,0,0,0.04)' }}>
+                <span style={{ width:36, height:36, borderRadius:8, display:'inline-flex', alignItems:'center', justifyContent:'center', background:'#d97706' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 6v6l4 2" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </span>
+                <span style={{ fontSize:13, fontWeight:700 }}>Batch Aging</span>
+              </Link>
+            </div>
+          </div>
+
           <div className="tips small card">
             <h4>Tips</h4>
             <p className="muted">Fokus tingkatkan penjualan di hari Selasa dan Rabu untuk pertumbuhan lebih stabil.</p>

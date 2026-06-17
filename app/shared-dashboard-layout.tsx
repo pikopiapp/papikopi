@@ -8,7 +8,7 @@ import { useAuthStore } from '@/lib/store/auth';
 import { 
   LogOut, LayoutDashboard, TrendingDown, Archive,
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
-  Package, RotateCw, Eye, Calendar, Zap, BarChart3, Clock, AlertCircle,
+  Package, RotateCw, Eye, Calendar, Zap, BarChart3,
   Target, DollarSign, Receipt, Users, Briefcase, Calculator, Menu, X, HardDrive
   , ChevronDown, ChevronRight
 } from 'lucide-react';
@@ -115,15 +115,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       ],
     },
 
-    {
-      title: 'Laporan',
-      items: [
-        { href: '/dashboard/reports/returns-analysis', label: 'Returns Analysis', icon: RotateCw },
-        { href: '/dashboard/reports/allocation', label: 'Allocation', icon: Package },
-        { href: '/dashboard/reports/warehouse', label: 'Warehouse', icon: Factory },
-        { href: '/dashboard/reports/batch-aging', label: 'Batch Aging', icon: Clock },
-      ],
-    },
+    
 
     {
       title: 'Kelola Sistem',
@@ -155,7 +147,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     try {
       const raw = localStorage.getItem('pk:openReportGroups');
       if (raw) persisted = JSON.parse(raw);
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -180,7 +172,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
   useEffect(() => {
     try {
       localStorage.setItem('pk:openReportGroups', JSON.stringify(openGroups));
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [openGroups]);
