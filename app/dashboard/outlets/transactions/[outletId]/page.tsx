@@ -94,7 +94,7 @@ export default function TransactionDetailPage() {
 
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
-  const totalItems = sales.reduce((sum, s) => sum + (s.items?.length || 0), 0);
+  const totalUnits = sales.reduce((sum, s) => sum + (s.items ? s.items.reduce((u, it) => u + (it.quantity || 0), 0) : 0), 0);
 
   if (loading) {
     return (
@@ -138,8 +138,8 @@ export default function TransactionDetailPage() {
           <p className="text-2xl font-bold text-blue-600">{sales.length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <p className="text-gray-600 text-sm">Total Item Terjual</p>
-          <p className="text-2xl font-bold text-blue-600">{totalItems}</p>
+          <p className="text-gray-600 text-sm">Total Unit Terjual</p>
+          <p className="text-2xl font-bold text-blue-600">{totalUnits}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <p className="text-gray-600 text-sm">Total Omset</p>
