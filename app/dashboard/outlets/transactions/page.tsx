@@ -274,6 +274,7 @@ export default function TransactionsPage() {
       return { background: `linear-gradient(90deg, rgba(6,95,70,0.3) 0%, rgba(6,95,70,0.1) 100%)`, textClass: 'text-white' };
     }
 
+    // Force white text for non-top3 as well to guarantee readability against dark bg
     return { background: '#374151', textClass: 'text-white' };
   };
 

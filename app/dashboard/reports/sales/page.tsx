@@ -92,8 +92,9 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
   // Use the existing app API route for aggregated sales to match other pages' data-fetch pattern.
   // Server-side `fetch` with a relative URL will call the internal route handler.
   let raw: any[] = [];
+  let apiUrl = `/api/reports/sales?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&group=${groupParam}`;
   try {
-    const apiRes = await fetch(`/api/reports/sales?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&group=${groupParam}`, { cache: 'no-store' });
+    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
     if (apiRes.ok) {
       const body = await apiRes.json();
       raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
@@ -200,6 +201,17 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
         ) : (
           <div className="text-center py-8 text-gray-500">
             <p>Belum ada data penjualan untuk periode terpilih</p>
+            <div className="mt-4 text-left text-xs text-gray-500">
+              <p><strong>Debug:</strong></p>
+              <p>start: {startDate.toISOString()}</p>
+              <p>end: {endDate.toISOString()}</p>
+              <p>group: {groupParam}</p>
+              <p>apiUrl: {apiUrl}</p>
+              <details className="mt-2 text-xs text-gray-400">
+                <summary>Raw rows ({raw.length})</summary>
+                <pre className="whitespace-pre-wrap wrap-break-word max-h-48 overflow-auto">{JSON.stringify(raw, null, 2)}</pre>
+              </details>
+            </div>
           </div>
         )}
       </div>
