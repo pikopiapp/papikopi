@@ -397,7 +397,7 @@ export default function TransactionsPage() {
                 <div
                   // Apply mapped background and text color per rank
                   style={{ background: getGradientStyle(outlet.outlet_id).background }}
-                  className={`p-4 ${getGradientStyle(outlet.outlet_id).textClass} relative`}
+                  className={`p-4 ${getGradientStyle(outlet.outlet_id).textClass} dark:text-gray-300 relative`}
                 >
                   {/* Trophy Badge */}
                   {getTopBadge(outlet.outlet_id, 0) && (
