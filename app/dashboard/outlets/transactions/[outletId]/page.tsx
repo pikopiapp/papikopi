@@ -61,7 +61,8 @@ export default function TransactionDetailPage() {
   const formatRupiah = (v: number) => {
     if (!Number.isFinite(v)) return 'Rp0';
     // Format as Indonesian Rupiah with no fractional digits, e.g. "Rp12.500"
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(v));
+    // Append ",-" suffix to match local display style (e.g. "Rp12.500,-")
+    return `${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(v))},-`;
   };
 
   useEffect(() => {
