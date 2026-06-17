@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     // Build query
     let query = supabase
       .from('sales')
-      .select('id, total_amount, profit, created_at, hpp_total, bonus_amount, meal_amount')
+      .select('id, total_amount, profit, created_at, hpp_total, bonus_amount, meal_amount, outlet_id')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString())
       .order('created_at', { ascending: true })
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       usedFallback = true;
       const fallbackQuery = supabase
         .from('sales')
-        .select('id, total_amount, profit, created_at, hpp_total')
+        .select('id, total_amount, profit, created_at, hpp_total, outlet_id')
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
         .order('created_at', { ascending: true })
@@ -67,6 +67,11 @@ export async function GET(req: Request) {
 
     const map: Record<string, { date: string; revenue: number; profit: number; orders: number; hpp: number; bonus: number; meal: number }> = {};
 
+    // helper to accumulate meal per-date-per-outlet, so we sum each outlet once per day
+    const mealByDateOutlet: Record<string, Record<string, number>> = {};
+    // track revenue per outlet per date so allowances are computed per-outlet (not from total revenue)
+    const revenueByDateOutlet: Record<string, Record<string, number>> = {};
+
     // initialize all dates in range
     const startDay = startDate;
     const endDay = endDate;
@@ -84,9 +89,15 @@ export async function GET(req: Request) {
         map[key].profit += Number(r.profit || 0);
         map[key].orders += 1;
         map[key].hpp += Number(r.hpp_total || 0);
-        // prefer stored bonus/meal values when available (sum per sale)
+        // prefer stored bonus (sum of sale-level values)
         map[key].bonus += Number(r.bonus_amount || 0);
-        map[key].meal += Number(r.meal_amount || 0);
+        // accumulate meal per outlet to avoid double-counting — sum each outlet's meal_amount then total per day
+        const outletId = r.outlet_id ? String(r.outlet_id) : 'unknown';
+        if (!mealByDateOutlet[key]) mealByDateOutlet[key] = {};
+        mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + Number(r.meal_amount || 0);
+        // accumulate revenue per outlet for per-outlet meal allowance fallback
+        if (!revenueByDateOutlet[key]) revenueByDateOutlet[key] = {};
+        revenueByDateOutlet[key][outletId] = (revenueByDateOutlet[key][outletId] || 0) + Number(r.total_amount || 0);
       }
     }
 
@@ -107,9 +118,23 @@ export async function GET(req: Request) {
       const hpp = Math.round(v.hpp);
       // If stored bonus/meal exist (sum of sale-level columns), prefer them; otherwise compute from revenue
       const storedBonus = Math.round(v.bonus || 0);
-      const storedMeal = Math.round(v.meal || 0);
+      // compute meal as sum of per-outlet stored meal (if present) plus per-outlet computed allowance for outlets without stored values
+      const outletMeals = mealByDateOutlet[v.date] || {};
+      const outletRevenues = revenueByDateOutlet[v.date] || {};
+      let storedMealSum = 0;
+      let computedMealSum = 0;
+      const outletIds = new Set<string>([...Object.keys(outletMeals), ...Object.keys(outletRevenues)]);
+      for (const oid of outletIds) {
+        const stored = Math.round(outletMeals[oid] || 0);
+        if (stored > 0) {
+          storedMealSum += stored;
+        } else {
+          const outRev = Math.round(outletRevenues[oid] || 0);
+          computedMealSum += Math.round(calculateMealAllowance(outRev));
+        }
+      }
       const bonus = storedBonus > 0 ? storedBonus : Math.round((calculateBonusFromJson(revenue, bonusTiers as any[])?.totalBonus) || 0);
-      const meal = storedMeal > 0 ? storedMeal : Math.round(calculateMealAllowance(revenue));
+      const meal = storedMealSum + computedMealSum;
       const profit = Math.round(revenue - hpp - bonus - meal);
 
       return {

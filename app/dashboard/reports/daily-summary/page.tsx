@@ -163,6 +163,22 @@ export default function DailySummaryReport() {
     }).format(amount);
   };
 
+  const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number; lines: string[] }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    lines: [],
+  });
+
+  const showTooltip = (e: React.MouseEvent, lines: string[]) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltip({ visible: true, x: rect.left + rect.width / 2, y: rect.top - 8, lines });
+  };
+  const moveTooltip = (e: React.MouseEvent) => {
+    setTooltip((t) => ({ ...t, x: e.clientX, y: e.clientY - 12 }));
+  };
+  const hideTooltip = () => setTooltip({ visible: false, x: 0, y: 0, lines: [] });
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -278,21 +294,122 @@ export default function DailySummaryReport() {
 
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">7-Day Sales Trend</h2>
-        <div style={{ width: '100%', overflowX: 'auto' }}>
+        <div style={{ width: '100%', overflowX: 'auto', position: 'relative' }}>
+          {/* Tooltip */}
+          {tooltip.visible && (
+            <div style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '6px 8px', borderRadius: 6, fontSize: 12, pointerEvents: 'none', zIndex: 50 }}>
+              {tooltip.lines.map((l, i) => (
+                <div key={i}>{l}</div>
+              ))}
+            </div>
+          )}
+
           <svg viewBox={`0 0 800 400`} width="100%" height={400} preserveAspectRatio="xMinYMid meet">
             <line x1={60} y1={20} x2={60} y2={360} stroke="#eee" />
-            {data.map((d, i) => {
+            {(() => {
               const barW = (680 / Math.max(1, data.length));
-              const x = 60 + i * barW + barW * 0.1;
-              const max = Math.max(1, ...data.map((dd) => dd.revenue || 0));
-              const hVal = ((d.revenue || 0) / max) * 300;
+              // scale against revenue, hpp, bonus and meal so all bars fit
+              const max = Math.max(1, ...data.map((dd) => Math.max(dd.revenue || 0, dd.hpp || 0, dd.bonus || 0, dd.meal || 0)));
+
               return (
-                <g key={d.date}>
-                  <rect x={x} y={360 - hVal} width={barW * 0.7} height={hVal} fill="#8884d8" />
-                  <text x={x + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${x + barW * 0.35},378)`}>{d.date}</text>
-                </g>
+                <>
+                  {data.map((d, i) => {
+                    const groupX = 60 + i * barW;
+                    const padding = barW * 0.1;
+                    const revenueW = barW * 0.5; // main bar width
+                    const smallW = barW * 0.12; // width for hpp/bonus/meal bars
+                    const gap = 4;
+                    const revenueX = groupX + padding;
+                    const smallStartX = revenueX + revenueW + gap;
+                    const hppX = smallStartX;
+                    const bonusX = hppX + smallW + gap;
+                    const mealX = bonusX + smallW + gap;
+
+                    const revenueH = ((d.revenue || 0) / max) * 300;
+                    const hppH = ((d.hpp || 0) / max) * 300;
+                    const bonusH = ((d.bonus || 0) / max) * 300;
+                    const mealH = ((d.meal || 0) / max) * 300;
+
+                    return (
+                      <g key={d.date}>
+                        {/* Revenue bar */}
+                        <rect
+                          x={revenueX}
+                          y={360 - revenueH}
+                          width={revenueW}
+                          height={revenueH}
+                          fill="#8884d8"
+                          onMouseEnter={(e) => showTooltip(e, [`Revenue: ${formatCurrency(d.revenue || 0)}`, `Orders: ${d.orders || 0}`])}
+                          onMouseMove={moveTooltip}
+                          onMouseLeave={hideTooltip}
+                        />
+                        {/* HPP bar (if enabled) */}
+                        {visibleSeries.hpp && (
+                          <rect
+                            x={hppX}
+                            y={360 - hppH}
+                            width={smallW}
+                            height={hppH}
+                            fill="#e55353"
+                            onMouseEnter={(e) => showTooltip(e, [`HPP: ${formatCurrency(d.hpp || 0)}`])}
+                            onMouseMove={moveTooltip}
+                            onMouseLeave={hideTooltip}
+                          />
+                        )}
+                        {/* Stacked Meal + Bonus bar (meal at bottom, bonus on top) */}
+                        {((visibleSeries.meal && (d.meal || 0) > 0) || (visibleSeries.bonus && (d.bonus || 0) > 0)) && (() => {
+                          const stackX = bonusX; // place stack where bonus was
+                          const stackMealH = mealH;
+                          const stackBonusH = bonusH;
+                          const stackTotalH = stackMealH + stackBonusH;
+                          const stackY = 360 - stackTotalH;
+
+                          return (
+                            <g>
+                              {/* meal (bottom) */}
+                              {visibleSeries.meal && stackMealH > 0 && (
+                                <rect
+                                  x={stackX}
+                                  y={360 - stackMealH}
+                                  width={smallW}
+                                  height={stackMealH}
+                                  fill="#f59e0b"
+                                />
+                              )}
+                              {/* bonus (top) */}
+                              {visibleSeries.bonus && stackBonusH > 0 && (
+                                <rect
+                                  x={stackX}
+                                  y={360 - (stackMealH + stackBonusH)}
+                                  width={smallW}
+                                  height={stackBonusH}
+                                  fill="#7c3aed"
+                                />
+                              )}
+                              {/* hover area shows both lines */}
+                              <rect
+                                x={stackX}
+                                y={stackY}
+                                width={smallW}
+                                height={Math.max(1, stackTotalH)}
+                                fill="transparent"
+                                onMouseEnter={(e) => showTooltip(e, [
+                                  `Meal: ${formatCurrency(d.meal || 0)}`,
+                                  `Bonus: ${formatCurrency(d.bonus || 0)}`,
+                                ])}
+                                onMouseMove={moveTooltip}
+                                onMouseLeave={hideTooltip}
+                              />
+                            </g>
+                          );
+                        })()}
+                        <text x={groupX + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${groupX + barW * 0.35},378)`}>{d.date}</text>
+                      </g>
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
           </svg>
         </div>
       </div>
