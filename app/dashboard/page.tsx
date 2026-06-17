@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/app/providers/auth-provider";
 import { useRouter } from "next/navigation";
-import { LogOut, ShoppingCart, TrendingUp, Users, Store, Coffee, AlertCircle, DollarSign } from "lucide-react";
+import { ShoppingCart, TrendingUp, Users, Store, Coffee, AlertCircle, DollarSign } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -16,7 +16,8 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats>({
     todayRevenue: 0,
@@ -26,13 +27,14 @@ export default function DashboardPage() {
     totalBaristas: 0,
     activeOutlets: 0
   });
-  const [loading, setLoading] = useState(true);
+  // const [loading, setLoading] = useState(true);
+
   const [error, setError] = useState<string | null>(null);
 
   const fetchDashboardStats = async () => {
     try {
-      setLoading(true);
       setError(null);
+
 
       const today = new Date().toISOString().split('T')[0];
 
@@ -45,8 +47,18 @@ export default function DashboardPage() {
 
       if (salesError) throw salesError;
 
-      const todayRevenue = (todaysSales || []).reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
-      const todayProfit = (todaysSales || []).reduce((sum: number, s: any) => sum + Number(s.profit), 0);
+      type SaleAggRow = { total_amount?: number | string | null; profit?: number | string | null };
+      const todayRevenue = (todaysSales ?? []).reduce(
+        (sum: number, s) => sum + Number((s as SaleAggRow).total_amount ?? 0),
+        0
+      );
+      const todayProfit = (todaysSales ?? []).reduce(
+        (sum: number, s) => sum + Number((s as SaleAggRow).profit ?? 0),
+        0
+      );
+
+
+
       const todayTransactions = todaysSales?.length || 0;
 
       // Get outlets count
@@ -67,8 +79,10 @@ export default function DashboardPage() {
       const totalBaristas = baristas?.length || 0;
 
       // Get active outlets (outlets with sales today)
-      const activeOutletsSet = new Set(todaysSales?.map((s: any) => s.outlet_id));
+      type SaleRow = { outlet_id?: string | null };
+      const activeOutletsSet = new Set((todaysSales ?? []).map((s) => (s as SaleRow).outlet_id).filter(Boolean));
       const activeOutlets = activeOutletsSet.size;
+
 
       setStats({
         todayRevenue,
@@ -82,8 +96,8 @@ export default function DashboardPage() {
       console.error('Failed to fetch dashboard stats:', err);
       setError('Gagal memuat data dashboard');
     } finally {
-      setLoading(false);
     }
+
   };
 
   useEffect(() => {
@@ -93,32 +107,25 @@ export default function DashboardPage() {
     return () => clearTimeout(t);
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    router.push("/login");
-  };
-
   const role = (user?.user_metadata?.role ?? '') as string;
+
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
       <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
 
-        </div>
       </nav>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-6">
-        <div className="mb-8">
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
-            <p className="text-gray-600">
-              Role: <span className="font-semibold capitalize">{role}</span>
-            </p>
-          </div>
+        <div className="mb-8 bg-white p-6 rounded-lg shadow border border-gray-200">
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
+          <p className="text-gray-600">
+            Role: <span className="font-semibold capitalize">{role}</span>
+          </p>
         </div>
+
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
