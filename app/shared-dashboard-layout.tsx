@@ -118,13 +118,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     {
       title: 'Laporan',
       items: [
-        { href: '/dashboard/reports/daily-summary', label: 'Daily Summary', icon: Calendar },
-        { href: '/dashboard/reports/sales', label: 'Sales', icon: Receipt },
-        { href: '/dashboard/reports/profitloss', label: 'Profit & Loss', icon: DollarSign },
-        { href: '/dashboard/reports/product-performance', label: 'Product Performance', icon: Target },
         { href: '/dashboard/reports/returns-analysis', label: 'Returns Analysis', icon: RotateCw },
-        { href: '/dashboard/reports/outlet-comparison', label: 'Outlet Comparison', icon: Store },
-        { href: '/dashboard/reports/outlet-stock', label: 'Outlet Stock', icon: Archive },
         { href: '/dashboard/reports/allocation', label: 'Allocation', icon: Package },
         { href: '/dashboard/reports/warehouse', label: 'Warehouse', icon: Factory },
         { href: '/dashboard/reports/batch-aging', label: 'Batch Aging', icon: Clock },

@@ -1,36 +1,48 @@
 "use client";
 
 import React from "react";
+import Link from 'next/link';
 import type { ChartOptions } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { SalesBarChart, OrdersLineChart, ProfitBarChart } from './Charts';
 
 const IconSales = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="5" width="18" height="14" rx="2" stroke="#0f172a" strokeOpacity="0.06" />
-    <path d="M7 9h3v6H7zM11 7h3v8h-3zM15 11h3v4h-3z" fill="#0b84ff" />
+    <path d="M4 5h16v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z" stroke="#0f172a" strokeOpacity="0.08" fill="#fff" />
+    <path d="M7 8h10M7 12h10M7 16h6" stroke="#0b84ff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    <text x="18" y="7.5" fontSize="9" fill="#0f172a" opacity="0.7">Rp</text>
   </svg>
 );
 
 const IconOrders = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
-    <path d="M3 6h18M5 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6" stroke="#0f172a" strokeOpacity="0.06" fill="none" />
-    <circle cx="8" cy="10" r="1.6" fill="#7c3aed" />
-    <circle cx="12" cy="10" r="1.6" fill="#7c3aed" />
-    <circle cx="16" cy="10" r="1.6" fill="#7c3aed" />
+    <path d="M6 2h12l1.5 4H4.5L6 2z" fill="#f3f4f6" stroke="#ef4444" strokeWidth="0.6" />
+    <path d="M4 6h16v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z" stroke="#0f172a" strokeOpacity="0.06" fill="none" />
+    <circle cx="9" cy="15.5" r="1.2" fill="#ef4444" />
+    <circle cx="15" cy="15.5" r="1.2" fill="#ef4444" />
+  </svg>
+);
+
+const IconCup = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+    <path d="M6 7h12v2a6 6 0 0 1-6 6 6 6 0 0 1-6-6V7z" stroke="#7c3aed" strokeWidth="1.2" fill="#fff" />
+    <path d="M8 5h8v2H8z" fill="#7c3aed" />
+    <path d="M18 9v1a3 3 0 0 0 0 6" stroke="#7c3aed" strokeWidth="1" fill="none" />
   </svg>
 );
 
 const IconProfit = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
-    <path d="M4 12h6l2-3 4 6" stroke="#16a34a" strokeWidth="1.5" fill="none" />
-    <circle cx="18" cy="8" r="2" fill="#16a34a" />
+    <path d="M4 14l4-4 4 4 6-6" stroke="#16a34a" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="18" cy="6" r="2" fill="#16a34a" />
   </svg>
 );
 
 const IconAvg = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 3v18M5 8c2 2 4 3 7 3s5-1 7-3" stroke="#f59e0b" strokeWidth="1.5" fill="none" />
+    <rect x="3" y="7" width="18" height="10" rx="2" stroke="#f59e0b" strokeWidth="0.9" fill="#fff" />
+    <path d="M7 11h10" stroke="#f59e0b" strokeWidth="1.3" strokeLinecap="round" />
+    <text x="16" y="16" fontSize="9" fill="#f59e0b">Rp</text>
   </svg>
 );
 
@@ -290,8 +302,16 @@ export default function DashboardPage() {
       <section className="kpi-grid">
         <div className="kpi card">
           <div className="kpi-head">
-            <div className="icon bg-blue"><IconSales /></div>
-            <small className="muted">Total Sales</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div className="icon bg-blue"><IconSales /></div>
+              <small className="muted">Total Sales</small>
+            </div>
+            <Link href="/dashboard/reports/sales" className="detail-link" aria-label="Lihat detail penjualan">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+              </svg>
+            </Link>
           </div>
           <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.sales) : '—'}</div>
           <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
@@ -299,8 +319,16 @@ export default function DashboardPage() {
 
         <div className="kpi card">
           <div className="kpi-head">
-            <div className="icon bg-teal"><IconOrders /></div>
-            <small className="muted">Total Units (cup)</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div className="icon bg-teal"><IconOrders /></div>
+              <small className="muted">Total Units (cup)</small>
+            </div>
+            <Link href="/dashboard/reports/outlet-stock" className="detail-link" aria-label="Lihat detail outlet stock">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+              </svg>
+            </Link>
           </div>
           <div className="value">{kpis ? kpis.units : '—'}</div>
           <div className={"trend " + (kpis && kpis.unitsChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.unitsChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.unitsChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
@@ -308,8 +336,16 @@ export default function DashboardPage() {
 
         <div className="kpi card">
           <div className="kpi-head">
-            <div className="icon bg-purple"><IconOrders /></div>
-            <small className="muted">Total Orders</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div className="icon bg-purple"><IconOrders /></div>
+              <small className="muted">Total Orders</small>
+            </div>
+            <Link href="/dashboard/reports/outlet-comparison" className="detail-link" aria-label="Lihat detail outlet comparison">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+              </svg>
+            </Link>
           </div>
           <div className="value">{kpis ? kpis.orders : '—'}</div>
           <div className={"trend " + (kpis && kpis.ordersChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.ordersChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.ordersChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
@@ -317,8 +353,16 @@ export default function DashboardPage() {
 
         <div className="kpi card">
           <div className="kpi-head">
-            <div className="icon bg-green"><IconProfit /></div>
-            <small className="muted">Total Profit</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div className="icon bg-green"><IconProfit /></div>
+              <small className="muted">Total Profit</small>
+            </div>
+            <Link href="/dashboard/reports/profitloss" className="detail-link" aria-label="Lihat detail profit">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+              </svg>
+            </Link>
           </div>
           <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.profit) : '—'}</div>
           <div className={"trend " + (kpis && kpis.profitChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.profitChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.profitChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
@@ -326,8 +370,16 @@ export default function DashboardPage() {
 
         <div className="kpi card">
           <div className="kpi-head">
-            <div className="icon bg-yellow"><IconAvg /></div>
-            <small className="muted">Avg Order Value</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div className="icon bg-yellow"><IconAvg /></div>
+              <small className="muted">Avg Order Value</small>
+            </div>
+            <Link href="/dashboard/reports/product-performance" className="detail-link" aria-label="Lihat detail produk">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+              </svg>
+            </Link>
           </div>
           <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.aov) : '—'}</div>
           <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
@@ -354,7 +406,15 @@ export default function DashboardPage() {
 
           <div className="bottom-grid">
             <div className="card trends">
-              <h3>Sales & Profit Trend (7 Hari)</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <h3>Sales & Profit Trend (7 Hari)</h3>
+                <Link href="/dashboard/reports/daily-summary" className="detail-link" aria-label="Lihat daily summary">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 5c4 0 7.27 2.5 9 6-1.73 3.5-5 6-9 6s-7.27-2.5-9-6c1.73-3.5 5-6 9-6z" stroke="#0f172a" strokeOpacity="0.6" strokeWidth="1.2" fill="none" />
+                    <circle cx="12" cy="11" r="2.5" fill="#0f172a" fillOpacity="0.85" />
+                  </svg>
+                </Link>
+              </div>
               <div className="chart-row">
                     <div className="bar-chart">
                       {/* Bar chart: revenue + hpp/bonus/meal */}
@@ -593,6 +653,25 @@ export default function DashboardPage() {
 
 .trend.down {
   color: #ef4444;
+}
+
+.detail-link {
+  margin-left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #0f172a;
+  text-decoration: none;
+  transition: background .12s ease, transform .08s ease;
+}
+
+.detail-link:hover {
+  background: #e2e8f0;
+  transform: translateY(-1px);
 }
 
 /* =========================
