@@ -1,223 +1,882 @@
 "use client";
 
-import { useAuth } from "@/app/providers/auth-provider";
-import { useRouter } from "next/navigation";
-import { ShoppingCart, TrendingUp, Users, Store, Coffee, AlertCircle, DollarSign } from "lucide-react";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import React from "react";
+import type { ChartOptions } from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
+import { SalesBarChart, OrdersLineChart, ProfitBarChart } from './Charts';
 
-interface DashboardStats {
-  todayRevenue: number;
-  todayProfit: number;
-  todayTransactions: number;
-  totalOutlets: number;
-  totalBaristas: number;
-  activeOutlets: number;
+const IconSales = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="5" width="18" height="14" rx="2" stroke="#0f172a" strokeOpacity="0.06" />
+    <path d="M7 9h3v6H7zM11 7h3v8h-3zM15 11h3v4h-3z" fill="#0b84ff" />
+  </svg>
+);
+
+const IconOrders = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 6h18M5 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6" stroke="#0f172a" strokeOpacity="0.06" fill="none" />
+    <circle cx="8" cy="10" r="1.6" fill="#7c3aed" />
+    <circle cx="12" cy="10" r="1.6" fill="#7c3aed" />
+    <circle cx="16" cy="10" r="1.6" fill="#7c3aed" />
+  </svg>
+);
+
+const IconProfit = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 12h6l2-3 4 6" stroke="#16a34a" strokeWidth="1.5" fill="none" />
+    <circle cx="18" cy="8" r="2" fill="#16a34a" />
+  </svg>
+);
+
+const IconAvg = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 3v18M5 8c2 2 4 3 7 3s5-1 7-3" stroke="#f59e0b" strokeWidth="1.5" fill="none" />
+  </svg>
+);
+
+// legacy DonutChart removed in favor of Chart.js Doughnut
+
+// legacy Gauge removed in favor of Chart.js Doughnut gauge
+
+// removed inline mock bars/spark — replaced with Chart.js components below
+
+// Client-side fetch for 7-day daily summary used by the small cards
+type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
+function use7DaySummary() {
+  const [data, setData] = React.useState<SummaryItem[]>([]);
+  React.useEffect(() => {
+    let mounted = true;
+    const fetchIt = async () => {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 6);
+        const fmt = (d: Date) => d.toISOString().slice(0, 10);
+        const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
+        const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
+        if (!res.ok) throw new Error('Failed to load daily summary');
+        const json = await res.json();
+        const raw = Array.isArray(json?.data) ? json.data as unknown[] : [];
+        const mapped: SummaryItem[] = raw.map((r) => {
+          const item = r as Record<string, unknown>;
+          const dateStr = typeof item.date === 'string' ? item.date : new Date().toISOString();
+          const revenue = typeof item.revenue === 'number' ? item.revenue : Number(item.revenue || 0);
+          const hpp = typeof item.hpp === 'number' ? item.hpp : Number(item.hpp || 0);
+          const bonus = typeof item.bonus === 'number' ? item.bonus : Number(item.bonus || 0);
+          const meal = typeof item.meal === 'number' ? item.meal : Number(item.meal || 0);
+          const orders = typeof item.orders === 'number' ? item.orders : Number(item.orders || 0);
+          const profit = typeof item.profit === 'number' ? item.profit : Number(item.profit || 0);
+          return {
+            date: new Date(dateStr).toLocaleDateString('id-ID', { weekday: 'short' }).substring(0, 3),
+            revenue,
+            hpp,
+            bonus,
+            meal,
+            orders,
+            profit,
+          };
+        });
+        if (mounted) setData(mapped);
+      } catch (err) {
+        console.error('use7DaySummary', err);
+      }
+    };
+    void fetchIt();
+    return () => { mounted = false; };
+  }, []);
+  return data;
 }
 
-export default function DashboardPage() {
-  const { user } = useAuth();
+// Fetch KPI totals for current 7-day period and previous 7-day period, compute changes
+function useKpis() {
+  const [kpis, setKpis] = React.useState<null | {
+    sales: number;
+    orders: number;
+    profit: number;
+    aov: number;
+    units: number;
+    prevRangeText: string;
+    salesChange: number;
+    ordersChange: number;
+    profitChange: number;
+    unitsChange: number;
+  }>(null);
 
-  const router = useRouter();
-  const [stats, setStats] = useState<DashboardStats>({
-    todayRevenue: 0,
-    todayProfit: 0,
-    todayTransactions: 0,
-    totalOutlets: 0,
-    totalBaristas: 0,
-    activeOutlets: 0
-  });
-  // const [loading, setLoading] = useState(true);
-
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchDashboardStats = async () => {
-    try {
-      setError(null);
-
-
-      const today = new Date().toISOString().split('T')[0];
-
-      // Get today's sales
-      const { data: todaysSales, error: salesError } = await supabase
-        .from('sales')
-        .select('id, total_amount, profit')
-        .gte('created_at', `${today}T00:00:00`)
-        .lte('created_at', `${today}T23:59:59`);
-
-      if (salesError) throw salesError;
-
-      type SaleAggRow = { total_amount?: number | string | null; profit?: number | string | null };
-      const todayRevenue = (todaysSales ?? []).reduce(
-        (sum: number, s) => sum + Number((s as SaleAggRow).total_amount ?? 0),
-        0
-      );
-      const todayProfit = (todaysSales ?? []).reduce(
-        (sum: number, s) => sum + Number((s as SaleAggRow).profit ?? 0),
-        0
-      );
-
-
-
-      const todayTransactions = todaysSales?.length || 0;
-
-      // Get outlets count
-      const { data: outlets, error: outletsError } = await supabase
-        .from('outlets')
-        .select('id', { count: 'exact' });
-
-      if (outletsError) throw outletsError;
-      const totalOutlets = outlets?.length || 0;
-
-      // Get baristas count
-      const { data: baristas, error: baristasError } = await supabase
-        .from('users')
-        .select('id', { count: 'exact' })
-        .eq('role', 'barista');
-
-      if (baristasError) throw baristasError;
-      const totalBaristas = baristas?.length || 0;
-
-      // Get active outlets (outlets with sales today)
-      type SaleRow = { outlet_id?: string | null };
-      const activeOutletsSet = new Set((todaysSales ?? []).map((s) => (s as SaleRow).outlet_id).filter(Boolean));
-      const activeOutlets = activeOutletsSet.size;
-
-
-      setStats({
-        todayRevenue,
-        todayProfit,
-        todayTransactions,
-        totalOutlets,
-        totalBaristas,
-        activeOutlets
+  React.useEffect(() => {
+    let mounted = true;
+    const fetchRange = async (start: Date, end: Date) => {
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
+      const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
+      if (!res.ok) throw new Error('Failed to load daily summary');
+      const json = await res.json();
+      const raw = Array.isArray(json?.data) ? json.data as unknown[] : [];
+      const mapped = raw.map((r) => {
+        const item = r as Record<string, unknown>;
+        return {
+          revenue: Number(item.revenue || 0),
+          orders: Number(item.orders || 0),
+          profit: Number(item.profit || 0),
+        };
       });
-    } catch (err) {
-      console.error('Failed to fetch dashboard stats:', err);
-      setError('Gagal memuat data dashboard');
-    } finally {
-    }
+      return mapped.reduce((acc, cur) => {
+        acc.revenue += cur.revenue;
+        acc.orders += cur.orders;
+        acc.profit += cur.profit;
+        return acc;
+      }, { revenue: 0, orders: 0, profit: 0 });
+    };
 
-  };
+    const fetchUnits = async (start: Date, end: Date) => {
+      try {
+        // Use the JSON API that returns sales with items: /api/sales/by-outlet
+        const res = await fetch(`/api/sales/by-outlet`);
+        if (!res.ok) return 0;
+        const json = await res.json();
+        const rawSales = Array.isArray(json) ? json as unknown[] : (Array.isArray(json?.sales) ? json.sales as unknown[] : []);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      fetchDashboardStats();
-    }, 0);
-    return () => clearTimeout(t);
+        // build inclusive end timestamp
+        const startTime = new Date(start).setHours(0, 0, 0, 0);
+        const endInclusive = new Date(end);
+        endInclusive.setHours(23, 59, 59, 999);
+        const endTime = endInclusive.getTime();
+
+        const total = rawSales.reduce((sum: number, s) => {
+          const sale = s as Record<string, unknown>;
+          const t = new Date(String(sale['created_at'] || '')).getTime();
+          if (Number.isNaN(t)) return sum;
+          if (t < startTime || t > endTime) return sum;
+          const items = Array.isArray(sale['items']) ? sale['items'] as Record<string, unknown>[] : [];
+          const saleUnits = items.reduce((ss: number, it) => {
+            const qty = Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0;
+            return ss + qty;
+          }, 0);
+          return sum + saleUnits;
+        }, 0);
+
+        return total;
+      } catch (e) {
+        console.error('fetchUnits error', e);
+        return 0;
+      }
+    };
+
+    const load = async () => {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 6);
+
+        const prevEnd = new Date(start);
+        prevEnd.setDate(start.getDate() - 1);
+        const prevStart = new Date(prevEnd);
+        prevStart.setDate(prevEnd.getDate() - 6);
+
+        const resAll = await Promise.all([
+          fetchRange(start, end),
+          fetchRange(prevStart, prevEnd),
+          fetchUnits(start, end),
+          fetchUnits(prevStart, prevEnd),
+        ]) as [
+          { revenue: number; orders: number; profit: number },
+          { revenue: number; orders: number; profit: number },
+          number,
+          number
+        ];
+        const [cur, prev, unitsCur, unitsPrev] = resAll;
+
+        const curAov = cur.orders > 0 ? Math.round((cur.revenue / cur.orders)) : 0;
+
+        const change = (curVal: number, prevVal: number) => {
+          if (!prevVal) return 0;
+          return Math.round(((curVal - prevVal) / prevVal) * 1000) / 10; // one decimal
+        };
+
+        const monthLabel = (d: Date) => d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+        const prevRangeText = `${prevStart.getDate()}–${prevEnd.getDate()} ${monthLabel(prevStart)}`;
+
+        if (mounted) setKpis({
+          sales: cur.revenue,
+          orders: cur.orders,
+          profit: cur.profit,
+          aov: curAov,
+          units: unitsCur || 0,
+          prevRangeText,
+          salesChange: change(cur.revenue, prev.revenue),
+          ordersChange: change(cur.orders, prev.orders),
+          profitChange: change(cur.profit, prev.profit),
+          unitsChange: change(unitsCur || 0, unitsPrev || 0),
+        });
+      } catch (err) {
+        console.error('useKpis', err);
+      }
+    };
+
+    void load();
+    return () => { mounted = false; };
   }, []);
 
-  const role = (user?.user_metadata?.role ?? '') as string;
+  return kpis;
+}
 
+function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
+  const totalHpp = summary.reduce((s, x) => s + (x.hpp || 0), 0);
+  const totalBonus = summary.reduce((s, x) => s + (x.bonus || 0), 0);
+  const totalMeal = summary.reduce((s, x) => s + (x.meal || 0), 0);
+  const total = totalHpp + totalBonus + totalMeal || 1;
+
+  const data = {
+    labels: ['HPP', 'Bonus', 'Meal'],
+    datasets: [
+      {
+        data: [totalHpp, totalBonus, totalMeal],
+        backgroundColor: ['#ef4444', '#7c3aed', '#f59e0b'],
+        borderWidth: 0,
+      },
+    ],
+  };
+
+  const options: ChartOptions<'doughnut'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' }, tooltip: { enabled: true } },
+    cutout: '60%',
+  };
+
+  const fmt = (v: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
-      <nav className="bg-white shadow">
-
-      </nav>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="mb-8 bg-white p-6 rounded-lg shadow border border-gray-200">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">Selamat datang, {user?.user_metadata?.full_name ?? user?.email ?? 'Pengguna'}!</h2>
-          <p className="text-gray-600">
-            Role: <span className="font-semibold capitalize">{role}</span>
-          </p>
-        </div>
-
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          {[
-            { href: '/dashboard/pos', icon: ShoppingCart, title: 'POS', desc: 'Transaksi Penjualan' },
-            { href: '/dashboard/sales', icon: TrendingUp, title: 'Laporan', desc: 'Penjualan & Profit' },
-            { href: '/dashboard/products', icon: ShoppingCart, title: 'Produk', desc: 'Kelola Produk' },
-            { href: '/dashboard/users', icon: Users, title: 'Tim', desc: 'Manajemen Pengguna' },
-            { href: '/dashboard/wages', icon: DollarSign, title: 'Gajian', desc: 'Upah & Pembayaran' },
-          ].map((a) => (
-            <div
-              key={a.href}
-              onClick={() => router.push(a.href)}
-              className="bg-white p-6 rounded-lg shadow hover:shadow-lg cursor-pointer transition transform hover:scale-105"
-            >
-              <a.icon className="w-8 h-8 text-amber-600 mb-4" />
-              <h3 className="font-bold text-gray-800">{a.title}</h3>
-              <p className="text-sm text-gray-600">{a.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-linear-to-br from-amber-100 to-amber-50 p-6 rounded-lg border border-amber-200">
-            <p className="text-amber-800 text-sm font-semibold">Omzet Hari Ini</p>
-            <p className="text-3xl font-bold text-amber-900 mt-2">
-              Rp {stats.todayRevenue.toLocaleString('id-ID')}
-            </p>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', height: '100%' }}>
+      <div className="donut-chart-wrap">
+        <Doughnut data={data} options={options} />
+      </div>
+      <div className="donut-info">
+        <div style={{ fontWeight: 700, fontSize: 13 }}>Total Cost</div>
+        <div style={{ color: '#374151', fontWeight: 700, marginBottom: 6, fontSize: 14 }}>{fmt(total)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot red"/> <span className="label" style={{ fontSize:12 }}>HPP</span></div>
+            <div style={{ textAlign: 'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{fmt(totalHpp)}</div><div className="muted" style={{ fontSize:11 }}>{Math.round((totalHpp/total)*100)}%</div></div>
           </div>
-
-          <div className="bg-linear-to-br from-green-100 to-green-50 p-6 rounded-lg border border-green-200">
-            <p className="text-green-800 text-sm font-semibold">Profit Hari Ini</p>
-            <p className="text-3xl font-bold text-green-900 mt-2">
-              Rp {stats.todayProfit.toLocaleString('id-ID')}
-            </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot purple"/> <span className="label" style={{ fontSize:12 }}>Bonus</span></div>
+            <div style={{ textAlign: 'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{fmt(totalBonus)}</div><div className="muted" style={{ fontSize:11 }}>{Math.round((totalBonus/total)*100)}%</div></div>
           </div>
-
-          <div className="bg-linear-to-br from-blue-100 to-blue-50 p-6 rounded-lg border border-blue-200">
-            <p className="text-blue-800 text-sm font-semibold">Transaksi Hari Ini</p>
-            <p className="text-3xl font-bold text-blue-900 mt-2">{stats.todayTransactions}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot orange"/> <span className="label" style={{ fontSize:12 }}>Meal</span></div>
+            <div style={{ textAlign: 'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{fmt(totalMeal)}</div><div className="muted" style={{ fontSize:11 }}>{Math.round((totalMeal/total)*100)}%</div></div>
           </div>
         </div>
-
-        {/* Additional Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-purple-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm font-semibold mb-1">Total Outlet</p>
-                <p className="text-2xl font-bold text-gray-800">{stats.totalOutlets}</p>
-              </div>
-              <Store className="w-10 h-10 text-purple-500 opacity-20" />
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              {stats.activeOutlets} aktif hari ini
-            </p>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-orange-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm font-semibold mb-1">Total Barista</p>
-                <p className="text-2xl font-bold text-gray-800">{stats.totalBaristas}</p>
-              </div>
-              <Coffee className="w-10 h-10 text-orange-500 opacity-20" />
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-cyan-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600 text-sm font-semibold mb-1">Rata-rata Transaksi</p>
-                <p className="text-2xl font-bold text-gray-800">
-                  {stats.todayTransactions > 0 
-                    ? `Rp ${Math.round(stats.todayRevenue / stats.todayTransactions).toLocaleString('id-ID')}`
-                    : 'Rp 0'}
-                </p>
-              </div>
-              <TrendingUp className="w-10 h-10 text-cyan-500 opacity-20" />
-            </div>
-          </div>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg mb-8 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-red-800">{error}</p>
-          </div>
-        )}
       </div>
     </div>
+  );
+}
+
+/* ProfitGauge removed — replaced by ProfitBarChart in the layout */
+
+export default function DashboardPage() {
+  const summary = use7DaySummary();
+  const kpis = useKpis();
+
+  return (
+    <main className="page">
+      <header className="header">
+        <div>
+          <h1>Ringkasan performa bisnis </h1>
+        </div>
+        <div className="date-range">29 Mei — 04 Jun 2025 ▾</div>
+      </header>
+
+      <section className="kpi-grid">
+        <div className="kpi card">
+          <div className="kpi-head">
+            <div className="icon bg-blue"><IconSales /></div>
+            <small className="muted">Total Sales</small>
+          </div>
+          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.sales) : '—'}</div>
+          <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+        </div>
+
+        <div className="kpi card">
+          <div className="kpi-head">
+            <div className="icon bg-teal"><IconOrders /></div>
+            <small className="muted">Total Units (cup)</small>
+          </div>
+          <div className="value">{kpis ? kpis.units : '—'}</div>
+          <div className={"trend " + (kpis && kpis.unitsChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.unitsChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.unitsChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+        </div>
+
+        <div className="kpi card">
+          <div className="kpi-head">
+            <div className="icon bg-purple"><IconOrders /></div>
+            <small className="muted">Total Orders</small>
+          </div>
+          <div className="value">{kpis ? kpis.orders : '—'}</div>
+          <div className={"trend " + (kpis && kpis.ordersChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.ordersChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.ordersChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+        </div>
+
+        <div className="kpi card">
+          <div className="kpi-head">
+            <div className="icon bg-green"><IconProfit /></div>
+            <small className="muted">Total Profit</small>
+          </div>
+          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.profit) : '—'}</div>
+          <div className={"trend " + (kpis && kpis.profitChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.profitChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.profitChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+        </div>
+
+        <div className="kpi card">
+          <div className="kpi-head">
+            <div className="icon bg-yellow"><IconAvg /></div>
+            <small className="muted">Avg Order Value</small>
+          </div>
+          <div className="value">{kpis ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(kpis.aov) : '—'}</div>
+          <div className={"trend " + (kpis && kpis.salesChange >= 0 ? 'up' : 'down')}>{kpis ? `${kpis.salesChange >= 0 ? '▲ ' : '▼ '}${Math.abs(kpis.salesChange)}% ` : ''}<span className="muted">{kpis ? `vs ${kpis.prevRangeText}` : ''}</span></div>
+        </div>
+      </section>
+
+      <section className="main-grid">
+        <div className="left">
+          <div className="top-grid">
+            
+            <div className="card cost-breakdown">
+              <h3>Cost Breakdown</h3>
+              <div className="donut-area">
+                <CostDoughnut summary={summary} />
+                {/* legend moved into CostDoughnut */}
+              </div>
+            </div>
+
+            <div className="card profit-margin">
+              <h3>Profit Margin</h3>
+              <ProfitBarChart summary={summary} />
+            </div>
+          </div>
+
+          <div className="bottom-grid">
+            <div className="card trends">
+              <h3>Sales & Profit Trend (7 Hari)</h3>
+              <div className="chart-row">
+                    <div className="bar-chart">
+                      {/* Bar chart: revenue + hpp/bonus/meal */}
+                      <SalesBarChart summary={summary} />
+                    </div>
+                  </div>
+            </div>
+
+            <div className="card orders-trend">
+              <h3>Orders Trend (7 Hari)</h3>
+                <div className="orders-chart">
+                  <OrdersLineChart summary={summary} />
+                </div>
+            </div>
+          </div>
+        </div>
+
+        <aside className="right card sidebar">
+          <h3>Insight Minggu Ini</h3>
+          <ul className="insights">
+            {(() => {
+              const fmt = (v: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v);
+              if (!summary || summary.length === 0) {
+                return (
+                  <>
+                    <li><strong>Penjualan tertinggi</strong> terjadi pada <span className="muted">—</span></li>
+                    <li><strong>Profit margin</strong> rata-rata <span className="muted">—</span></li>
+                    <li><strong>Total order</strong> <span className="muted">—</span></li>
+                    <li><strong>HPP</strong> menyumbang <span className="muted">—</span> dari total biaya</li>
+                  </>
+                );
+              }
+
+              // find highest revenue day
+              const highest = summary.reduce((p, c) => (c.revenue > p.revenue ? c : p), summary[0]);
+              // average profit margin across days
+              const margins = summary.map((s) => (s.revenue ? (s.profit / s.revenue) * 100 : 0));
+              const avgMargin = Math.round((margins.reduce((a, b) => a + b, 0) / margins.length) * 10) / 10;
+              // total orders this week
+              const totalOrders = summary.reduce((s, x) => s + (x.orders || 0), 0);
+              // hpp contribution to total cost
+              const totalHpp = summary.reduce((s, x) => s + (x.hpp || 0), 0);
+              const totalBonus = summary.reduce((s, x) => s + (x.bonus || 0), 0);
+              const totalMeal = summary.reduce((s, x) => s + (x.meal || 0), 0);
+              const totalCost = totalHpp + totalBonus + totalMeal || 1;
+              const hppPct = Math.round((totalHpp / totalCost) * 100);
+
+              const fullWeekday: Record<string, string> = { Sen: 'Senin', Sel: 'Selasa', Rab: 'Rabu', Kam: 'Kamis', Jum: 'Jumat', Sab: 'Sabtu', Min: 'Minggu' };
+              const dayLabel = fullWeekday[highest.date] || highest.date;
+
+              return (
+                <>
+                  <li><strong>Penjualan tertinggi</strong> terjadi pada <span className="muted">{dayLabel}</span> ({fmt(highest.revenue)})</li>
+                  <li><strong>Profit margin</strong> rata-rata <span className="muted">{avgMargin}%</span></li>
+                  <li><strong>Total order</strong> {totalOrders} <span className="muted">{kpis ? (kpis.ordersChange >= 0 ? `▲ ${kpis.ordersChange}% vs ${kpis.prevRangeText}` : `▼ ${Math.abs(kpis.ordersChange)}% vs ${kpis.prevRangeText}`) : ''}</span></li>
+                  <li><strong>HPP</strong> menyumbang <span className="muted">{hppPct}%</span> dari total biaya</li>
+                </>
+              );
+            })()}
+          </ul>
+
+          <div className="tips small card">
+            <h4>Tips</h4>
+            <p className="muted">Fokus tingkatkan penjualan di hari Selasa dan Rabu untuk pertumbuhan lebih stabil.</p>
+          </div>
+        </aside>
+      </section>
+
+      <style jsx>{`
+:global(*) {
+  box-sizing: border-box;
+}
+
+:global(body) {
+  margin: 0;
+  background: #f4f7fb;
+  color: #0f172a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.45;
+  font-size: 15px;
+}
+
+.page {
+  padding: 28px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 32px;
+}
+
+.header h1 {
+  margin: 0 0 6px 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+
+.date-range {
+  background: #fff;
+  border: 1px solid #e9eef6;
+  border-radius: 12px;
+  padding: 10px 14px;
+  min-width: 200px;
+
+  box-shadow: 0 6px 18px rgba(13,31,75,0.04);
+
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* =========================
+   CARD
+========================= */
+
+.card {
+  background: #fff;
+
+  border-radius: 18px;
+  border: 1px solid #eef3f9;
+
+  padding: 20px;
+
+  box-shadow: 0 6px 18px rgba(13,31,75,0.04);
+
+  transition: all .18s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 10px 30px rgba(15,23,42,.08);
+}
+
+.card h3 {
+  margin: 0 0 16px;
+
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* =========================
+   KPI
+========================= */
+
+  .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5,1fr); /* show five KPIs on wide screens */
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.kpi {
+  min-height: 150px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.icon {
+  width: 56px;
+  height: 56px;
+
+  border-radius: 12px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.bg-blue {
+  background: #eef5ff;
+}
+
+.bg-purple {
+  background: #f4efff;
+}
+
+.bg-green {
+  background: #edfdf4;
+}
+
+.bg-yellow {
+  background: #fff5e7;
+}
+
+.bg-teal {
+  background: #ecfeff;
+}
+
+.kpi .value {
+  margin-top: 10px;
+  /* reduced per request */
+  font-size: 24px;
+  font-weight: 800;
+
+  line-height: 1.05;
+  letter-spacing: -0.6px;
+
+  color: #0f172a;
+}
+
+.trend {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.trend.up {
+  color: #16a34a;
+}
+
+.trend.down {
+  color: #ef4444;
+}
+
+/* =========================
+   TEXT
+========================= */
+
+.muted {
+  color: #64748b;
+}
+
+.small {
+  font-size: 12px;
+}
+
+/* =========================
+   LAYOUT
+========================= */
+
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 360px;
+  gap: 28px;
+}
+
+.top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* make both top cards equal width */
+  gap: 24px;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 28px;
+  margin-top: 20px;
+}
+
+/* =========================
+   COST BREAKDOWN
+========================= */
+
+  .cost-breakdown,
+  .profit-margin {
+  min-height: 300px; /* equal height for both cards (shorter) */
+}
+
+.donut-area {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+  /* donut/info use proportional widths and stretch to card height */
+  .card.cost-breakdown .donut-area { align-items: stretch; }
+  .card.cost-breakdown .donut-area > .donut-chart-wrap { flex: 0 0 60%; min-width: 160px; }
+  .card.cost-breakdown .donut-area > .donut-info { flex: 0 0 40%; min-width: 120px; display: flex; align-items: center; }
+  .donut-chart-wrap { height: 100%; }
+  .donut-chart-wrap canvas { width: 100% !important; height: 100% !important; }
+  .donut-info { padding-left: 12px; }
+
+  /* ensure profit bar chart fills card height */
+  .profit-bar-chart { height: 100%; }
+  .profit-bar-chart canvas { width: 100% !important; height: 100% !important; }
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.red {
+  background: #ef4444;
+}
+
+.dot.purple {
+  background: #7c3aed;
+}
+
+.dot.orange {
+  background: #f59e0b;
+}
+
+.label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.value-sm {
+  font-weight: 700;
+}
+
+.cost-percent {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+
+/* =========================
+   PROFIT MARGIN
+========================= */
+
+.profit-margin {
+  position: relative;
+  overflow: hidden;
+}
+
+.profit-margin::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(16,185,129,.08),
+      transparent 55%
+    );
+
+  pointer-events: none;
+}
+
+.gauge-text strong {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.gauge-text {
+  position: relative;
+  z-index: 2;
+}
+
+/* =========================
+   CHARTS
+========================= */
+
+.chart-row {
+  width: 100%;
+}
+
+.bar-chart {
+  height: 260px;
+}
+
+.orders-chart {
+  height: 260px;
+}
+
+.trends canvas,
+.orders-trend canvas {
+  width: 100% !important;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.insights {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insights li {
+  background: #fff;
+
+  border: 1px solid #edf2f7;
+  border-radius: 18px;
+
+  padding: 18px;
+
+  box-shadow:
+    0 1px 2px rgba(0,0,0,.02);
+
+  transition: .2s;
+}
+
+.insights li:hover {
+  border-color: #dbeafe;
+}
+
+.insights strong {
+  color: #0f172a;
+}
+
+/* =========================
+   TIPS
+========================= */
+
+.tips {
+  margin-top: 16px;
+
+  background: #eef5ff !important;
+
+  border: 1px solid #cfe0ff;
+  border-radius: 14px;
+
+  box-shadow: none;
+}
+
+.tips h4 {
+  margin: 0 0 10px;
+  color: #2563eb;
+}
+
+.tips p {
+  margin: 0;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 1280px) {
+
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: -1;
+  }
+}
+
+@media (max-width: 1024px) {
+
+  .kpi-grid {
+    grid-template-columns: repeat(2,1fr);
+  }
+
+  .top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+
+  .page {
+    padding: 20px;
+  }
+
+  .header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .header h1 {
+    font-size: 30px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi .value {
+    font-size: 20px;
+  }
+
+  .donut-area {
+    flex-direction: column;
+  }
+
+  .bar-chart,
+  .orders-chart {
+    height: 300px;
+  }
+}
+`}</style>
+    </main>
   );
 }
