@@ -54,7 +54,7 @@ const IconAvg = ({ className = "" }: { className?: string }) => (
 
 // Client-side fetch for 7-day daily summary used by the small cards
 type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
-function use7DaySummary() {
+function use7DaySummary(rangeStart?: Date, rangeEnd?: Date) {
   const [data, setData] = React.useState<SummaryItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
@@ -62,10 +62,15 @@ function use7DaySummary() {
     const fetchIt = async () => {
       try {
         setLoading(true);
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - 6);
-        const fmt = (d: Date) => d.toISOString().slice(0, 10);
+        const end = rangeEnd ? new Date(rangeEnd) : new Date();
+        const start = rangeStart ? new Date(rangeStart) : new Date(end);
+        if (!rangeStart) start.setDate(end.getDate() - 6);
+        const fmt = (d: Date) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${dd}`;
+        };
         const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
         const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
         if (!res.ok) throw new Error('Failed to load daily summary');
@@ -80,8 +85,10 @@ function use7DaySummary() {
           const meal = typeof item.meal === 'number' ? item.meal : Number(item.meal || 0);
           const orders = typeof item.orders === 'number' ? item.orders : Number(item.orders || 0);
           const profit = typeof item.profit === 'number' ? item.profit : Number(item.profit || 0);
+          const dt = new Date(dateStr);
+          const dateLabel = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }); // e.g. "18 Jun"
           return {
-            date: new Date(dateStr).toLocaleDateString('id-ID', { weekday: 'short' }).substring(0, 3),
+            date: dateLabel,
             revenue,
             hpp,
             bonus,
@@ -90,6 +97,8 @@ function use7DaySummary() {
             profit,
           };
         });
+        // debug log to help inspect fetched summary in browser console
+        try { console.debug('use7DaySummary fetched', raw, mapped); } catch (e) {}
         if (mounted) setData(mapped);
       } catch (err) {
         console.error('use7DaySummary', err);
@@ -98,12 +107,12 @@ function use7DaySummary() {
     };
     void fetchIt();
     return () => { mounted = false; };
-  }, []);
+  }, [rangeStart?.toISOString?.(), rangeEnd?.toISOString?.()]);
   return { data, loading };
 }
 
 // Fetch KPI totals for current 7-day period and previous 7-day period, compute changes
-function useKpis() {
+function useKpis(rangeStart?: Date, rangeEnd?: Date) {
   const [kpis, setKpis] = React.useState<null | {
     sales: number;
     orders: number;
@@ -121,7 +130,12 @@ function useKpis() {
   React.useEffect(() => {
     let mounted = true;
     const fetchRange = async (start: Date, end: Date) => {
-      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const fmt = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dd}`;
+      };
       const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
       const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
       if (!res.ok) throw new Error('Failed to load daily summary');
@@ -179,9 +193,9 @@ function useKpis() {
 
     const load = async () => {
       try {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - 6);
+        const end = rangeEnd ? new Date(rangeEnd) : new Date();
+        const start = rangeStart ? new Date(rangeStart) : new Date(end);
+        if (!rangeStart) start.setDate(end.getDate() - 6);
 
         const prevEnd = new Date(start);
         prevEnd.setDate(start.getDate() - 1);
@@ -231,9 +245,7 @@ function useKpis() {
 
     void load();
     return () => { mounted = false; };
-    void load();
-    return () => { mounted = false; };
-  }, []);
+  }, [rangeStart?.toISOString?.(), rangeEnd?.toISOString?.()]);
 
   return { kpis, loading };
 }
@@ -294,8 +306,26 @@ function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
 /* ProfitGauge removed — replaced by ProfitBarChart in the layout */
 
 export default function DashboardPage() {
-  const { data: summary, loading: summaryLoading } = use7DaySummary();
-  const { kpis, loading: kpisLoading } = useKpis();
+  // Date range state (default: last 7 days)
+  const [endDate, setEndDate] = React.useState<Date>(() => new Date());
+  const [startDate, setStartDate] = React.useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return d;
+  });
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [tmpStart, setTmpStart] = React.useState<string>(() => startDate.toISOString().slice(0, 10));
+  const [tmpEnd, setTmpEnd] = React.useState<string>(() => endDate.toISOString().slice(0, 10));
+
+  const { data: summary, loading: summaryLoading } = use7DaySummary(startDate, endDate);
+  const { kpis, loading: kpisLoading } = useKpis(startDate, endDate);
+
+  const formatRangeLabel = (s: Date, e: Date) => {
+    const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
+    const sLabel = s.toLocaleDateString('id-ID', opts);
+    const eLabel = e.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${sLabel} — ${eLabel} ▾`;
+  };
 
   return (
     <main className="page">
@@ -303,7 +333,43 @@ export default function DashboardPage() {
         <div>
           <h1>Ringkasan Performa Papi Kopi</h1>
         </div>
-        <div className="date-range">29 Mei — 04 Jun 2025 ▾</div>
+        <div style={{ position: 'relative' }}>
+          <button className="date-range" onClick={() => setPickerOpen((s) => !s)} aria-expanded={pickerOpen}>
+            {formatRangeLabel(startDate, endDate)}
+          </button>
+          {pickerOpen && (
+            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 40, background: '#fff', border: '1px solid #e5e7eb', boxShadow: '0 6px 18px rgba(15,23,42,0.08)', padding: 12, borderRadius: 8, minWidth: 260 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label className="muted" style={{ fontSize: 12 }}>Dari</label>
+                  <input type="date" value={tmpStart} onChange={(e) => setTmpStart(e.target.value)} style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label className="muted" style={{ fontSize: 12 }}>Sampai</label>
+                  <input type="date" value={tmpEnd} onChange={(e) => setTmpEnd(e.target.value)} style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button onClick={() => { setTmpStart(startDate.toISOString().slice(0,10)); setTmpEnd(endDate.toISOString().slice(0,10)); setPickerOpen(false); }} className="btn secondary">Batal</button>
+                <button onClick={() => {
+                  const s = new Date(tmpStart);
+                  const e = new Date(tmpEnd);
+                  if (isNaN(s.getTime()) || isNaN(e.getTime())) return;
+                  // ensure start <= end
+                  if (s.getTime() > e.getTime()) {
+                    // swap
+                    setStartDate(e);
+                    setEndDate(s);
+                  } else {
+                    setStartDate(s);
+                    setEndDate(e);
+                  }
+                  setPickerOpen(false);
+                }} className="btn primary">Terapkan</button>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
       <section className="kpi-grid">

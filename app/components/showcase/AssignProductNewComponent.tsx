@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import formatLocalDate from '@/lib/formatLocalDate';
 import { formatTimestampInJakarta } from '@/lib/helpers/business-day';
 import axios from 'axios';
 import {
@@ -431,7 +432,7 @@ export function AssignProductNewComponent() {
               <label className="text-sm font-medium">Tampilkan Tanggal:</label>
               <input
                 type="date"
-                value={selectedDate.toISOString().split('T')[0]}
+                value={formatLocalDate(selectedDate)}
                 onChange={(e) => setSelectedDate(new Date(e.target.value))}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />

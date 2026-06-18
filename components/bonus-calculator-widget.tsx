@@ -8,6 +8,7 @@ import {
   DailyWageResult,
 } from '@/lib/bonus-calculator';
 import { useEffect } from 'react';
+import formatLocalDate from '@/lib/formatLocalDate';
 
 interface BonusCalculatorProps {
   onCalculate?: (result: DailyWageResult) => void;
@@ -53,14 +54,7 @@ export default function BonusCalculator({
     return () => { mounted = false; };
   }, []);
 
-  function toIsoLocal(date: Date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  const isoSelected = toIsoLocal(selectedDate);
+  const isoSelected = formatLocalDate(selectedDate);
   const isHolidayDate = nationalHolidays.has(isoSelected) || customHolidays.has(isoSelected) || selectedDate.getDay() === 0 || selectedDate.getDay() === 6;
   const isHolidayMode = manualHoliday || isHolidayDate;
 
@@ -144,7 +138,7 @@ export default function BonusCalculator({
             </label>
             <input
               type="date"
-              value={selectedDate.toISOString().split('T')[0]}
+              value={formatLocalDate(selectedDate)}
               onChange={(e) => setSelectedDate(new Date(e.target.value))}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />

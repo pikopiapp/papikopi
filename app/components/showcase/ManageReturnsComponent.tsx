@@ -3,6 +3,7 @@
 // Date: May 2026
 
 import React, { useEffect, useState } from 'react';
+import formatLocalDate from '@/lib/formatLocalDate';
 import axios from 'axios';
 import { supabase } from '@/lib/supabase';
 import {
@@ -366,7 +367,7 @@ export function ManageReturnsComponent() {
               <div className="flex gap-2">
                 <Input
                   type="date"
-                  value={selectedDate ? selectedDate.toISOString().split('T')[0] : ''}
+                  value={selectedDate ? formatLocalDate(selectedDate) : ''}
                   onChange={(e) => {
                     if (e.target.value) {
                       setSelectedDate(new Date(e.target.value));

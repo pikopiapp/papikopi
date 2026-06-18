@@ -21,8 +21,8 @@ export async function GET(req: Request) {
       .select('id, total_amount, profit, created_at, hpp_total, bonus_amount, meal_amount, outlet_id')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString())
-      .order('created_at', { ascending: true })
-      .limit(10000);
+      .order('created_at', { ascending: false })
+      .range(0, 100000);
 
     if (outlet) query = query.eq('outlet_id', outlet);
 
@@ -47,8 +47,8 @@ export async function GET(req: Request) {
         .select('id, total_amount, profit, created_at, hpp_total, outlet_id')
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
-        .order('created_at', { ascending: true })
-        .limit(10000);
+        .order('created_at', { ascending: false })
+        .range(0, 100000);
 
       if (outlet) fallbackQuery.eq('outlet_id', outlet);
 
@@ -72,17 +72,30 @@ export async function GET(req: Request) {
     // track revenue per outlet per date so allowances are computed per-outlet (not from total revenue)
     const revenueByDateOutlet: Record<string, Record<string, number>> = {};
 
-    // initialize all dates in range
-    const startDay = startDate;
-    const endDay = endDate;
-    for (let d = new Date(startDay); d <= endDay; d.setDate(d.getDate() + 1)) {
-      const key = format(d, 'yyyy-MM-dd');
+    // initialize all dates in range using UTC day boundaries and format keys
+    // with Jakarta timezone so initialization matches grouping logic below
+    const startMs = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+    const endMs = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
+    for (let ms = startMs; ms <= endMs; ms += 24 * 60 * 60 * 1000) {
+      const d = new Date(ms);
+      const key = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
       map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
     }
 
     if (rows && Array.isArray(rows)) {
       for (const r of rows) {
-        const key = format(new Date(r.created_at), 'yyyy-MM-dd');
+        // Normalize DB `created_at` to an explicit UTC ISO before creating a Date,
+        // because some DB drivers return "YYYY-MM-DD HH:mm:ss[.ffffff]" (no TZ),
+        // and `new Date(...)` may be interpreted inconsistently. Treat values
+        // without an explicit timezone as UTC by appending 'Z'.
+        let created = String(r.created_at || '');
+        const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
+        if (!hasTZ) {
+          created = created.replace(' ', 'T');
+          if (!created.endsWith('Z')) created = created + 'Z';
+        }
+        const createdDate = new Date(created);
+        const key = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
         if (!map[key]) map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
         map[key].revenue += Number(r.total_amount || 0);
         // aggregate stored profit/hpp if present, but we'll recompute profit later
@@ -99,6 +112,7 @@ export async function GET(req: Request) {
         if (!revenueByDateOutlet[key]) revenueByDateOutlet[key] = {};
         revenueByDateOutlet[key][outletId] = (revenueByDateOutlet[key][outletId] || 0) + Number(r.total_amount || 0);
       }
+      // done processing rows
     }
 
     // Fetch bonus tiers from DB (once) to compute per-day bonus from revenue; fallback to default tiers
@@ -110,6 +124,29 @@ export async function GET(req: Request) {
       }
     } catch (e) {
       // ignore and use default tiers
+    }
+
+    // Try RPC aggregation first (more efficient). If the DB function isn't installed,
+    // fall back to JS aggregation above.
+    try {
+      const rpcParams: any = { p_start: startDate.toISOString(), p_end: endDate.toISOString() };
+      if (outlet) rpcParams.p_outlet = outlet;
+      const rpc = await supabase.rpc('daily_summary', rpcParams);
+      if (!rpc.error && rpc.data) {
+        const rpcAgg = (rpc.data as any[]).map((r) => ({
+          date: r.date,
+          revenue: Number(r.revenue || 0),
+          profit: Number(r.profit || 0),
+          orders: Number(r.orders || 0),
+          hpp: Number(r.hpp || 0),
+          bonus: Number(r.bonus || 0),
+          meal: Number(r.meal || 0),
+        }));
+        const meta = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString(), source: 'rpc' };
+        return NextResponse.json({ data: rpcAgg, meta });
+      }
+    } catch (e) {
+      // ignore and fall back to JS aggregation
     }
 
     // Compute bonus and meal per day from revenue and recompute profit = revenue - hpp - bonus - meal
@@ -147,8 +184,8 @@ export async function GET(req: Request) {
         meal,
       };
     });
-
-    return NextResponse.json({ data: aggregated, meta: { rowsFetched: rows ? rows.length : 0 } });
+    const meta = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
+    return NextResponse.json({ data: aggregated, meta });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || String(err) }, { status: 500 });
   }

@@ -30,12 +30,19 @@ export default function DailySummaryReport() {
   const [data, setData] = useState<DailySalesData[]>([]);
   const [todayStats, setTodayStats] = useState({ totalSales: 0, totalOrders: 0, avgOrderValue: 0, profit: 0 });
   const [yesterdayStats, setYesterdayStats] = useState({ totalSales: 0, totalOrders: 0 });
+  const localYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 6);
-    return d.toISOString().slice(0, 10);
+    return localYMD(d);
   });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(() => localYMD(new Date()));
   const [outletId, setOutletId] = useState<string | null>(null);
   const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
   const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({
@@ -61,8 +68,10 @@ export default function DailySummaryReport() {
     try {
       console.time('fetchSalesData');
       setLoading(true);
-      const s = opts?.start ?? startDate;
-      const e = opts?.end ?? endDate;
+      const sRaw = opts?.start ?? startDate;
+      const eRaw = opts?.end ?? endDate;
+      const s = typeof sRaw === 'string' ? sRaw : localYMD(new Date(sRaw));
+      const e = typeof eRaw === 'string' ? eRaw : localYMD(new Date(eRaw));
       const outlet = opts?.outlet ?? outletId;
 
       const q = new URLSearchParams();
