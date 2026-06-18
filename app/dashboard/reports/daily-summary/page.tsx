@@ -28,8 +28,8 @@ type RawDaily = {
 export default function DailySummaryReport() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DailySalesData[]>([]);
-  const [todayStats, setTodayStats] = useState({ totalSales: 0, totalOrders: 0, avgOrderValue: 0, profit: 0 });
-  const [yesterdayStats, setYesterdayStats] = useState({ totalSales: 0, totalOrders: 0 });
+  const [rangeStats, setRangeStats] = useState({ totalSales: 0, totalOrders: 0, avgOrderValue: 0, profit: 0 });
+  const [prevRangeStats, setPrevRangeStats] = useState({ totalSales: 0, totalOrders: 0 });
   const localYMD = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -96,24 +96,54 @@ export default function DailySummaryReport() {
         setData(chartData);
       }
 
-      // Calculate today's stats
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const todayData = json?.data?.find((d: any) => d.date === today) || { revenue: 0, orders: 0, profit: 0, hpp: 0, bonus: 0, meal: 0 };
-      const avgValue = todayData.orders > 0 ? (todayData.revenue || 0) / todayData.orders : 0;
-      setTodayStats({
-        totalSales: todayData.revenue || 0,
-        totalOrders: todayData.orders || 0,
-        avgOrderValue: avgValue,
-        profit: todayData.profit || 0
-      });
+      // Calculate totals for selected range (sum over returned rows)
+      const curRows: RawDaily[] = Array.isArray(json?.data) ? json.data : [];
+      const curTotals = curRows.reduce((acc, r) => {
+        acc.revenue += Number(r.revenue || 0);
+        acc.orders += Number(r.orders || 0);
+        acc.profit += Number(r.profit || 0);
+        return acc;
+      }, { revenue: 0, orders: 0, profit: 0 });
+      const avgVal = curTotals.orders > 0 ? Math.round(curTotals.revenue / curTotals.orders) : 0;
+      setRangeStats({ totalSales: curTotals.revenue, totalOrders: curTotals.orders, avgOrderValue: avgVal, profit: curTotals.profit });
 
-      // Calculate yesterday's stats for comparison
-      const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-      const yesterdayData = json?.data?.find((d: any) => d.date === yesterday) || { revenue: 0, orders: 0, hpp: 0 };
-      setYesterdayStats({
-        totalSales: yesterdayData.revenue || 0,
-        totalOrders: yesterdayData.orders || 0
-      });
+      // Calculate previous range (same length immediately before startDate)
+      const sDate = new Date(s);
+      const eDate = new Date(e);
+      const dayCount = Math.round((eDate.getTime() - startOfDay(sDate).getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      const prevEnd = subDays(startOfDay(sDate), 1);
+      const prevStart = subDays(prevEnd, dayCount - 1);
+      const prevQ = new URLSearchParams({ start: format(prevStart, 'yyyy-MM-dd'), end: format(prevEnd, 'yyyy-MM-dd') });
+      try {
+        const pres = await fetch(`/api/reports/daily-summary?${prevQ.toString()}`);
+        const pjson = await pres.json();
+        const prevRows: RawDaily[] = Array.isArray(pjson?.data) ? pjson.data : [];
+        const prevTotals = prevRows.reduce((acc, r) => { acc.revenue += Number(r.revenue||0); acc.orders += Number(r.orders||0); return acc; }, { revenue: 0, orders: 0 });
+        setPrevRangeStats({ totalSales: prevTotals.revenue, totalOrders: prevTotals.orders });
+      } catch (err) {
+        console.error('prev range fetch error', err);
+        setPrevRangeStats({ totalSales: 0, totalOrders: 0 });
+      }
+
+      // Count units (cups) in this range by scanning /api/sales/by-outlet (items.quantity)
+      try {
+        const resItems = await fetch('/api/sales/by-outlet');
+        const itemsJson = await resItems.json();
+        const rawSales = Array.isArray(itemsJson) ? itemsJson : (Array.isArray(itemsJson?.sales) ? itemsJson.sales : []);
+        const startMs = startOfDay(new Date(s)).getTime();
+        const endInclusive = new Date(e); endInclusive.setHours(23,59,59,999);
+        const endMs = endInclusive.getTime();
+        const units = rawSales.reduce((sum: number, srow: any) => {
+          const t = new Date(String(srow.created_at || '')).getTime();
+          if (Number.isNaN(t) || t < startMs || t > endMs) return sum;
+          const items = Array.isArray(srow.items) ? srow.items : [];
+          const saleUnits = items.reduce((ss: number, it: any) => ss + (Number(it.quantity || it.units || it.cups || 0) || 0), 0);
+          return sum + saleUnits;
+        }, 0);
+        setRangeStats((r) => ({ ...r, units } as any));
+      } catch (err) {
+        console.error('units fetch error', err);
+      }
 
     } catch (err) {
       console.error('Error fetching sales data:', err);
@@ -130,6 +160,14 @@ export default function DailySummaryReport() {
     }, 0);
     return () => clearTimeout(t);
   }, []);
+
+  // Auto refresh when date range or outlet changes (small debounce)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void fetchSalesData({ start: startDate, end: endDate, outlet: outletId });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [startDate, endDate, outletId]);
 
   const exportCsv = () => {
     if (!data || data.length === 0) return;
@@ -241,32 +279,32 @@ export default function DailySummaryReport() {
         <div className="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <h3 className="text-sm font-semibold text-gray-700">Total Sales</h3>
-            <span className="text-xs text-gray-400">7d</span>
+            <span className="text-xs text-gray-400">{format(new Date(startDate), 'd MMM')}–{format(new Date(endDate), 'd MMM yyyy')}</span>
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-green-600">{formatCurrency(todayStats.totalSales)}</p>
-            <p className="text-xs text-gray-500">{calculateChange(todayStats.totalSales, yesterdayStats.totalSales)}%</p>
+            <p className="text-2xl font-bold text-green-600">{formatCurrency(rangeStats.totalSales)}</p>
+            <p className="text-xs text-gray-500">{calculateChange(rangeStats.totalSales, prevRangeStats.totalSales)}%</p>
           </div>
         </div>
 
         <div className="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <h3 className="text-sm font-semibold text-gray-700">Total Orders</h3>
-            <span className="text-xs text-gray-400">today</span>
+            <span className="text-xs text-gray-400">{format(new Date(startDate), 'd MMM')}–{format(new Date(endDate), 'd MMM yyyy')}</span>
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-blue-600">{todayStats.totalOrders}</p>
-            <p className="text-xs text-gray-500">{calculateChange(todayStats.totalOrders, yesterdayStats.totalOrders)}%</p>
+            <p className="text-2xl font-bold text-blue-600">{rangeStats.totalOrders}</p>
+            <p className="text-xs text-gray-500">{calculateChange(rangeStats.totalOrders, prevRangeStats.totalOrders)}%</p>
           </div>
         </div>
 
         <div className="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <h3 className="text-sm font-semibold text-gray-700">Avg Order Value</h3>
-            <span className="text-xs text-gray-400">today</span>
+            <span className="text-xs text-gray-400">range</span>
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-orange-600">{formatCurrency(todayStats.avgOrderValue)}</p>
+            <p className="text-2xl font-bold text-orange-600">{formatCurrency(rangeStats.avgOrderValue)}</p>
             <p className="text-xs text-gray-500">Avg</p>
           </div>
         </div>
@@ -274,11 +312,11 @@ export default function DailySummaryReport() {
         <div className="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <h3 className="text-sm font-semibold text-gray-700">Total Profit</h3>
-            <span className="text-xs text-gray-400">today</span>
+            <span className="text-xs text-gray-400">range</span>
           </div>
           <div className="flex items-center justify-between">
-            <p className={`text-2xl font-bold ${todayStats.profit < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(todayStats.profit)}</p>
-            <p className="text-xs text-gray-500">{todayStats.profit < 0 ? "Today's profit" : "Today's profit"}</p>
+            <p className={`text-2xl font-bold ${rangeStats.profit < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(rangeStats.profit)}</p>
+            <p className="text-xs text-gray-500">{rangeStats.profit < 0 ? "Loss" : "Profit"}</p>
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { format, startOfYear, startOfMonth, startOfWeek, subDays } from 'date-fns';
 
 export default function PeriodSelector({ initialPeriod, initialStart, initialEnd }:{ initialPeriod?: string; initialStart?: string; initialEnd?: string }){
   const router = useRouter();
@@ -13,9 +14,28 @@ export default function PeriodSelector({ initialPeriod, initialStart, initialEnd
   const setPeriod = (p: string) => {
     const params = new URLSearchParams(Array.from(searchParams.entries()));
     params.set('period', p);
+    // compute and show period range in the inputs immediately
+    const today = new Date();
+    let s = '';
+    let e = format(today, 'yyyy-MM-dd');
+    if (p === 'ytd') {
+      s = format(startOfYear(today), 'yyyy-MM-dd');
+    } else if (p === 'mtd') {
+      s = format(startOfMonth(today), 'yyyy-MM-dd');
+    } else if (p === 'wtd') {
+      s = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    } else if (p === 'last7') {
+      s = format(subDays(today, 6), 'yyyy-MM-dd');
+    }
     if (p !== 'custom') {
+      // show the computed range in inputs but remove explicit params so server-side page picks period
       params.delete('start');
       params.delete('end');
+      setCustomStart(s);
+      setCustomEnd(e);
+    } else {
+      if (customStart) params.set('start', customStart);
+      if (customEnd) params.set('end', customEnd);
     }
     const url = `${location.pathname}?${params.toString()}`;
     router.push(url);
@@ -45,6 +65,7 @@ export default function PeriodSelector({ initialPeriod, initialStart, initialEnd
         {btn('ytd', 'Tahun ini')}
         {btn('mtd', 'Bulan ini')}
         {btn('wtd', 'Minggu ini')}
+        {btn('last7', '7 Hari')}
         {btn('custom', 'Rentang')}
       </div>
 

@@ -8,6 +8,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const start = url.searchParams.get('start');
     const end = url.searchParams.get('end');
+    const debug = url.searchParams.get('debug');
     const outlet = url.searchParams.get('outlet');
 
     // Validate dates; default to last 7 days if missing
@@ -184,7 +185,12 @@ export async function GET(req: Request) {
         meal,
       };
     });
-    const meta = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
+    const meta: any = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
+    if (debug) {
+      meta.rawSampleHead = Array.isArray(rows) ? rows.slice(0, 10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
+      meta.rawSampleTail = Array.isArray(rows) ? rows.slice(-10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
+      meta.mapKeys = Object.keys(map).slice(0, 50);
+    }
     return NextResponse.json({ data: aggregated, meta });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || String(err) }, { status: 500 });

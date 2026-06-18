@@ -1,7 +1,9 @@
-import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
+import { format, startOfYear, startOfMonth, startOfWeek, subDays } from 'date-fns';
 import { supabaseServer } from '@/lib/supabaseServer';
 import SalesChartServer from '../components/Charts/SalesChart.server';
 import PeriodSelector from '../components/PeriodSelector.client';
+import ApplyOutletClient from '../components/ApplyOutlet.client';
+import TabsClient from '../components/Tabs.client';
 
 interface MonthlySalesData {
   month: string;
@@ -10,7 +12,7 @@ interface MonthlySalesData {
   profit: number;
 }
 
-type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
+type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'last7' | 'custom';
 
 function formatCurrency(amount: number | string): string {
   return new Intl.NumberFormat('id-ID', {
@@ -37,10 +39,17 @@ async function getSalesAggregated(startIso: string, endIso: string, group: 'day'
     const rows = res.data || [];
     const map: Record<string, { sales: number; profit: number; count: number }> = {};
     for (const r of rows) {
-      const dt = new Date(r.created_at);
+      // Normalize created_at to UTC if missing TZ, then group by Asia/Jakarta local day
+      let created = String(r.created_at || '');
+      const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
+      if (!hasTZ) {
+        created = created.replace(' ', 'T');
+        if (!created.endsWith('Z')) created = created + 'Z';
+      }
+      const dt = new Date(created);
       const key = group === 'day'
-        ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-        : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        ? dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+        : `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
       if (!map[key]) map[key] = { sales: 0, profit: 0, count: 0 };
       map[key].sales += Number(r.total_amount || 0);
       map[key].profit += Number(r.profit || 0);
@@ -56,7 +65,128 @@ async function getSalesAggregated(startIso: string, endIso: string, group: 'day'
   }
 }
 
-export default async function SalesReport({ searchParams }: { searchParams?: { period?: string; start?: string; end?: string } }) {
+async function getSalesPerOutlet(startYmd: string, endYmd: string) {
+  // Convert yyyy-MM-dd to Asia/Jakarta full-day ISO range
+  const startIso = new Date(`${startYmd}T00:00:00+07:00`).toISOString();
+  const endIso = new Date(`${endYmd}T23:59:59.999+07:00`).toISOString();
+
+  const res = await supabaseServer
+    .from('sales')
+    .select('outlet_id, total_amount, profit')
+    .gte('created_at', startIso)
+    .lte('created_at', endIso);
+
+  if (res.error) return { periods: [], data: [] };
+  const rows = res.data || [];
+  const map: Record<string, { sales: number; profit: number; count: number }> = {};
+  for (const r of rows) {
+    const oid = r.outlet_id ? String(r.outlet_id) : 'unknown';
+    if (!map[oid]) map[oid] = { sales: 0, profit: 0, count: 0 };
+    map[oid].sales += Number(r.total_amount || 0);
+    map[oid].profit += Number(r.profit || 0);
+    map[oid].count += 1;
+  }
+
+  const ids = Object.keys(map).filter(id => id !== 'unknown');
+  let names: Record<string, string> = {};
+  if (ids.length) {
+    const outletsRes = await supabaseServer.from('outlets').select('id, name').in('id', ids);
+    if (!outletsRes.error && Array.isArray(outletsRes.data)) {
+      for (const o of outletsRes.data) names[String(o.id)] = o.name || String(o.id);
+    }
+  }
+
+  const out = Object.entries(map).map(([outlet_id, v]) => ({
+    outlet_id,
+    name: outlet_id === 'unknown' ? 'Unknown' : names[outlet_id] || outlet_id,
+    sales: v.sales,
+    profit: v.profit,
+    count: v.count,
+  }));
+  out.sort((a, b) => b.sales - a.sales);
+  return out;
+}
+
+function buildPeriodRange(startYmd: string, endYmd: string) {
+  const periods: string[] = [];
+  const start = new Date(`${startYmd}T00:00:00+07:00`);
+  const end = new Date(`${endYmd}T00:00:00+07:00`);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    periods.push(`${y}-${m}-${day}`);
+  }
+  return periods;
+}
+
+type PerOutletSeriesPoint = { period: string; sales: number; profit: number; count: number };
+type PerOutletRow = { outlet_id: string; name: string; series: PerOutletSeriesPoint[]; totalSales: number; totalProfit: number; totalCount: number };
+
+async function getSalesPerOutletDaily(startYmd: string, endYmd: string): Promise<{ periods: string[]; data: PerOutletRow[] }> {
+  const startIso = new Date(`${startYmd}T00:00:00+07:00`).toISOString();
+  const endIso = new Date(`${endYmd}T23:59:59.999+07:00`).toISOString();
+
+  const res = await supabaseServer
+    .from('sales')
+    .select('created_at, total_amount, profit, outlet_id')
+    .gte('created_at', startIso)
+    .lte('created_at', endIso)
+    .order('created_at', { ascending: true });
+
+  if (res.error) return { periods: [], data: [] };
+  const rows = res.data || [];
+
+  const periods = buildPeriodRange(startYmd, endYmd);
+  const map: Record<string, { name?: string; series: Record<string, number>; profit: Record<string, number>; count: Record<string, number> }> = {};
+
+  for (const p of periods) {
+    // initialize per outlet later when seen
+  }
+
+  for (const r of rows) {
+    let created = String(r.created_at || '');
+    const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
+    if (!hasTZ) {
+      created = created.replace(' ', 'T');
+      if (!created.endsWith('Z')) created = created + 'Z';
+    }
+    const dt = new Date(created);
+    const key = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    const oid = r.outlet_id ? String(r.outlet_id) : 'unknown';
+    if (!map[oid]) map[oid] = { series: {}, profit: {}, count: {} };
+    map[oid].series[key] = (map[oid].series[key] || 0) + Number(r.total_amount || 0);
+    map[oid].profit[key] = (map[oid].profit[key] || 0) + Number(r.profit || 0);
+    map[oid].count[key] = (map[oid].count[key] || 0) + 1;
+  }
+
+  // Resolve outlet names
+  const ids = Object.keys(map).filter(id => id !== 'unknown');
+  let names: Record<string, string> = {};
+  if (ids.length) {
+    const outletsRes = await supabaseServer.from('outlets').select('id, name').in('id', ids);
+    if (!outletsRes.error && Array.isArray(outletsRes.data)) {
+      for (const o of outletsRes.data) names[String(o.id)] = o.name || String(o.id);
+    }
+  }
+
+  const out: PerOutletRow[] = Object.entries(map).map(([outlet_id, v]) => {
+    const series = periods.map(p => ({ period: p, sales: v.series[p] || 0, profit: v.profit[p] || 0, count: v.count[p] || 0 }));
+    return {
+      outlet_id,
+      name: outlet_id === 'unknown' ? 'Unknown' : names[outlet_id] || outlet_id,
+      series,
+      totalSales: series.reduce((s, x) => s + x.sales, 0),
+      totalProfit: series.reduce((s, x) => s + x.profit, 0),
+      totalCount: series.reduce((s, x) => s + x.count, 0),
+    };
+  });
+
+  out.sort((a, b) => b.totalSales - a.totalSales);
+  return { periods, data: out };
+}
+
+export default async function SalesReport({ searchParams }: { searchParams?: { period?: string; start?: string; end?: string; outlet?: string } }) {
   // `searchParams` can be a Promise in Next.js app router — unwrap before use.
   // Use a local `params` object for all access to avoid accidental await errors.
   // If `searchParams` is already an object, use it directly; otherwise await it.
@@ -77,7 +207,13 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
       endDate = new Date();
       break;
     case 'wtd':
-      startDate = startOfWeek(new Date());
+      // Keep `wtd` as Monday → today
+      startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+      endDate = new Date();
+      break;
+    case 'last7':
+      // Explicit last-7-days option
+      startDate = subDays(new Date(), 6);
       endDate = new Date();
       break;
     case 'custom':
@@ -86,20 +222,24 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
       break;
   }
 
-  const isShortPeriod = period === 'wtd';
-  const groupParam: 'day' | 'month' = isShortPeriod ? 'day' : 'month';
+  const isShortPeriod = period === 'wtd' || period === 'last7';
+  // Use daily grouping for short periods and custom ranges (so "Terapkan" shows days)
+  const groupParam: 'day' | 'month' = (isShortPeriod || period === 'custom') ? 'day' : 'month';
 
   // Use the existing app API route for aggregated sales to match other pages' data-fetch pattern.
-  // Server-side `fetch` with a relative URL will call the internal route handler.
+  // Send `start`/`end` as local `yyyy-MM-dd` to match the dashboard date-picker behavior.
   let raw: any[] = [];
-  let apiUrl = `/api/reports/sales?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&group=${groupParam}`;
+  const startYmd = format(startDate, 'yyyy-MM-dd');
+  const endYmd = format(endDate, 'yyyy-MM-dd');
+  const outletParam = params.outlet ? `&outlet=${encodeURIComponent(params.outlet)}` : '';
+  let apiUrl = `/api/reports/sales?start=${encodeURIComponent(startYmd)}&end=${encodeURIComponent(endYmd)}&group=${groupParam}${outletParam}`;
   try {
     const apiRes = await fetch(apiUrl, { cache: 'no-store' });
     if (apiRes.ok) {
-      const body = await apiRes.json();
-      raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+        const body = await apiRes.json();
+        raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
     } else {
-      raw = await getSalesAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
+        raw = await getSalesAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
     }
   } catch (e) {
     // fallback to direct DB aggregation if API fetch fails
@@ -117,7 +257,8 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       label = monthNames[monthNum - 1] || periodKey;
     } else {
-      const d = new Date(periodKey);
+      // parse day key as Jakarta-local midnight for correct label
+      const d = new Date(periodKey + 'T00:00:00+07:00');
       label = format(d, 'MMM dd');
     }
 
@@ -150,8 +291,14 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
     growthRate: growthRate.toFixed(1),
   };
 
+  // Fetch per-outlet breakdown + daily series for the same period (server-side)
+  const perOutletDaily = await getSalesPerOutletDaily(startYmd, endYmd);
+  const perOutlet: PerOutletRow[] = perOutletDaily.data || [];
+
   return (
     <div className="space-y-6">
+      {/* If user is tied to an outlet, add outlet query param automatically (client-side) */}
+      <ApplyOutletClient />
       <div className="bg-white rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Report Penjualan</h1>
         <p className="text-gray-600">Laporan penjualan dengan periode fleksibel</p>
@@ -159,7 +306,7 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
 
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Periode Terpilih</h2>
-        <p className="text-sm text-gray-700">{period === 'ytd' ? 'Year to Date' : period === 'mtd' ? 'Month to Date' : period === 'wtd' ? 'Week to Date' : 'Custom Range'}</p>
+        <p className="text-sm text-gray-700">{period === 'ytd' ? 'Year to Date' : period === 'mtd' ? 'Month to Date' : period === 'wtd' ? 'Week to Date' : period === 'last7' ? '7 Hari' : 'Custom Range'}</p>
         {period === 'custom' && (params.start || params.end) ? (
           <p className="text-sm text-gray-500">{params.start || ''} — {params.end || ''}</p>
         ) : null}
@@ -195,25 +342,74 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Sales Trend</h2>
-        {chartArray.length > 0 ? (
-          <SalesChartServer data={chartArray} formatCurrency={(n: number) => formatCurrency(n)} />
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <p>Belum ada data penjualan untuk periode terpilih</p>
-            <div className="mt-4 text-left text-xs text-gray-500">
-              <p><strong>Debug:</strong></p>
-              <p>start: {startDate.toISOString()}</p>
-              <p>end: {endDate.toISOString()}</p>
-              <p>group: {groupParam}</p>
-              <p>apiUrl: {apiUrl}</p>
-              <details className="mt-2 text-xs text-gray-400">
-                <summary>Raw rows ({raw.length})</summary>
-                <pre className="whitespace-pre-wrap wrap-break-word max-h-48 overflow-auto">{JSON.stringify(raw, null, 2)}</pre>
-              </details>
-            </div>
+        <TabsClient />
+        <div id="reports-tabs">
+          <div className="trend-section">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Sales Trend</h2>
+            {chartArray.length > 0 ? (
+              <SalesChartServer data={chartArray} formatCurrency={(n: number) => formatCurrency(n)} />
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>Belum ada data penjualan untuk periode terpilih</p>
+                <div className="mt-4 text-left text-xs text-gray-500">
+                  <p><strong>Debug:</strong></p>
+                  <p>start: {startDate.toISOString()}</p>
+                  <p>end: {endDate.toISOString()}</p>
+                  <p>group: {groupParam}</p>
+                  <p>apiUrl: {apiUrl}</p>
+                  <details className="mt-2 text-xs text-gray-400">
+                    <summary>Raw rows ({raw.length})</summary>
+                    <pre className="whitespace-pre-wrap wrap-break-word max-h-48 overflow-auto">{JSON.stringify(raw, null, 2)}</pre>
+                  </details>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="outlet-section" style={{ display: 'none' }}>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Per-Outlet Breakdown</h2>
+            {perOutlet.length > 0 ? (
+              <div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {perOutlet.map((o: PerOutletRow) => (
+                    <div key={o.outlet_id} className="border rounded p-4">
+                      <div className="flex items-center justify-between space-x-4">
+                        <div className="flex-1">
+                          <div className="font-semibold">{o.name}</div>
+                          <div className="text-sm text-gray-500">Orders: {o.totalCount}</div>
+                        </div>
+                        <div className="w-40">
+                          {/* sparkline */}
+                          <svg viewBox="0 0 200 36" width="200" height="36" className="block">
+                            {(() => {
+                              const vals = o.series.map((s: any) => s.sales);
+                              const max = Math.max(...vals, 1);
+                              const step = vals.length > 1 ? 180 / (vals.length - 1) : 180;
+                              const h = 24;
+                              const points = vals.map((v: number, i: number) => `${10 + i * step},${4 + (h - (v / max) * h)}`);
+                              const path = points.length ? `M ${points.join(' L ')}` : '';
+                              return (
+                                <>
+                                  <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                </>
+                              );
+                            })()}
+                          </svg>
+                        </div>
+                        <div className="text-right w-36">
+                          <div className="font-bold text-green-600">{formatCurrency(o.totalSales)}</div>
+                          <div className="text-sm text-gray-600">{formatCurrency(o.totalProfit)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Tidak ada data per-outlet untuk periode ini.</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
