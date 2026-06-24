@@ -9,13 +9,14 @@ import {
   PointElement,
   ArcElement,
   LineElement,
+  Filler,
   Tooltip,
   Legend,
 } from 'chart.js';
 import type { ChartOptions } from 'chart.js';
 import { Bar, Line } from 'react-chartjs-2';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, ArcElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, ArcElement, LineElement, Filler, Tooltip, Legend);
 
 export type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
 

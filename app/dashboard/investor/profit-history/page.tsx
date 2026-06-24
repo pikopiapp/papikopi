@@ -26,10 +26,25 @@ export default function InvestorProfitHistory() {
   const [period, setPeriod] = useState<PeriodType>('monthly');
   const [customStartDate, setCustomStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]);
   const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [outletsList, setOutletsList] = useState<{ id: string; name: string }[]>([]);
+  const [selectedOutletId, setSelectedOutletId] = useState<string | ''>('');
 
   useEffect(() => {
     fetchProfitHistory();
-  }, [period, customStartDate, customEndDate]);
+  }, [period, customStartDate, customEndDate, selectedOutletId, outletsList]);
+
+  useEffect(() => {
+    // load all outlets for dropdown
+    const loadOutlets = async () => {
+      try {
+        const { data } = await supabase.from('outlets').select('id, name').order('name');
+        setOutletsList(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error('failed loading outlets', e);
+      }
+    };
+    void loadOutlets();
+  }, []);
 
   const getDateRange = () => {
     const now = new Date();
@@ -39,6 +54,7 @@ export default function InvestorProfitHistory() {
       case 'weekly':
         return { startDate: new Date(now.setDate(now.getDate() - 30)), endDate: new Date() };
       case 'monthly':
+        // show months-with-data (start of year to now) for Monthly view
         return { startDate: startOfYear(now), endDate: new Date() };
       case 'yearly':
         return { startDate: new Date(now.getFullYear() - 2, 0, 1), endDate: new Date() };
@@ -53,32 +69,77 @@ export default function InvestorProfitHistory() {
     try {
       const { startDate, endDate } = getDateRange();
 
-      // Fetch all investor assignments
-      const { data: assignments } = await supabase
-        .from('investor_assignments')
-        .select('*');
+      // Fetch all investor assignments (used to get margin percentages)
+      const { data: assignments } = await supabase.from('investor_assignments').select('*');
+      const assignmentMap: Record<string, any> = {};
+      (assignments || []).forEach((a: any) => (assignmentMap[a.outlet_id] = a));
 
-      if (!assignments || assignments.length === 0) {
-        setProfitRecords([]);
+      // determine which outlets to include: selected or all
+      const outletIds = selectedOutletId ? [selectedOutletId] : (outletsList.length > 0 ? outletsList.map((o) => o.id) : Object.keys(assignmentMap));
+
+      // Fetch outlets (names) for the chosen ids
+      const { data: outletData } = await supabase.from('outlets').select('id, name').in('id', outletIds);
+
+      // Fetch sales in date range via server API (uses service-role key) to ensure real data
+      let salesData: any[] = [];
+      const sinceIso = startDate.toISOString().split('.')[0] + 'Z';
+      const aggregatedRows: any[] = [];
+      let aggregatedMode = false;
+      for (const oid of outletIds) {
+        try {
+          const q = `/api/sales/by-outlet?outlet_id=${encodeURIComponent(oid)}&since=${encodeURIComponent(sinceIso)}${period === 'monthly' ? '&group=monthly' : ''}`;
+          const resp = await fetch(q);
+          const json = await resp.json();
+          const rows = Array.isArray(json?.sales) ? json.sales : [];
+          // if server returned aggregated rows (period + outlet_profit + transactions), collect them
+          if (rows.length > 0 && (rows[0].period || rows[0].period_date)) {
+            aggregatedMode = true;
+            rows.forEach((r: any) => {
+              aggregatedRows.push({ outlet_id: oid, period: r.period || r.period_date, outlet_profit: Number(r.outlet_profit) || 0, transactions: Number(r.transactions) || 0 });
+            });
+            continue;
+          }
+
+          const filtered = rows.filter((r: any) => new Date(r.created_at) <= endDate);
+          // coerce numeric fields and exclude refunds / zero-amount rows to match UI expectations
+          const mapped = filtered.map((r: any) => ({
+            outlet_id: r.outlet_id,
+            profit: Number(r.profit) || 0,
+            total_amount: Number(r.total_amount) || 0,
+            created_at: r.created_at,
+          }));
+          const positive = mapped.filter((r: any) => r.total_amount > 0 && r.profit > 0);
+          salesData.push(...positive);
+        } catch (e) {
+          console.error('error fetching sales for outlet', oid, e);
+        }
+      }
+
+      // If server returned aggregated rows, build records directly from them
+      if (aggregatedMode) {
+        const records: ProfitRecord[] = aggregatedRows.map((r) => {
+          const assignment = (assignments || []).find((a: any) => a.outlet_id === r.outlet_id);
+          const outlet = outletData?.find((o: any) => o.id === r.outlet_id) || outletsList.find((o) => o.id === r.outlet_id);
+          const margin = assignment?.margin_percentage || 0;
+          const outletProfitNum = Number(r.outlet_profit) || 0;
+          const investorShare = (outletProfitNum * margin) / 100;
+          return {
+            outlet_id: r.outlet_id,
+            outlet_name: outlet?.name || 'Unknown',
+            margin_percentage: margin,
+            period_date: r.period,
+            outlet_profit: outletProfitNum,
+            investor_share: investorShare,
+            transaction_count: Number(r.transactions) || 0,
+          };
+        });
+
+        const nonEmpty = records.filter((r) => (Number(r.transaction_count) || 0) > 0 && (Number(r.outlet_profit) || 0) !== 0);
+        nonEmpty.sort((a, b) => new Date(b.period_date).getTime() - new Date(a.period_date).getTime());
+        setProfitRecords(nonEmpty);
         setLoading(false);
         return;
       }
-
-      const outletIds = assignments.map((a) => a.outlet_id);
-
-      // Fetch outlets
-      const { data: outletData } = await supabase
-        .from('outlets')
-        .select('id, name')
-        .in('id', outletIds);
-
-      // Fetch sales in date range
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('outlet_id, profit, created_at')
-        .in('outlet_id', outletIds)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString());
 
       // Group sales by period and outlet
       const groupedData: { [key: string]: any } = {};
@@ -116,31 +177,36 @@ export default function InvestorProfitHistory() {
           };
         }
 
-        groupedData[key].profit += sale.profit || 0;
+        groupedData[key].profit += Number(sale.profit) || 0;
         groupedData[key].count += 1;
       });
 
       // Build profit records with investor shares
       const records: ProfitRecord[] = Object.values(groupedData).map((record) => {
-        const assignment = assignments.find((a) => a.outlet_id === record.outlet_id);
-        const outlet = outletData?.find((o) => o.id === record.outlet_id);
-        const investorShare = (record.profit * assignment!.margin_percentage) / 100;
+        const assignment = (assignments || []).find((a: any) => a.outlet_id === record.outlet_id);
+        const outlet = outletData?.find((o: any) => o.id === record.outlet_id) || outletsList.find((o) => o.id === record.outlet_id);
+        const margin = assignment?.margin_percentage || 0;
+        const outletProfitNum = Number(record.profit) || 0;
+        const investorShare = (outletProfitNum * margin) / 100;
 
         return {
           outlet_id: record.outlet_id,
           outlet_name: outlet?.name || 'Unknown',
-          margin_percentage: assignment?.margin_percentage || 0,
+          margin_percentage: margin,
           period_date: record.period_date,
-          outlet_profit: record.profit,
+          outlet_profit: outletProfitNum,
           investor_share: investorShare,
           transaction_count: record.count,
         };
       });
 
-      // Sort by period date (newest first)
-      records.sort((a, b) => new Date(b.period_date).getTime() - new Date(a.period_date).getTime());
+      // remove periods with no transactions or zero profit so they don't show in the table
+      const nonEmpty = records.filter((r) => (Number(r.transaction_count) || 0) > 0 && (Number(r.outlet_profit) || 0) !== 0);
 
-      setProfitRecords(records);
+      // Sort by period date (newest first)
+      nonEmpty.sort((a, b) => new Date(b.period_date).getTime() - new Date(a.period_date).getTime());
+
+      setProfitRecords(nonEmpty);
     } catch (error) {
       console.error('Error fetching profit history:', error);
     } finally {
@@ -190,6 +256,15 @@ export default function InvestorProfitHistory() {
       {/* Period Selector */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="flex flex-wrap gap-3 items-center">
+          <div className="mr-4">
+            <label className="text-sm font-medium text-gray-700 mr-2">Outlet:</label>
+            <select value={selectedOutletId ?? ''} onChange={(e) => setSelectedOutletId(e.target.value)} className="border rounded-md p-2">
+              <option value="">All Outlets</option>
+              {outletsList.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          </div>
           <span className="text-sm font-medium text-gray-700">View by:</span>
           {['daily', 'weekly', 'monthly', 'yearly'].map((p) => (
             <button

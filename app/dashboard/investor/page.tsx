@@ -8,14 +8,39 @@ function MiniLine({ data }: { data: any[] }) {
   const w = 700;
   const h = 300;
   const pad = 40;
-  const max = Math.max(1, ...data.map((d) => Number(d.profit ?? 0)));
   const stepX = w / Math.max(1, data.length - 1 || 1);
-  const scaleY = (v: number) => h - pad - (v / max) * (h - pad * 2);
-  const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${i * stepX} ${scaleY(d.profit ?? 0)}`).join(' ');
+  const profits = data.map((d) => Number(d.profit ?? 0));
+  const dataMin = Math.min(0, ...profits);
+  const dataMax = Math.max(0, ...profits);
+  const range = dataMax - dataMin || 1;
+  const scaleY = (v: number) => pad + ((dataMax - v) / range) * (h - pad * 2);
+  const points = data.map((d, i) => ({ x: i * stepX, y: scaleY(Number(d.profit ?? 0)), profit: Number(d.profit ?? 0), date: d.date || d.name || '' }));
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
-      <line x1={0} y1={h - pad} x2={w} y2={h - pad} stroke="#eee" />
+      {/* zero axis */}
+      <line x1={0} y1={scaleY(0)} x2={w} y2={scaleY(0)} stroke="#eee" />
       <path d={path} fill="none" stroke="#F59E0B" strokeWidth={2} />
+      {/* points */}
+      {(() => {
+        const labelInterval = Math.max(1, Math.ceil(points.length / 8));
+        return points.map((p, i) => {
+          const showLabel = p.profit !== 0 && (i % labelInterval === 0 || i === points.length - 1);
+          const showX = i % labelInterval === 0 || i === points.length - 1;
+          return (
+            <g key={i}>
+              <circle cx={p.x} cy={p.y} r={3.5} fill="#F59E0B" />
+              {showLabel ? (
+                <text x={p.x} y={p.y - 8} fontSize={10} textAnchor="middle" fill="#1F4E5F">{new Intl.NumberFormat('id-ID').format(p.profit)}</text>
+              ) : null}
+              {showX ? (
+                <text x={p.x} y={h - pad + 14} fontSize={10} textAnchor="middle" fill="#6B7280">{p.date}</text>
+              ) : null}
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 }
@@ -25,24 +50,53 @@ function MiniBar({ data }: { data: any[] }) {
   const h = 300;
   const pad = 60;
   const barW = (w - pad * 2) / Math.max(1, data.length);
-  const max = Math.max(1, ...data.map((d) => Number(d.profit ?? 0)));
+  const profits = data.map((d) => Number(d.profit ?? 0));
+  const dataMin = Math.min(0, ...profits);
+  const dataMax = Math.max(0, ...profits);
+  const range = dataMax - dataMin || 1;
+  const scaleY = (v: number) => pad + ((dataMax - v) / range) * (h - pad * 2);
+  const yZero = scaleY(0);
+
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={300} preserveAspectRatio="xMinYMid meet">
-      <line x1={pad} y1={20} x2={pad} y2={h - pad} stroke="#eee" />
-      {data.map((d, i) => {
-        const x = pad + i * barW + barW * 0.1;
-        const hVal = ((d.profit ?? 0) / max) * (h - pad * 2);
-        return <rect key={d.outlet_id || d.name} x={x} y={h - pad - hVal} width={barW * 0.7} height={hVal} fill="#F59E0B" />;
-      })}
+      <line x1={pad} y1={yZero} x2={w - pad} y2={yZero} stroke="#eee" />
+      {(() => {
+        const interval = Math.max(1, Math.ceil(data.length / 8));
+        return data.map((d, i) => {
+          const x = pad + i * barW + barW * 0.1;
+          const v = Number(d.profit ?? 0);
+          const barWidth = barW * 0.7;
+          const topY = scaleY(Math.max(v, 0));
+          const bottomY = scaleY(Math.min(v, 0));
+          const barY = Math.min(topY, bottomY);
+          const heightVal = Math.abs(bottomY - topY);
+          const labelX = x + barWidth / 2;
+          const showX = i % interval === 0 || i === data.length - 1;
+          const showLabel = v !== 0 && (i % interval === 0 || i === data.length - 1);
+          return (
+            <g key={d.outlet_id || d.name}>
+              <rect x={x} y={barY} width={barWidth} height={heightVal} fill={v < 0 ? '#EF4444' : '#F59E0B'} />
+              {showLabel ? (
+                <text x={labelX} y={barY - 6} fontSize={10} textAnchor="middle" fill="#1F4E5F">{new Intl.NumberFormat('id-ID').format(Math.round(v))}</text>
+              ) : null}
+              {showX ? (
+                <text x={labelX} y={h - pad + 18} fontSize={10} textAnchor="middle" transform={`translate(${labelX}, ${h - pad + 18}) rotate(-45)`} fill="#6B7280">{d.name || d.date || d.label}</text>
+              ) : null}
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 }
+ 
 
 interface KPIData {
-  totalInvestment: number;
-  totalProfitShare: number;
-  activeOutlets: number;
-  totalAssignments: number;
+  sales: number;
+  orders: number;
+  profit: number;
+  aov: number;
+  units: number;
 }
 
 interface OutletSummary {
@@ -62,110 +116,99 @@ interface ProfitTrendData {
 
 export default function InvestorDashboard() {
   const { user } = useAuthStore();
-  const [kpiData, setKpiData] = useState<KPIData>({
-    totalInvestment: 0,
-    totalProfitShare: 0,
-    activeOutlets: 0,
-    totalAssignments: 0,
-  });
+  const [kpiData, setKpiData] = useState<KPIData>({ sales: 0, orders: 0, profit: 0, aov: 0, units: 0 });
   const [outlets, setOutlets] = useState<OutletSummary[]>([]);
+  const [outletList, setOutletList] = useState<{ id: string; name: string }[]>([]);
+  const [selectedOutletId, setSelectedOutletId] = useState<string | null>(null);
   const [profitTrend, setProfitTrend] = useState<ProfitTrendData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchInvestorData();
+    // load available outlets and default to first
+    const load = async () => {
+      try {
+        setLoading(true);
+        const { data: allOutlets } = await supabase.from('outlets').select('id, name').order('name');
+        if (allOutlets && allOutlets.length > 0) {
+          console.debug('Loaded outlets:', allOutlets);
+          setOutletList(allOutlets as { id: string; name: string }[]);
+            const firstId = (allOutlets[0] as any).id;
+          setSelectedOutletId(firstId);
+          await fetchOutletData(firstId);
+        } else {
+          setOutletList([]);
+        }
+      } catch (e) {
+        console.error('Failed to load outlets', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
   }, []);
 
-  const fetchInvestorData = async () => {
+  useEffect(() => {
+    if (selectedOutletId) {
+      void fetchOutletData(selectedOutletId);
+    }
+  }, [selectedOutletId]);
+
+  const fetchOutletData = async (outletId: string) => {
     setLoading(true);
-
     try {
-      // Fetch all investor assignments
-      const { data: assignments } = await supabase
-        .from('investor_assignments')
-        .select('*');
+      // fetch recent sales for outlet (30 days)
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const sinceIso = since.toISOString().split('.')[0] + 'Z'; // remove milliseconds for PostgREST compatibility
+      console.debug('using created_at filter', sinceIso);
+      // fetch via server API to avoid exposing service keys and to work around client REST limits
+      const resp = await fetch(`/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(sinceIso)}`);
+      const json = await resp.json();
+      const salesData = Array.isArray(json?.sales) ? json.sales : [];
+      console.debug('salesData for', outletId, salesData.length, 'status', resp.status, json.error || null);
 
-      if (!assignments || assignments.length === 0) {
-        setLoading(false);
-        return;
+      const revenue = (salesData || []).reduce((s: number, r: any) => s + (Number(r.total_amount) || 0), 0);
+      const profit = (salesData || []).reduce((s: number, r: any) => s + (Number(r.profit) || 0), 0);
+      const orders = (salesData || []).length;
+      const units = (salesData || []).reduce((s: number, r: any) => {
+        const items = Array.isArray(r.items) ? r.items : [];
+        return s + items.reduce((si: number, it: any) => si + Number(it.quantity || it.units || 0), 0);
+      }, 0);
+      const aov = orders > 0 ? Math.round(revenue / orders) : 0;
+
+      setKpiData({ sales: revenue, orders, profit, aov, units });
+
+      // profit trend per day for current month (day 1 .. today) - deterministic, ordered, zero-filled
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const lastDay = today.getDate(); // up to today
+      const days: { key: string; label: string }[] = [];
+      for (let d = 1; d <= lastDay; d++) {
+        const dt = new Date(year, month, d);
+        const key = dt.toISOString().slice(0, 10); // YYYY-MM-DD
+        const label = dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        days.push({ key, label });
       }
-
-      // Fetch outlets
-      const outletIds = assignments.map((a) => a.outlet_id);
-      const { data: outletData } = await supabase
-        .from('outlets')
-        .select('id, name')
-        .in('id', outletIds);
-
-      // Fetch sales data for profit calculation
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('outlet_id, profit, created_at')
-        .in('outlet_id', outletIds)
-        .gte('created_at', new Date(new Date().setDate(new Date().getDate() - 30)).toISOString());
-
-      // Calculate outlet profits
-      const profitMap: { [key: string]: number } = {};
-      salesData?.forEach((sale) => {
-        profitMap[sale.outlet_id] = (profitMap[sale.outlet_id] || 0) + (sale.profit || 0);
+      const profitByDay: Record<string, number> = {};
+      days.forEach((m) => (profitByDay[m.key] = 0));
+      (salesData || []).forEach((s: any) => {
+        if (!s?.created_at) return;
+        const sd = new Date(s.created_at);
+        const key = sd.toISOString().slice(0, 10);
+        if (profitByDay[key] !== undefined) profitByDay[key] = (profitByDay[key] || 0) + (Number(s.profit) || 0);
       });
-
-      // Build enhanced outlet summaries
-      const enhancedOutlets: OutletSummary[] = assignments.map((assignment) => {
-        const outlet = outletData?.find((o) => o.id === assignment.outlet_id);
-        const outletProfit = profitMap[assignment.outlet_id] || 0;
-        const investorShare = (outletProfit * assignment.margin_percentage) / 100;
-
-        return {
-          outlet_id: assignment.outlet_id,
-          outlet_name: outlet?.name || 'Unknown',
-          investment_amount: assignment.investment_amount,
-          margin_percentage: assignment.margin_percentage,
-          outlet_profit: outletProfit,
-          investor_share: investorShare,
-          status: assignment.status,
-        };
-      });
-
-      // Remove duplicates by outlet_id (keep first occurrence)
-      const uniqueOutlets = Array.from(
-        new Map(enhancedOutlets.map((o) => [o.outlet_id, o])).values()
-      );
-
-      setOutlets(uniqueOutlets);
-
-      // Calculate KPI data
-      const totalInvestment = uniqueOutlets.reduce((sum, o) => sum + o.investment_amount, 0);
-      const totalProfitShare = uniqueOutlets.reduce((sum, o) => sum + o.investor_share, 0);
-      const activeCount = uniqueOutlets.filter((o) => o.status === 'active').length;
-
-      setKpiData({
-        totalInvestment,
-        totalProfitShare,
-        activeOutlets: activeCount,
-        totalAssignments: uniqueOutlets.length,
-      });
-
-      // Build profit trend data (last 30 days)
-      const trendData: { [key: string]: number } = {};
-      salesData?.forEach((sale) => {
-        if (outletIds.includes(sale.outlet_id)) {
-          const date = new Date(sale.created_at).toLocaleDateString('id-ID', {
-            month: 'short',
-            day: 'numeric',
-          });
-          trendData[date] = (trendData[date] || 0) + (sale.profit || 0);
-        }
-      });
-
-      const trend = Object.entries(trendData).map(([date, profit]) => ({
-        date,
-        profit: Math.round(profit),
-      }));
-
+      const trend = days.map((m) => ({ date: m.label, label: m.key, profit: Math.round(profitByDay[m.key] || 0) }));
       setProfitTrend(trend);
+
+      // set outlets summary for table (single outlet)
+      const { data: outletData, error: outletError } = await supabase.from('outlets').select('id, name').eq('id', outletId).single();
+      if (outletError) console.debug('outlet fetch error', outletError);
+      console.debug('outletData', outletData);
+      setOutlets([{ outlet_id: outletId, outlet_name: outletData?.name || 'Unknown', investment_amount: 0, margin_percentage: 0, outlet_profit: profit, investor_share: 0, status: 'active' }]);
     } catch (error) {
-      console.error('Error fetching investor data:', error);
+      console.error('Error fetching outlet data:', error);
     } finally {
       setLoading(false);
     }
@@ -176,30 +219,36 @@ export default function InvestorDashboard() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#F59E0B] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading investor data...</p>
+          <p className="text-gray-600">Loading data...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+      <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-[#1F4E5F]">Investor Dashboard</h1>
-        <p className="text-gray-600 mt-2">Monitor your investment portfolio and profit sharing</p>
+        <h1 className="text-3xl font-bold text-[#1F4E5F]">Dashboard per Outlet</h1>
+        <p className="text-gray-600 mt-2">Pilih outlet untuk melihat data performa per-outlet</p>
+
+        <div className="mt-4">
+          <label className="text-sm text-gray-600 mr-2">Pilih Outlet</label>
+          <select value={selectedOutletId ?? ''} onChange={(e) => setSelectedOutletId(e.target.value)} className="border rounded-md p-2">
+            {outletList.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Investment */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Investment</p>
-              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">
-                Rp {kpiData.totalInvestment.toLocaleString('id-ID')}
-              </p>
+              <p className="text-sm font-medium text-gray-600">Total Sales</p>
+              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">Rp {kpiData.sales.toLocaleString('id-ID')}</p>
             </div>
             <div className="bg-blue-100 rounded-lg p-3">
               <DollarSign className="text-blue-600" size={24} />
@@ -207,14 +256,11 @@ export default function InvestorDashboard() {
           </div>
         </div>
 
-        {/* Total Profit Share */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Profit Share</p>
-              <p className="text-2xl font-bold text-green-600 mt-2">
-                Rp {kpiData.totalProfitShare.toLocaleString('id-ID')}
-              </p>
+              <p className="text-sm font-medium text-gray-600">Orders</p>
+              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">{kpiData.orders}</p>
             </div>
             <div className="bg-green-100 rounded-lg p-3">
               <TrendingUp className="text-green-600" size={24} />
@@ -222,12 +268,11 @@ export default function InvestorDashboard() {
           </div>
         </div>
 
-        {/* Active Outlets */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Active Outlets</p>
-              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">{kpiData.activeOutlets}</p>
+              <p className="text-sm font-medium text-gray-600">Profit</p>
+              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">Rp {Math.round(kpiData.profit).toLocaleString('id-ID')}</p>
             </div>
             <div className="bg-amber-100 rounded-lg p-3">
               <Store className="text-amber-600" size={24} />
@@ -235,12 +280,11 @@ export default function InvestorDashboard() {
           </div>
         </div>
 
-        {/* Total Assignments */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Assignments</p>
-              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">{kpiData.totalAssignments}</p>
+              <p className="text-sm font-medium text-gray-600">AOV</p>
+              <p className="text-2xl font-bold text-[#1F4E5F] mt-2">Rp {kpiData.aov.toLocaleString('id-ID')}</p>
             </div>
             <div className="bg-purple-100 rounded-lg p-3">
               <Calendar className="text-purple-600" size={24} />
@@ -253,7 +297,7 @@ export default function InvestorDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Profit Trend */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Profit Trend (Last 30 Days)</h3>
+          <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Profit Trend (Current Month)</h3>
           {profitTrend.length > 0 ? (
             <div>
               <MiniLine data={profitTrend} />
@@ -265,73 +309,45 @@ export default function InvestorDashboard() {
           )}
         </div>
 
-        {/* Outlet Distribution */}
+        {/* Daily Sales */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Profit Share by Outlet</h3>
-          {outlets.length > 0 ? (
+          <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Daily Profit (Current Month)</h3>
+          {profitTrend.length > 0 ? (
             <div>
-              <MiniBar data={outlets.map((o) => ({ name: o.outlet_name, profit: Math.round(o.investor_share) }))} />
+              <MiniBar data={profitTrend.map((d) => ({ name: d.date, profit: d.profit }))} />
             </div>
           ) : (
             <div className="flex items-center justify-center h-300 text-gray-500">
-              No outlet data available
+              No profit data available
             </div>
           )}
         </div>
       </div>
 
-      {/* Outlets Summary Table */}
+      {/* Selected Outlet Summary */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">My Investment Outlets</h3>
-        {outlets.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Outlet</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Investment</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Margin %</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Outlet Profit</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Your Share</th>
-                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {outlets.map((outlet) => (
-                  <tr key={outlet.outlet_id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{outlet.outlet_name}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">
-                      Rp {outlet.investment_amount.toLocaleString('id-ID')}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{outlet.margin_percentage}%</td>
-                    <td className="px-4 py-3 text-right text-gray-600">
-                      Rp {Math.round(outlet.outlet_profit).toLocaleString('id-ID')}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-green-600">
-                      Rp {Math.round(outlet.investor_share).toLocaleString('id-ID')}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          outlet.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : outlet.status === 'suspended'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {outlet.status.charAt(0).toUpperCase() + outlet.status.slice(1)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <h3 className="text-lg font-semibold text-[#1F4E5F] mb-4">Outlet Summary</h3>
+        {selectedOutletId ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="p-4 bg-gray-50 rounded">
+              <div className="text-sm text-gray-600">Sales (30d)</div>
+              <div className="font-semibold mt-2">Rp {kpiData.sales.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="p-4 bg-gray-50 rounded">
+              <div className="text-sm text-gray-600">Orders (30d)</div>
+              <div className="font-semibold mt-2">{kpiData.orders}</div>
+            </div>
+            <div className="p-4 bg-gray-50 rounded">
+              <div className="text-sm text-gray-600">Profit (30d)</div>
+              <div className="font-semibold mt-2">Rp {Math.round(kpiData.profit).toLocaleString('id-ID')}</div>
+            </div>
+            <div className="p-4 bg-gray-50 rounded">
+              <div className="text-sm text-gray-600">Units</div>
+              <div className="font-semibold mt-2">{kpiData.units}</div>
+            </div>
           </div>
         ) : (
-          <div className="flex items-center justify-center py-12 text-gray-500">
-            <p>No investment outlets found. Contact admin to set up investments.</p>
-          </div>
+          <div className="text-gray-500">Pilih outlet untuk melihat ringkasan.</div>
         )}
       </div>
     </div>

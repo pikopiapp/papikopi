@@ -16,7 +16,7 @@ import {
 export default function GenericDashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { logout, user } = useAuthStore();
+  const { logout, user, role } = useAuthStore();
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -129,12 +129,30 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     }
   ];
 
-  const allNavItems = navGroups.flatMap(group => group.items);
+  // Compute displayed nav groups so we can add admin shortcut after auth state resolves.
+  // The app stores role separately in the store too; check both places for safety.
+  const displayedNavGroups = (() => {
+    const isAdminFromUser = user && ((user.user_metadata && user.user_metadata.role === 'admin') || (typeof (user as any)?.role === 'string' && (user as any).role === 'admin'));
+    const isAdmin = isAdminFromUser || role === 'admin';
+    // also check top-level `role` in auth store via `role` variable
+    if (isAdmin) {
+      return [
+        {
+          title: 'Admin',
+          items: [ { href: '/admin/database', label: 'Database (Admin)', icon: HardDrive } ],
+        },
+        ...navGroups,
+      ];
+    }
+    return navGroups;
+  })();
+
+  const allNavItems = displayedNavGroups.flatMap(group => group.items);
 
   const [openGroups, setOpenGroups] = useState<Record<number, boolean>>(() => {
     // Always render collapsed on first render (server and initial client) to keep HTML deterministic.
     const serverInitial: Record<number, boolean> = {};
-    navGroups.forEach((_, i) => (serverInitial[i] = false));
+    displayedNavGroups.forEach((_, i) => (serverInitial[i] = false));
     return serverInitial;
   });
 
@@ -159,7 +177,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
 
     // If a group contains the active route and the persisted state doesn't mention it,
     // open that group. Do not overwrite user's persisted choices.
-    navGroups.forEach((g, i) => {
+    displayedNavGroups.forEach((g, i) => {
       const hasActive = g.items.some(item => isActive(item.href));
       const persistedHas = persisted ? Object.prototype.hasOwnProperty.call(persisted, String(i)) : false;
       if (hasActive && !persistedHas) {
@@ -237,7 +255,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-4 md:space-y-6">
-            {navGroups.map((group, idx) => {
+            {displayedNavGroups.map((group, idx) => {
               // If group only has 1 item (e.g. Beranda), don't render collapsible UI.
               if (group.items.length === 1) {
                 const item = group.items[0];

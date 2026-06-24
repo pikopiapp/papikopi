@@ -60,7 +60,7 @@ export async function POST() {
         hpp_total: 8000,
         bonus_amount: 1600,
         profit: 6400,
-        payment_method: 'qris' as const,
+        payment_method: 'QRIS' as const,
         created_at: new Date().toISOString(),
       },
       {
@@ -70,7 +70,7 @@ export async function POST() {
         hpp_total: 16000,
         bonus_amount: 3200,
         profit: 12800,
-        payment_method: 'cash' as const,
+        payment_method: 'CASH' as const,
         created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       },
       {
@@ -80,7 +80,7 @@ export async function POST() {
         hpp_total: 28000,
         bonus_amount: 5600,
         profit: 22400,
-        payment_method: 'qris' as const,
+        payment_method: 'QRIS' as const,
         created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       },
     ];
