@@ -51,6 +51,7 @@ export default function TransactionDetailPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [editingItems, setEditingItems] = useState<Array<{ id?: string; product_id: string; quantity: number }>>([]);
+  const [editingDeleteIds, setEditingDeleteIds] = useState<string[]>([]);
   const [editingPayment, setEditingPayment] = useState<string>('CASH');
 
   const dateParam = searchParams.get('date');
@@ -151,23 +152,38 @@ export default function TransactionDetailPage() {
     if (!editingSale) return;
     try {
       setLoading(true);
-      const payload = {
-        sale_id: editingSale.id,
-        payment_method: editingPayment,
-        items: editingItems,
-      };
-      const res = await fetch('/api/sales/update', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const add_items = editingItems.filter(it => !it.id).map(it => ({ product_id: it.product_id, quantity: it.quantity }));
+      const update_items = editingItems.filter(it => it.id).map(it => ({ id: it.id, product_id: it.product_id, quantity: it.quantity }));
+      const payload = { sale_id: editingSale.id, payment_method: editingPayment, add_items, update_items, delete_item_ids: editingDeleteIds };
+      const res = await fetch('/api/sales/edit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error('Failed to save');
       // refresh sales
       await fetchSales();
       setModalOpen(false);
       setEditingSale(null);
+      setEditingDeleteIds([]);
     } catch (e: any) {
       console.error('Save edit error', e);
       setError(e?.message || 'Failed to save');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddItem = () => {
+    const defaultProd = products[0];
+    setEditingItems(prev => [...prev, { product_id: defaultProd?.id || '', quantity: 1 }]);
+  };
+
+  const handleRemoveItem = (idx: number) => {
+    setEditingItems(prev => {
+      const copy = [...prev];
+      const removed = copy.splice(idx, 1)[0];
+      if (removed?.id) {
+        setEditingDeleteIds(prevDel => [...prevDel, removed.id as string]);
+      }
+      return copy;
+    });
   };
 
   if (loading) {
@@ -231,8 +247,12 @@ export default function TransactionDetailPage() {
                         ))}
                       </select>
                       <input type="number" min={0} value={it.quantity} onChange={(e) => handleItemQuantityChange(idx, Number(e.target.value))} className="w-28 border p-2 rounded" />
+                      <button className="text-red-600 text-sm" onClick={() => handleRemoveItem(idx)}>Hapus</button>
                     </div>
                   ))}
+                  <div className="mt-2">
+                    <button className="px-3 py-1 rounded border text-sm" onClick={handleAddItem}>Tambah Item</button>
+                  </div>
                 </div>
               </div>
             </div>
