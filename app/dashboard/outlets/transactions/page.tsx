@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Trophy } from 'lucide-react';
-import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRange, getBusinessDayDate } from '@/lib/helpers/business-day';
+import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRange, getBusinessDayDate, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@/app/components/DatePicker';
 
@@ -28,17 +28,26 @@ interface Sale {
   profit: number;
   created_at: string;
   items?: SalesItem[];
+  sale_items?: SalesItem[];
 }
+
+const getSaleItems = (sale: Sale) => sale.items || sale.sale_items || [];
 
 export default function TransactionsPage() {
   const router = useRouter();
   const [sales, setSales] = useState<Sale[]>([]);
   const [outlets, setOutlets] = useState<any[]>([]);
+  const [baristaMap, setBaristaMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [sortOrder, setSortOrder] = useState<'default' | 'highest' | 'lowest'>('highest');
   const [sortPeriod, setSortPeriod] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
+
+  const BUSINESS_DAY_START_HOUR = 4;
+  const selectedBusinessDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const { start: businessDayStart, end: businessDayEnd } = getBusinessDayRange(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
+  const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
 
   const fetchSales = async () => {
     try {
@@ -52,26 +61,35 @@ export default function TransactionsPage() {
         setOutlets(Array.isArray(outletsData) ? outletsData : []);
       }
 
-      // Fetch sales
-      const res = await fetch('/api/sales/by-outlet');
+      // Fetch baristas (to map outlet_id -> barista name)
+      try {
+        const baristasRes = await fetch('/api/staff?role=barista');
+        if (baristasRes.ok) {
+          const baristasData = await baristasRes.json();
+          const map: Record<string, string> = {};
+          (Array.isArray(baristasData) ? baristasData : []).forEach((b: any) => {
+            if (b.outlet_id) map[b.outlet_id] = b.name;
+          });
+          setBaristaMap(map);
+        }
+      } catch (e) {
+        // ignore barista fetch errors - not critical
+        console.error('Failed to fetch baristas for transactions page', e);
+      }
+
+      const res = await fetch(
+        `/api/sales/by-outlet?since=${encodeURIComponent(businessDaySince)}&until=${encodeURIComponent(businessDayUntil)}`
+      );
       if (!res.ok) throw new Error('Failed to fetch sales');
 
       const data = await res.json();
-      const salesData = Array.isArray(data) ? data : [];
-      
-      if (salesData.length === 0) {
-        try {
-          await fetch('/api/sales/seed', { method: 'POST' });
-          const resAfterSeed = await fetch('/api/sales/by-outlet');
-          const seedData = await resAfterSeed.json();
-          setSales(Array.isArray(seedData) ? seedData : []);
-        } catch (seedErr) {
-          console.log('Seed attempt - may already have data:', seedErr);
-          setSales(salesData);
-        }
-      } else {
-        setSales(salesData);
-      }
+      const salesData = Array.isArray(data)
+        ? data
+        : Array.isArray((data as any)?.sales)
+          ? (data as any).sales
+          : [];
+
+      setSales(salesData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Error fetching sales';
       setError(errorMessage);
@@ -85,22 +103,11 @@ export default function TransactionsPage() {
       await fetchSales();
     };
     void init();
-  }, []);
-
-  // Match `daily-summary` behaviour: filter by calendar day (server groups by yyyy-MM-dd)
-  // Use local date string comparison to avoid business-day offset differences.
-  // Fallback: use simple date part comparison
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const formatLocalKey = (d: Date | string) => {
-    const dt = typeof d === 'string' ? new Date(d) : d;
-    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
-  };
-
-  const selectedDateKey = formatLocalKey(selectedDate);
+  }, [selectedDate]);
 
   const filteredSales = sales.filter((sale) => {
-    const saleKey = formatLocalKey(sale.created_at);
-    return saleKey === selectedDateKey;
+    const saleDate = parseTimestampAsJakarta(sale.created_at);
+    return saleDate.getTime() >= businessDayStart.getTime() && saleDate.getTime() <= businessDayEnd.getTime();
   });
 
   // Group by outlet - initialize ALL outlets first
@@ -151,9 +158,12 @@ export default function TransactionsPage() {
         transaction_count: 0,
       };
     }
-    // Update barista name from latest sale
+    // Update barista name from latest sale (or from joined users)
     if (sale.barista_name) {
       outletGroups[sale.outlet_id].barista_name = sale.barista_name;
+    } else if (sale.barista_id) {
+      // fallback: show barista_id when name not available
+      outletGroups[sale.outlet_id].barista_name = sale.barista_id;
     }
     outletGroups[sale.outlet_id].transactions.push(sale);
     outletGroups[sale.outlet_id].total_sales += sale.total_amount;
@@ -210,6 +220,8 @@ export default function TransactionsPage() {
     og.omset_today = t.today;
     og.omset_week = t.week;
     og.omset_month = t.month;
+    // attach barista name if available from baristaMap
+    if (!og.barista_name) og.barista_name = baristaMap[og.outlet_id] || '';
   });
 
   // Get omset value based on selected period
@@ -220,22 +232,12 @@ export default function TransactionsPage() {
     return outlet.omset_today || 0;
   };
 
-  const sortedOutlets = Object.values(outletGroups).sort((a, b) => {
-    if (sortOrder === 'highest') {
-      return getOmsetByPeriod(b) - getOmsetByPeriod(a);
-    } else if (sortOrder === 'lowest') {
-      return getOmsetByPeriod(a) - getOmsetByPeriod(b);
-    } else {
-      // default: sort by outlet number (001, 002, 003...)
-      const outletNumA = parseInt(a.outlet_name.match(/\d+$/)?.[0] || '0');
-      const outletNumB = parseInt(b.outlet_name.match(/\d+$/)?.[0] || '0');
-      return outletNumA - outletNumB;
-    }
-  });
+  // Show all outlets (including those with zero transactions) per user request
+  const visibleOutletGroups = Object.values(outletGroups);
 
   // Get top 3 outlets by omset based on selected period
   const top3Ids = new Set(
-    Object.values(outletGroups)
+    visibleOutletGroups
       .sort((a, b) => getOmsetByPeriod(b) - getOmsetByPeriod(a))
       .slice(0, 3)
       .map(o => o.outlet_id)
@@ -249,12 +251,12 @@ export default function TransactionsPage() {
   };
 
   // Create ranking map for gradient coloring
-  const rankedByOmset = Object.values(outletGroups)
+  const rankedByOmset = visibleOutletGroups
     .sort((a, b) => getOmsetByPeriod(b) - getOmsetByPeriod(a))
     .map((outlet, index) => ({ ...outlet, rank: index }));
 
   const rankMap = new Map(rankedByOmset.map(o => [o.outlet_id, o.rank]));
-  const totalOutlets = Object.keys(outletGroups).length;
+  const totalOutlets = visibleOutletGroups.length;
 
   // Function to get header background and text color based on rank
   const getGradientStyle = (outletId: string): { background: string; textClass: string } => {
@@ -279,6 +281,18 @@ export default function TransactionsPage() {
   };
 
   // Calculate min/max for heatmap coloring (based on omset_today)
+  const sortedOutlets = Object.values(visibleOutletGroups).sort((a, b) => {
+    if (sortOrder === 'highest') {
+      return getOmsetByPeriod(b) - getOmsetByPeriod(a);
+    } else if (sortOrder === 'lowest') {
+      return getOmsetByPeriod(a) - getOmsetByPeriod(b);
+    } else {
+      const outletNumA = parseInt(a.outlet_name.match(/\d+$/)?.[0] || '0');
+      const outletNumB = parseInt(b.outlet_name.match(/\d+$/)?.[0] || '0');
+      return outletNumA - outletNumB;
+    }
+  });
+
   const omsetTodayValues = sortedOutlets.map(o => o.omset_today || 0).filter(v => v > 0);
   const minOmset = Math.min(...omsetTodayValues, 0);
   const maxOmset = Math.max(...omsetTodayValues, 1);
@@ -319,7 +333,7 @@ export default function TransactionsPage() {
       {/* Date Picker at Top */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="max-w-xs">
-          <DatePicker onDateChange={setSelectedDate} />
+          <DatePicker selectedDate={selectedDate} onDateChange={setSelectedDate} />
         </div>
 
         {/* Sort Buttons */}
@@ -396,7 +410,6 @@ export default function TransactionsPage() {
               >
                 {/* Colored Header - Outlet Name & Barista */}
                 <div
-                  // Apply mapped background and text color per rank
                   style={{ background: headerStyle.background }}
                   className={`p-4 ${headerStyle.textClass} relative`}
                 >
@@ -444,7 +457,7 @@ export default function TransactionsPage() {
                         : (
                             outlet.transactions.reduce(
                               (sum, t) =>
-                                sum + (t.items?.reduce((s, it) => s + (Number(it.quantity) || 0), 0) || 0),
+                                sum + (getSaleItems(t).reduce((s, it) => s + (Number(it.quantity) || 0), 0) || 0),
                               0
                             )
                           ).toLocaleString('id-ID')}
@@ -469,8 +482,8 @@ export default function TransactionsPage() {
                   </button>
                 </div>
               </div>
-              );
-            })}
+            );
+          })}
           </div>
         </div>
       )}

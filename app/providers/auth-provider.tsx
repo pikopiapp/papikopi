@@ -23,30 +23,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Helper function to fetch user profile with timeout
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       // Fetch user profile with 5 second timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       try {
-        const { data: userData, error: userError } = await supabase
-          .from("users")
-          .select("id, name, email, role, outlet_id, is_active")
-          .eq("id", userId)
-          .maybeSingle();
+        const response = await fetch("/api/auth/user", {
+          method: "GET",
+          headers: {
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          signal: controller.signal,
+        });
 
         clearTimeout(timeoutId);
 
-        if (userData) {
-          return userData;
-        }
-
-        // If no user found and no error, just return null - don't try to create
-        if (!userError) {
-          console.log("User profile not found for", userId);
+        if (!response.ok) {
+          const text = await response.text();
+          console.warn("Failed to fetch user profile:", response.status, text);
           return null;
         }
 
-        console.warn("Error fetching profile:", userError.message);
+        const userData = await response.json();
+        if (userData?.id) {
+          return userData;
+        }
+
+        console.log("User profile not found for", userId);
         return null;
       } catch (timeoutErr) {
         clearTimeout(timeoutId);

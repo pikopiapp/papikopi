@@ -15,6 +15,13 @@ export function DatePicker({ onDateChange, selectedDate }: DatePickerProps) {
   const [selected, setSelected] = useState(selectedDate || new Date());
   const [isOpen, setIsOpen] = useState(false);
 
+  useEffect(() => {
+    if (selectedDate) {
+      setSelected(selectedDate);
+      setCurrentMonth(selectedDate);
+    }
+  }, [selectedDate]);
+
   const daysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };

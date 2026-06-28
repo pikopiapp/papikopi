@@ -15,12 +15,16 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const outlet_id = url.searchParams.get('outlet_id') || url.searchParams.get('outlet');
     const since = url.searchParams.get('since');
+    const until = url.searchParams.get('until');
 
     // allow optional `outlet` or `outlet_id` param; when omitted, return across all outlets
-    let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at');
+    // Query sales; we'll fetch barista names separately from `users` table
+    let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount,sale_items(*)');
     if (outlet_id) q = q.eq('outlet_id', outlet_id);
 
     if (since) q = q.gte('created_at', since as string);
+    if (until) q = q.lte('created_at', until as string);
+
     // server-side: exclude zero/negative sales or refunds so all clients see the same filtered results
     // allow zero profit transactions but exclude negative profits (refunds)
     q = q.gt('total_amount', 0).gte('profit', 0);
@@ -30,10 +34,26 @@ export async function GET(request: Request) {
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // Normalize result: fetch barista names for barista_id values
+    const rows = (data || []) as any[];
+    const baristaIds = Array.from(new Set(rows.map(r => r.barista_id).filter(Boolean)));
+    let baristaMap: Record<string, string> = {};
+    if (baristaIds.length > 0) {
+      const { data: usersData, error: usersError } = await svc.from('users').select('id,name').in('id', baristaIds);
+      if (!usersError && Array.isArray(usersData)) {
+        usersData.forEach((u: any) => { baristaMap[u.id] = u.name; });
+      }
+    }
+
+    const normalized = rows.map((r) => ({
+      ...r,
+      barista_name: baristaMap[r.barista_id] || null,
+    }));
+
     const group = url.searchParams.get('group');
     // support server-side monthly aggregation to reduce client work
     if (group === 'monthly') {
-      const rows = (data || []) as any[];
+      const rows = (normalized || []) as any[];
       const agg: Record<string, { period: string; outlet_profit: number; transactions: number }> = {};
       rows.forEach((r) => {
         if (!r?.created_at) return;
@@ -46,7 +66,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ sales: out });
     }
 
-    return NextResponse.json({ sales: data || [] });
+    return NextResponse.json(normalized || []);
   } catch (err: any) {
     console.error('by-outlet API error:', err);
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });

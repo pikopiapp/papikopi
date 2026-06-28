@@ -4,33 +4,41 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
-    const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(
-      request.headers.get('Authorization')?.replace('Bearer ', '') || ''
-    );
+    const authHeader = request.headers.get('Authorization') || '';
+    const token = authHeader.replace('Bearer ', '').trim();
 
-    if (authError || !user) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !authData.user) {
+      console.error('Auth user verification failed:', authError?.message || 'No user');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = authData.user;
 
     // Try to fetch user profile
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (userData) {
       return NextResponse.json(userData);
     }
 
     // If profile doesn't exist, create a default one
-    if (userError?.code === 'PGRST116') {
+    if (userError?.code === 'PGRST116' || !userError) {
       const payload: Database['users']['Insert'][] = [
         {
           id: user.id,
           name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
           email: user.email,
-          role: 'barista', // Default role
+          role: 'barista',
           is_active: true,
         },
       ];

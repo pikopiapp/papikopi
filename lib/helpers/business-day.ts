@@ -109,6 +109,38 @@ export function formatTimestampInJakarta(
 }
 
 /**
+ * Format a Date or timestamp as an ISO string in Asia/Jakarta local time.
+ * This is useful for querying database rows that store timezone-naive Jakarta timestamps.
+ */
+export function formatAsJakartaLocalIso(timestamp: string | Date): string {
+  const date = timestamp instanceof Date ? new Date(timestamp.getTime()) : parseTimestampAsJakarta(timestamp);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+}
+
+export function getBusinessDayRangeLocalIso(
+  businessDay: Date,
+  businessDayStartHour: number
+): { since: string; until: string } {
+  const { start, end } = getBusinessDayRange(businessDay, businessDayStartHour);
+  return {
+    since: formatAsJakartaLocalIso(start),
+    until: formatAsJakartaLocalIso(end),
+  };
+}
+
+/**
  * Format business day for display
  * @param businessDay - Date object representing business day
  * @returns Formatted string: "10 May 2026"

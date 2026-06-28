@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
-import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC } from '@/lib/helpers/business-day';
+import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { getBusinessDayRange, getBusinessDayDate, formatBusinessDay } from '@/lib/helpers/business-day';
@@ -29,7 +29,10 @@ interface Sale {
   profit: number;
   created_at: string;
   items?: SalesItem[];
+  sale_items?: SalesItem[];
 }
+
+const getSaleItems = (sale: Sale) => sale.items || sale.sale_items || [];
 
 export default function TransactionDetailPage() {
   const router = useRouter();
@@ -44,14 +47,9 @@ export default function TransactionDetailPage() {
   const dateParam = searchParams.get('date');
   const selectedDate = dateParam ? new Date(parseInt(dateParam)) : new Date();
 
-  // Use calendar local date (yyyy-MM-dd) to match `/api/reports/daily-summary` grouping
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const formatLocalKey = (d: Date | string) => {
-    const dt = typeof d === 'string' ? new Date(d) : d;
-    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
-  };
-
-  const selectedDateKey = formatLocalKey(selectedDate);
+  const BUSINESS_DAY_START_HOUR = 4;
+  const selectedBusinessDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const { start: businessDayStart, end: businessDayEnd } = getBusinessDayRange(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
 
   // Use centralized parser that handles microseconds and Jakarta offset
   const parseAsJakarta = (s: string) => parseTimestampAsJakarta(s);
@@ -71,19 +69,21 @@ export default function TransactionDetailPage() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch('/api/sales/by-outlet');
+        // Request only the business-day slice from the server to reduce payload
+        const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
+        const url = `/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(businessDaySince)}&until=${encodeURIComponent(businessDayUntil)}`;
+
+        const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to fetch sales');
 
         const data = await res.json();
-        const salesData = Array.isArray(data) ? data : [];
+        const salesData = Array.isArray(data)
+          ? data
+          : Array.isArray((data as any)?.sales)
+            ? (data as any).sales
+            : [];
 
-        // Filter by outlet and calendar date (local) to match daily-summary
-        const filtered = salesData.filter((sale: Sale) => {
-          const saleKey = formatLocalKey(sale.created_at);
-          return sale.outlet_id === outletId && saleKey === selectedDateKey;
-        });
-
-        const sorted = filtered.sort(
+        const sorted = salesData.sort(
           (a: Sale, b: Sale) => parseAsJakarta(a.created_at).getTime() - parseAsJakarta(b.created_at).getTime()
         );
 
@@ -96,12 +96,13 @@ export default function TransactionDetailPage() {
       }
     };
 
-    fetchSales();
-  }, [outletId, selectedDateKey]);
+    // Depend only on stable primitives to avoid effect re-triggering each render
+    if (outletId) fetchSales();
+  }, [outletId, dateParam]);
 
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
-  const totalUnits = sales.reduce((sum, s) => sum + (s.items ? s.items.reduce((u, it) => u + (it.quantity || 0), 0) : 0), 0);
+  const totalUnits = sales.reduce((sum, s) => sum + getSaleItems(s).reduce((u, it) => u + (it.quantity || 0), 0), 0);
 
   // Running transaction index for table numbering (one number per transaction)
   let transactionIndex = 0;
@@ -185,8 +186,9 @@ export default function TransactionDetailPage() {
                 // Parse stored timestamp as UTC and show in Jakarta local time
                 const time = formatTimestampFromUTC(sale.created_at, { hour: '2-digit', minute: '2-digit' });
 
-                return items.length > 0 ? (
+                return getSaleItems(sale).length > 0 ? (
                   (() => {
+                    const items = getSaleItems(sale);
                     const txnNo = ++transactionIndex;
                     return items.map((item, itemIdx) => {
                       const isLastItem = itemIdx === items.length - 1;
