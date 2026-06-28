@@ -45,6 +45,13 @@ export default function TransactionDetailPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [products, setProducts] = useState<any[]>([]);
+
+  // Edit modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [editingItems, setEditingItems] = useState<Array<{ id?: string; product_id: string; quantity: number }>>([]);
+  const [editingPayment, setEditingPayment] = useState<string>('CASH');
 
   const dateParam = searchParams.get('date');
   const selectedDate = dateParam ? new Date(parseInt(dateParam)) : new Date();
@@ -65,42 +72,56 @@ export default function TransactionDetailPage() {
     return `${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(v))},-`;
   };
 
+  // Fetch sales function (callable after edits)
+  const fetchSales = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
+      const url = `/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(businessDaySince)}&until=${encodeURIComponent(businessDayUntil)}`;
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch sales');
+
+      const data = await res.json();
+      const salesData = Array.isArray(data)
+        ? data
+        : Array.isArray((data as any)?.sales)
+          ? (data as any).sales
+          : [];
+
+      const sorted = salesData.sort(
+        (a: Sale, b: Sale) => parseAsJakarta(a.created_at).getTime() - parseAsJakarta(b.created_at).getTime()
+      );
+
+      setSales(sorted);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error fetching sales';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchSales = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Request only the business-day slice from the server to reduce payload
-        const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
-        const url = `/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(businessDaySince)}&until=${encodeURIComponent(businessDayUntil)}`;
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to fetch sales');
-
-        const data = await res.json();
-        const salesData = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.sales)
-            ? (data as any).sales
-            : [];
-
-        const sorted = salesData.sort(
-          (a: Sale, b: Sale) => parseAsJakarta(a.created_at).getTime() - parseAsJakarta(b.created_at).getTime()
-        );
-
-        setSales(sorted);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Error fetching sales';
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Depend only on stable primitives to avoid effect re-triggering each render
     if (outletId) fetchSales();
   }, [outletId, dateParam]);
+
+  // Fetch products for modal selects
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch('/api/products');
+        if (!res.ok) return;
+        const data = await res.json();
+        setProducts(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error('Failed to fetch products', e);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
@@ -108,6 +129,46 @@ export default function TransactionDetailPage() {
 
   // Running transaction index for table numbering (one number per transaction)
   let transactionIndex = 0;
+
+  // Modal handlers
+  const handleItemQuantityChange = (idx: number, qty: number) => {
+    setEditingItems(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], quantity: qty };
+      return copy;
+    });
+  };
+
+  const handleItemProductChange = (idx: number, product_id: string) => {
+    setEditingItems(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], product_id };
+      return copy;
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSale) return;
+    try {
+      setLoading(true);
+      const payload = {
+        sale_id: editingSale.id,
+        payment_method: editingPayment,
+        items: editingItems,
+      };
+      const res = await fetch('/api/sales/update', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error('Failed to save');
+      // refresh sales
+      await fetchSales();
+      setModalOpen(false);
+      setEditingSale(null);
+    } catch (e: any) {
+      console.error('Save edit error', e);
+      setError(e?.message || 'Failed to save');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -141,6 +202,46 @@ export default function TransactionDetailPage() {
         <div className="p-4 bg-red-100 border border-red-400 text-red-800 rounded flex items-center gap-2">
           <AlertCircle size={20} />
           {error}
+        </div>
+      )}
+
+      {/* Edit Modal (simple) */}
+      {modalOpen && editingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+            <h2 className="text-xl font-bold mb-4">Edit Transaksi</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-700">Payment Method</label>
+                <select value={editingPayment} onChange={(e) => setEditingPayment(e.target.value)} className="mt-1 block w-full border rounded p-2">
+                  <option value="CASH">CASH</option>
+                  <option value="QRIS">QRIS</option>
+                  <option value="TRANSFER">TRANSFER</option>
+                </select>
+              </div>
+
+              <div>
+                <p className="font-semibold">Items</p>
+                <div className="space-y-2 mt-2">
+                  {editingItems.map((it, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <select className="flex-1 border p-2 rounded" value={it.product_id} onChange={(e) => handleItemProductChange(idx, e.target.value)}>
+                        {products.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} — {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(p.price || 0))}</option>
+                        ))}
+                      </select>
+                      <input type="number" min={0} value={it.quantity} onChange={(e) => handleItemQuantityChange(idx, Number(e.target.value))} className="w-28 border p-2 rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-4 py-2 rounded border" onClick={() => { setModalOpen(false); setEditingSale(null); }}>Batal</button>
+              <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={handleSaveEdit}>Simpan</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -200,10 +301,25 @@ export default function TransactionDetailPage() {
                         <tr key={`${sale.id}-${itemIdx}`} className={rowClass}>
                           <td className="px-4 py-3 text-sm text-gray-800 font-medium">{itemIdx === 0 ? txnNo : ''}</td>
                           {itemIdx === 0 && (
-                            <td rowSpan={items.length} className="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 font-medium">
-                              {time}
-                            </td>
-                          )}
+                                <td rowSpan={items.length} className="px-4 py-3 text-sm text-gray-800 border-r border-gray-200 font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <div>{time}</div>
+                                    <button
+                                      className="text-sm text-blue-600 hover:underline"
+                                      onClick={() => {
+                                        // open modal for this sale
+                                        setEditingSale(sale);
+                                        setEditingPayment(sale.payment_method || 'CASH');
+                                        const its = getSaleItems(sale).map(it => ({ id: it.id, product_id: it.product_id, quantity: Number(it.quantity) || 0 }));
+                                        setEditingItems(its);
+                                        setModalOpen(true);
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
                           <td className="px-4 py-3 text-sm text-right text-gray-800 font-medium">
                             {item.quantity}
                           </td>
