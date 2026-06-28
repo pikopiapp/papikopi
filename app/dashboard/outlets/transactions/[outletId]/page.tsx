@@ -259,6 +259,23 @@ export default function TransactionDetailPage() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button className="px-4 py-2 rounded border" onClick={() => { setModalOpen(false); setEditingSale(null); }}>Batal</button>
+              <button className="px-4 py-2 rounded bg-red-600 text-white" onClick={async () => {
+                if (!editingSale) return;
+                if (!confirm('Hapus transaksi ini beserta itemnya?')) return;
+                try {
+                  setLoading(true);
+                  const res = await fetch('/api/sales/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sale_id: editingSale.id }) });
+                  if (!res.ok) throw new Error('Failed to delete');
+                  await fetchSales();
+                  setModalOpen(false);
+                  setEditingSale(null);
+                } catch (e) {
+                  console.error('Delete error', e);
+                  setError('Gagal menghapus transaksi');
+                } finally {
+                  setLoading(false);
+                }
+              }}>Hapus Transaksi</button>
               <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={handleSaveEdit}>Simpan</button>
             </div>
           </div>
@@ -362,7 +379,41 @@ export default function TransactionDetailPage() {
                     return (
                       <tr key={sale.id} className="bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-800 font-medium">{txnNo}</td>
-                        <td className="px-4 py-3 text-sm text-gray-800">{time}</td>
+                        <td className="px-4 py-3 text-sm text-gray-800">
+                          <div className="flex items-center gap-2">
+                            <div>{time}</div>
+                            <button
+                              className="text-sm text-blue-600 hover:underline"
+                              onClick={() => {
+                                setEditingSale(sale);
+                                setEditingPayment(sale.payment_method || 'CASH');
+                                setEditingItems([]);
+                                setModalOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="text-sm text-red-600 hover:underline"
+                              onClick={async () => {
+                                if (!confirm('Hapus transaksi ini?')) return;
+                                try {
+                                  setLoading(true);
+                                  const res = await fetch('/api/sales/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sale_id: sale.id }) });
+                                  if (!res.ok) throw new Error('Failed to delete');
+                                  await fetchSales();
+                                } catch (e) {
+                                  console.error('Delete error', e);
+                                  setError('Gagal menghapus transaksi');
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </td>
                         <td colSpan={4} className="px-4 py-3 text-sm text-gray-500">No items</td>
                       </tr>
                     );
