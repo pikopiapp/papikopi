@@ -38,7 +38,9 @@ export default function TransactionDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const routeParams = useParams();
-  const outletId = routeParams?.outletId || searchParams.get('outletId') || '';
+  // routeParams.outletId can be string | string[]; normalize to a single string
+  const rawOutletId = routeParams?.outletId ?? searchParams.get('outletId') ?? '';
+  const outletId = Array.isArray(rawOutletId) ? rawOutletId[0] : rawOutletId;
   
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
