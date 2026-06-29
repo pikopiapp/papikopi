@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { calculateMealAllowance } from '@/lib/bonus-calculator';
+import { getBusinessDayDate, parseTimestampAsJakarta, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 // Use DB-backed holidays via /api/holidays
 
 interface WagePayment {
@@ -81,7 +82,7 @@ export default function WagesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dailyWagesStatusFilter, setDailyWagesStatusFilter] = useState<string>('all');
   const [selectedBarista, setSelectedBarista] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatDateOnlyInJakarta(new Date()));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +125,8 @@ export default function WagesPage() {
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 100000); // Supabase defaults to 1000 rows if range is omitted
 
       if (salesError) {
         console.error('Supabase query error:', salesError);
@@ -161,23 +163,28 @@ export default function WagesPage() {
       }
 
       // Format sales data into payment structure
-      const formattedPayments = ((salesData || []) as any[]).map((sale) => ({
-        id: sale.id,
-        barista_id: sale.barista_id,
-        barista_name: baristaMap[sale.barista_id] || 'Unknown',
-        outlet_id: sale.outlet_id,
-        outlet_name: outletMap[sale.outlet_id] || 'Unknown',
-        total_omset: sale.total_amount || 0,
-        cash_amount: sale.total_amount || 0,
-        bonus: sale.bonus_amount || 0,
-        meal_allowance: 0,
-        deposit_amount: 0,
-        kekurangan_upah: 0,
-        status: 'approved',
-        submitted_at: sale.created_at,
-        approved_at: sale.created_at,
-        date: format(new Date(sale.created_at), 'yyyy-MM-dd'),
-      }));
+      const formattedPayments = ((salesData || []) as any[]).map((sale) => {
+        const createdAtJakarta = parseTimestampAsJakarta(String(sale.created_at || ''));
+        const businessDay = getBusinessDayDate(createdAtJakarta, 4);
+        const createdAtNormalized = createdAtJakarta.toISOString().split('.')[0] + 'Z';
+        return {
+          id: sale.id,
+          barista_id: sale.barista_id,
+          barista_name: baristaMap[sale.barista_id] || 'Unknown',
+          outlet_id: sale.outlet_id,
+          outlet_name: outletMap[sale.outlet_id] || 'Unknown',
+          total_omset: sale.total_amount || 0,
+          cash_amount: sale.total_amount || 0,
+          bonus: sale.bonus_amount || 0,
+          meal_allowance: 0,
+          deposit_amount: 0,
+          kekurangan_upah: 0,
+          status: 'approved',
+          submitted_at: createdAtNormalized,
+          approved_at: createdAtNormalized,
+          date: formatDateOnlyInJakarta(businessDay),
+        };
+      });
 
       setAllPayments(formattedPayments);
 
@@ -357,7 +364,15 @@ export default function WagesPage() {
             />
             {(() => {
               const iso = selectedDate; // state stores yyyy-MM-dd
-              const isHolidayDate = nationalHolidays.has(iso) || customHolidays.has(iso) || new Date(iso).getDay() === 0 || new Date(iso).getDay() === 6;
+              const selectedDateJakarta = parseDateOnlyAsJakarta(iso);
+              const selectedJakartaDay = selectedDateJakarta.toLocaleString('en-US', {
+                timeZone: 'Asia/Jakarta',
+                weekday: 'long',
+              });
+              const isHolidayDate = nationalHolidays.has(iso)
+                || customHolidays.has(iso)
+                || selectedJakartaDay === 'Sunday'
+                || selectedJakartaDay === 'Saturday';
               return isHolidayDate ? (
                 <span className="px-3 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">
                   🎉 Hari Libur
@@ -404,7 +419,7 @@ export default function WagesPage() {
                   return false;
                 }
                 
-                // Date filter - show only selected date
+                // Date filter - show only selected date using Jakarta-normalized dates
                 if (wage.date !== selectedDate) {
                   return false;
                 }
@@ -419,7 +434,7 @@ export default function WagesPage() {
                 const isToday = format(new Date(wage.date), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
               return (
                 <div
-                  key={`${wage.date}-${wage.barista_id}`}
+                  key={`${wage.date}-${wage.outlet_id}-${wage.barista_id}`}
                   className={`rounded-lg border-2 p-4 transition ${
                     isToday
                       ? 'surface-muted border-emerald-500 shadow-lg'

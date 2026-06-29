@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { AlertCircle, Loader2, Trophy } from 'lucide-react';
-import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRange, getBusinessDayDate, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { parseTimestampAsJakarta, getBusinessDayRange, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@/app/components/DatePicker';
 
@@ -31,12 +31,23 @@ interface Sale {
   sale_items?: SalesItem[];
 }
 
+interface Outlet {
+  id: string;
+  name: string;
+}
+
+interface Barista {
+  id: string;
+  name: string;
+  outlet_id: string;
+}
+
 const getSaleItems = (sale: Sale) => sale.items || sale.sale_items || [];
 
 export default function TransactionsPage() {
   const router = useRouter();
   const [sales, setSales] = useState<Sale[]>([]);
-  const [outlets, setOutlets] = useState<any[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [baristaMap, setBaristaMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +78,12 @@ export default function TransactionsPage() {
         if (baristasRes.ok) {
           const baristasData = await baristasRes.json();
           const map: Record<string, string> = {};
-          (Array.isArray(baristasData) ? baristasData : []).forEach((b: any) => {
+          (Array.isArray(baristasData) ? baristasData : []).forEach((b: Barista) => {
             if (b.outlet_id) map[b.outlet_id] = b.name;
           });
           setBaristaMap(map);
         }
       } catch (e) {
-        // ignore barista fetch errors - not critical
         console.error('Failed to fetch baristas for transactions page', e);
       }
 
@@ -82,11 +92,11 @@ export default function TransactionsPage() {
       );
       if (!res.ok) throw new Error('Failed to fetch sales');
 
-      const data = await res.json();
-      const salesData = Array.isArray(data)
-        ? data
-        : Array.isArray((data as any)?.sales)
-          ? (data as any).sales
+      const responseData = await res.json();
+      const salesData = Array.isArray(responseData)
+        ? responseData
+        : Array.isArray((responseData as { sales?: Sale[] })?.sales)
+          ? (responseData as { sales?: Sale[] }).sales!
           : [];
 
       setSales(salesData);
@@ -99,11 +109,8 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    const init = async () => {
-      await fetchSales();
-    };
-    void init();
-  }, [selectedDate]);
+    void fetchSales();
+  }, [businessDaySince, businessDayUntil]);
 
   const filteredSales = sales.filter((sale) => {
     const saleDate = parseTimestampAsJakarta(sale.created_at);
@@ -173,35 +180,29 @@ export default function TransactionsPage() {
     outletGroups[sale.outlet_id].transaction_count += 1;
   });
 
-  // Compute omset (totals) per outlet for selected day/week/month using ALL sales (not just filtered)
+  // Compute omset (totals) per outlet for selected business day/week/month using business-day boundaries
   const totalsMap: Record<string, { today: number; week: number; month: number }> = {};
   Object.keys(outletGroups).forEach((id) => {
     totalsMap[id] = { today: 0, week: 0, month: 0 };
   });
 
-  // Compute local calendar ranges (start/end of day, week(Mon-Sun), month) based on selectedDate
-  const ref = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-  const startOfDay = new Date(ref);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(ref);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // week start = Monday
-  const day = ref.getDay(); // 0 (Sun) - 6 (Sat)
+  const businessWeekDay = new Date(selectedBusinessDay);
+  const day = businessWeekDay.getDay(); // 0 (Sun) - 6 (Sat)
   const diffToMonday = (day + 6) % 7; // days to subtract to get Monday
-  const monday = new Date(ref);
-  monday.setDate(ref.getDate() - diffToMonday);
-  const startOfWeek = new Date(monday);
-  startOfWeek.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(monday);
-  endOfWeek.setDate(monday.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
+  businessWeekDay.setDate(businessWeekDay.getDate() - diffToMonday);
 
-  // month: first day to last day
-  const startOfMonth = new Date(ref.getFullYear(), ref.getMonth(), 1);
-  startOfMonth.setHours(0, 0, 0, 0);
-  const endOfMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
-  endOfMonth.setHours(23, 59, 59, 999);
+  const businessDayStartDate = selectedBusinessDay;
+
+  const businessWeekStartDate = new Date(businessWeekDay);
+  const businessMonthStartDate = new Date(selectedBusinessDay.getFullYear(), selectedBusinessDay.getMonth(), 1);
+  const nextMonthStartDate = new Date(selectedBusinessDay.getFullYear(), selectedBusinessDay.getMonth() + 1, 1);
+
+  const businessDayStartRange = getBusinessDayRange(businessDayStartDate, BUSINESS_DAY_START_HOUR);
+  const businessDayEndRange = businessDayStartRange.end;
+  const businessWeekStartRange = getBusinessDayRange(businessWeekStartDate, BUSINESS_DAY_START_HOUR);
+  const businessWeekEndRange = new Date(businessWeekStartRange.start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+  const businessMonthStartRange = getBusinessDayRange(businessMonthStartDate, BUSINESS_DAY_START_HOUR);
+  const businessMonthEndRange = new Date(getBusinessDayRange(nextMonthStartDate, BUSINESS_DAY_START_HOUR).start.getTime() - 1);
 
   // Use ALL sales, not just filtered
   sales.forEach((sale) => {
@@ -209,9 +210,15 @@ export default function TransactionsPage() {
     const sDate = parseTimestampAsJakarta(sale.created_at);
     const oid = sale.outlet_id;
     if (!totalsMap[oid]) totalsMap[oid] = { today: 0, week: 0, month: 0 }; // Initialize if outlet not in map
-    if (sDate.getTime() >= startOfDay.getTime() && sDate.getTime() <= endOfDay.getTime()) totalsMap[oid].today += Number(sale.total_amount || 0);
-    if (sDate.getTime() >= startOfWeek.getTime() && sDate.getTime() <= endOfWeek.getTime()) totalsMap[oid].week += Number(sale.total_amount || 0);
-    if (sDate.getTime() >= startOfMonth.getTime() && sDate.getTime() <= endOfMonth.getTime()) totalsMap[oid].month += Number(sale.total_amount || 0);
+    if (sDate.getTime() >= businessDayStartRange.start.getTime() && sDate.getTime() <= businessDayEndRange.getTime()) {
+      totalsMap[oid].today += Number(sale.total_amount || 0);
+    }
+    if (sDate.getTime() >= businessWeekStartRange.start.getTime() && sDate.getTime() <= businessWeekEndRange.getTime()) {
+      totalsMap[oid].week += Number(sale.total_amount || 0);
+    }
+    if (sDate.getTime() >= businessMonthStartRange.start.getTime() && sDate.getTime() <= businessMonthEndRange.getTime()) {
+      totalsMap[oid].month += Number(sale.total_amount || 0);
+    }
   });
 
   // Attach totals to outlet groups
@@ -243,7 +250,7 @@ export default function TransactionsPage() {
       .map(o => o.outlet_id)
   );
 
-  const getTopBadge = (outletId: string, index: number) => {
+  const getTopBadge = (outletId: string) => {
     if (!top3Ids.has(outletId)) return null;
     const badges = ['🥇', '🥈', '🥉'];
     const topIndex = Array.from(top3Ids).indexOf(outletId);
@@ -296,24 +303,6 @@ export default function TransactionsPage() {
   const omsetTodayValues = sortedOutlets.map(o => o.omset_today || 0).filter(v => v > 0);
   const minOmset = Math.min(...omsetTodayValues, 0);
   const maxOmset = Math.max(...omsetTodayValues, 1);
-  
-  // Function to get heatmap color based on omset value
-  const getHeatmapColor = (omset: number) => {
-    if (maxOmset === minOmset) return 'bg-blue-900'; // all same
-    
-    const normalized = (omset - minOmset) / (maxOmset - minOmset); // 0 to 1
-    
-    if (normalized >= 0.66) {
-      // High: dark blue
-      return 'bg-blue-900';
-    } else if (normalized >= 0.33) {
-      // Medium: orange
-      return 'bg-orange-500';
-    } else {
-      // Low: dark red
-      return 'bg-red-900';
-    }
-  };
 
   if (loading) {
     return (
@@ -414,9 +403,9 @@ export default function TransactionsPage() {
                   className={`p-4 ${headerStyle.textClass} relative`}
                 >
                   {/* Trophy Badge */}
-                  {getTopBadge(outlet.outlet_id, 0) && (
+                  {getTopBadge(outlet.outlet_id) && (
                     <div className="absolute top-1 right-2 text-5xl">
-                      {getTopBadge(outlet.outlet_id, 0)}
+                      {getTopBadge(outlet.outlet_id)}
                     </div>
                   )}
                   <p className="font-bold text-lg truncate">
