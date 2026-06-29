@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { parseISO, startOfDay, endOfDay, isValid, format } from 'date-fns';
+import { getDateBoundaryInJakarta } from '@/lib/helpers/business-day';
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,26 +17,19 @@ export async function GET(request: Request) {
     const outlet_id = url.searchParams.get('outlet_id') || url.searchParams.get('outlet');
     const since = url.searchParams.get('since');
     const until = url.searchParams.get('until');
+    const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
 
     const buildQuery = () => {
       let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount');
       if (outlet_id) q = q.eq('outlet_id', outlet_id);
 
       if (since) {
-        const parsed = parseISO(since as string);
-        if (isValid(parsed)) {
-          q = q.gte('created_at', startOfDay(parsed).toISOString());
-        } else {
-          q = q.gte('created_at', since as string);
-        }
+        const parsed = getDateBoundaryInJakarta(since as string, false);
+        q = q.gte('created_at', parsed.toISOString());
       }
       if (until) {
-        const parsed = parseISO(until as string);
-        if (isValid(parsed)) {
-          q = q.lte('created_at', endOfDay(parsed).toISOString());
-        } else {
-          q = q.lte('created_at', until as string);
-        }
+        const parsed = getDateBoundaryInJakarta(until as string, true);
+        q = q.lte('created_at', parsed.toISOString());
       }
 
       // server-side: exclude zero/negative sales or refunds so all clients see the same filtered results
@@ -98,6 +91,13 @@ export async function GET(request: Request) {
     }));
 
     const group = url.searchParams.get('group');
+    const meta = {
+      requested: { outlet_id, since, until, group },
+      rowsFetched: allRows.length,
+      normalizedCount: normalized.length,
+      sampleIds: allRows.slice(0, 5).map((r) => r.id),
+    };
+
     // support server-side monthly aggregation to reduce client work
     if (group === 'monthly') {
       const monthlyRows = (normalized || []) as any[];
@@ -110,10 +110,10 @@ export async function GET(request: Request) {
         agg[period].transactions += 1;
       });
       const out = Object.values(agg).sort((a, b) => a.period.localeCompare(b.period));
-      return NextResponse.json({ sales: out });
+      return debug ? NextResponse.json({ sales: out, meta }) : NextResponse.json({ sales: out });
     }
 
-    return NextResponse.json(normalized || []);
+    return debug ? NextResponse.json({ data: normalized || [], meta }) : NextResponse.json(normalized || []);
   } catch (err: any) {
     console.error('by-outlet API error:', err);
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });

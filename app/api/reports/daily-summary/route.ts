@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { parseISO, startOfDay, endOfDay } from 'date-fns';
 import { aggregateDailyOutletSummary, calculateBonusFromJson, calculateMealAllowance, DEFAULT_BONUS_TIERS } from '@/lib/bonus-calculator';
-import { getBusinessDayDate } from '@/lib/helpers/business-day';
+import { getBusinessDayDate, getDateBoundaryInJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 
 export async function GET(req: Request) {
   try {
@@ -12,10 +11,11 @@ export async function GET(req: Request) {
     const debug = url.searchParams.get('debug');
     const outlet = url.searchParams.get('outlet');
 
-    // Validate dates; default to last 7 days if missing
-    // Interpret date-only params as whole days: start at 00:00, end at 23:59:59
-    const endDate = end ? endOfDay(parseISO(end)) : endOfDay(new Date());
-    const startDate = start ? startOfDay(parseISO(start)) : startOfDay(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
+    // Validate dates; default to last 7 days if missing.
+    // Interpret date-only params as whole days in Asia/Jakarta so the server and browser
+    // produce identical ranges regardless of runtime timezone.
+    const endDate = end ? getDateBoundaryInJakarta(end, true) : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date()), true);
+    const startDate = start ? getDateBoundaryInJakarta(start, false) : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)), false);
 
     // Build query
     let query = supabase
@@ -238,6 +238,13 @@ export async function GET(req: Request) {
     });
     const meta: any = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
     if (debug) {
+      meta.requested = { start, end, outlet };
+      meta.resolved = {
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        startDateOnly: formatDateOnlyInJakarta(startDate),
+        endDateOnly: formatDateOnlyInJakarta(endDate),
+      };
       meta.rawSampleHead = Array.isArray(rows) ? rows.slice(0, 10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
       meta.rawSampleTail = Array.isArray(rows) ? rows.slice(-10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
       meta.mapKeys = Object.keys(map).slice(0, 50);

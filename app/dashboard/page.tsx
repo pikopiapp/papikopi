@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { ChartOptions } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { SalesBarChart, OrdersLineChart, ProfitBarChart } from './Charts';
+import { formatDateOnlyInJakarta, parseDateOnlyAsJakarta } from '@/lib/helpers/business-day';
 
 const IconSales = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -53,14 +54,14 @@ const IconAvg = ({ className = "" }: { className?: string }) => (
 // removed inline mock bars/spark — replaced with Chart.js components below
 
 // Client-side fetch for 7-day daily summary used by the small cards
-type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
+type SummaryItem = { date: string; outlet_id?: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
 function parseRangeDate(value?: Date | string) {
   if (!value) return undefined;
-  if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-  return new Date(`${value}T00:00:00`);
+  if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
+  return parseDateOnlyAsJakarta(value);
 }
 
-function use7DaySummary(rangeStart?: string, rangeEnd?: string) {
+function useRangeSummary(rangeStart?: string, rangeEnd?: string) {
   const [data, setData] = React.useState<SummaryItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
@@ -71,38 +72,45 @@ function use7DaySummary(rangeStart?: string, rangeEnd?: string) {
         const end = parseRangeDate(rangeEnd) ?? new Date();
         const start = parseRangeDate(rangeStart) ?? new Date(end);
         if (!rangeStart) start.setDate(end.getDate() - 6);
-        const fmt = (d: Date) => {
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          return `${y}-${m}-${dd}`;
-        };
-        const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
+        const fmt = (d: Date) => formatDateOnlyInJakarta(d);
+        const q = new URLSearchParams({ start: fmt(start), end: fmt(end), debug: '1' });
         const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
         if (!res.ok) throw new Error('Failed to load daily summary');
         const json = await res.json();
+        if (json?.meta) {
+          try { console.debug('daily-summary meta', json.meta); } catch (e) {}
+        }
         const raw = Array.isArray(json?.data) ? json.data as unknown[] : [];
-        const mapped: SummaryItem[] = raw.map((r) => {
+        const byDate = new Map<string, SummaryItem>();
+        raw.forEach((r) => {
           const item = r as Record<string, unknown>;
-          const dateStr = typeof item.date === 'string' ? item.date : new Date().toISOString();
+          const dateStr = typeof item.date === 'string' ? item.date : formatDateOnlyInJakarta(new Date());
           const revenue = typeof item.revenue === 'number' ? item.revenue : Number(item.revenue || 0);
           const hpp = typeof item.hpp === 'number' ? item.hpp : Number(item.hpp || 0);
           const bonus = typeof item.bonus === 'number' ? item.bonus : Number(item.bonus || 0);
           const meal = typeof item.meal === 'number' ? item.meal : Number(item.meal || 0);
           const orders = typeof item.orders === 'number' ? item.orders : Number(item.orders || 0);
           const profit = typeof item.profit === 'number' ? item.profit : Number(item.profit || 0);
-          const dt = new Date(dateStr);
-          const dateLabel = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }); // e.g. "18 Jun"
-          return {
+          const dt = parseDateOnlyAsJakarta(dateStr);
+          const dateLabel = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+          const existing = byDate.get(dateStr) ?? {
             date: dateLabel,
-            revenue,
-            hpp,
-            bonus,
-            meal,
-            orders,
-            profit,
+            revenue: 0,
+            hpp: 0,
+            bonus: 0,
+            meal: 0,
+            orders: 0,
+            profit: 0,
           };
+          existing.revenue += revenue;
+          existing.hpp += hpp;
+          existing.bonus += bonus;
+          existing.meal += meal;
+          existing.orders += orders;
+          existing.profit += profit;
+          byDate.set(dateStr, existing);
         });
+        const mapped: SummaryItem[] = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
         // debug log to help inspect fetched summary in browser console
         try { console.debug('use7DaySummary fetched', raw, mapped); } catch (e) {}
         if (mounted) setData(mapped);
@@ -135,75 +143,45 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
 
   React.useEffect(() => {
     let mounted = true;
-    const fetchRange = async (start: Date, end: Date) => {
-      const fmt = (d: Date) => {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${dd}`;
-      };
-      const q = new URLSearchParams({ start: fmt(start), end: fmt(end) });
-      const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
-      if (!res.ok) throw new Error('Failed to load daily summary');
+    const fetchSalesRange = async (start: Date, end: Date) => {
+      const fmt = (d: Date) => formatDateOnlyInJakarta(d);
+      const q = new URLSearchParams({ since: fmt(start), until: fmt(end), debug: '1' });
+      const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
+      if (!res.ok) throw new Error('Failed to load sales range');
       const json = await res.json();
-      const raw = Array.isArray(json?.data) ? json.data as unknown[] : [];
-      const mapped = raw.map((r) => {
-        const item = r as Record<string, unknown>;
-        return {
-          revenue: Number(item.revenue || 0),
-          orders: Number(item.orders || 0),
-          profit: Number(item.profit || 0),
-        };
-      });
-      return mapped.reduce((acc, cur) => {
-        acc.revenue += cur.revenue;
-        acc.orders += cur.orders;
-        acc.profit += cur.profit;
-        return acc;
-      }, { revenue: 0, orders: 0, profit: 0 });
-    };
+      if (json?.meta) {
+        try { console.debug('sales-by-outlet meta', json.meta); } catch (e) {}
+      }
+      const rawSales = Array.isArray(json) ? json as unknown[] : (Array.isArray(json?.sales) ? json.sales as unknown[] : (Array.isArray(json?.data) ? json.data as unknown[] : []));
+      const startTime = new Date(start);
+      startTime.setHours(0, 0, 0, 0);
+      const endTime = new Date(end);
+      endTime.setHours(23, 59, 59, 999);
 
-    const fetchUnits = async (start: Date, end: Date) => {
-      try {
-        // Use the JSON API that returns sales with items: /api/sales/by-outlet
-        const fmt = (d: Date) => {
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          return `${y}-${m}-${dd}`;
-        };
-        const q = new URLSearchParams({ since: fmt(start), until: fmt(end) });
-        const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
-        if (!res.ok) return 0;
-        const json = await res.json();
-        const rawSales = Array.isArray(json) ? json as unknown[] : (Array.isArray(json?.sales) ? json.sales as unknown[] : []);
-        const startTime = new Date(start);
-        startTime.setHours(0, 0, 0, 0);
-        const endTime = new Date(end);
-        endTime.setHours(23, 59, 59, 999);
+      return rawSales.reduce((acc: { revenue: number; orders: number; profit: number; units: number }, s) => {
+        const sale = s as Record<string, unknown>;
+        const t = new Date(String(sale['created_at'] || '')).getTime();
+        if (Number.isNaN(t)) return acc;
+        if (t < startTime.getTime() || t > endTime.getTime()) return acc;
 
-        const total = rawSales.reduce((sum: number, s) => {
-          const sale = s as Record<string, unknown>;
-          const t = new Date(String(sale['created_at'] || '')).getTime();
-          if (Number.isNaN(t)) return sum;
-          if (t < startTime.getTime() || t > endTime.getTime()) return sum;
-          const items = Array.isArray(sale['sale_items'])
-            ? sale['sale_items'] as Record<string, unknown>[]
-            : Array.isArray(sale['items'])
-              ? sale['items'] as Record<string, unknown>[]
-              : [];
-          const saleUnits = items.reduce((ss: number, it) => {
-            const qty = Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0;
-            return ss + qty;
-          }, 0);
-          return sum + saleUnits;
+        const revenue = Number(sale['total_amount'] || 0);
+        const profit = Number(sale['profit'] || 0);
+        const items = Array.isArray(sale['sale_items'])
+          ? sale['sale_items'] as Record<string, unknown>[]
+          : Array.isArray(sale['items'])
+            ? sale['items'] as Record<string, unknown>[]
+            : [];
+        const units = items.reduce((sum: number, it) => {
+          const qty = Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0;
+          return sum + qty;
         }, 0);
 
-        return total;
-      } catch (e) {
-        console.error('fetchUnits error', e);
-        return 0;
-      }
+        acc.revenue += revenue;
+        acc.orders += 1;
+        acc.profit += profit;
+        acc.units += units;
+        return acc;
+      }, { revenue: 0, orders: 0, profit: 0, units: 0 });
     };
 
     const load = async () => {
@@ -219,17 +197,13 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
         prevStart.setDate(prevEnd.getDate() - 6);
 
         const resAll = await Promise.all([
-          fetchRange(start, end),
-          fetchRange(prevStart, prevEnd),
-          fetchUnits(start, end),
-          fetchUnits(prevStart, prevEnd),
+          fetchSalesRange(start, end),
+          fetchSalesRange(prevStart, prevEnd),
         ]) as [
-          { revenue: number; orders: number; profit: number },
-          { revenue: number; orders: number; profit: number },
-          number,
-          number
+          { revenue: number; orders: number; profit: number; units: number },
+          { revenue: number; orders: number; profit: number; units: number }
         ];
-        const [cur, prev, unitsCur, unitsPrev] = resAll;
+        const [cur, prev] = resAll;
 
         const curAov = cur.orders > 0 ? Math.round((cur.revenue / cur.orders)) : 0;
 
@@ -246,12 +220,12 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
           orders: cur.orders,
           profit: cur.profit,
           aov: curAov,
-          units: unitsCur || 0,
+          units: cur.units || 0,
           prevRangeText,
           salesChange: change(cur.revenue, prev.revenue),
           ordersChange: change(cur.orders, prev.orders),
           profitChange: change(cur.profit, prev.profit),
-          unitsChange: change(unitsCur || 0, unitsPrev || 0),
+          unitsChange: change(cur.units || 0, prev.units || 0),
         });
         if (mounted) setLoading(false);
       } catch (err) {
@@ -278,12 +252,7 @@ function useDashboardSummary() {
 
   React.useEffect(() => {
     let mounted = true;
-    const fmt = (d: Date) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${dd}`;
-    };
+    const fmt = (d: Date) => formatDateOnlyInJakarta(d);
 
     const load = async () => {
       try {
@@ -294,8 +263,8 @@ function useDashboardSummary() {
         const endIso = fmt(today);
 
         const [monthSalesRes, todaySalesRes] = await Promise.all([
-          fetch(`/api/sales/by-outlet?since=${startIso}&until=${endIso}`),
-          fetch(`/api/sales/by-outlet?since=${endIso}&until=${endIso}`),
+          fetch(`/api/sales/by-outlet?since=${startIso}&until=${endIso}&debug=1`),
+          fetch(`/api/sales/by-outlet?since=${endIso}&until=${endIso}&debug=1`),
         ]);
 
         if (!monthSalesRes.ok || !todaySalesRes.ok) {
@@ -305,12 +274,19 @@ function useDashboardSummary() {
         const monthSalesJson = await monthSalesRes.json();
         const todaySalesJson = await todaySalesRes.json();
 
+        if (monthSalesJson?.meta) {
+          try { console.debug('dashboard month sales meta', monthSalesJson.meta); } catch (e) {}
+        }
+        if (todaySalesJson?.meta) {
+          try { console.debug('dashboard today sales meta', todaySalesJson.meta); } catch (e) {}
+        }
+
         const monthSales = Array.isArray(monthSalesJson)
           ? (monthSalesJson as Record<string, unknown>[])
-          : (Array.isArray(monthSalesJson?.sales) ? (monthSalesJson.sales as Record<string, unknown>[]) : []);
+          : (Array.isArray(monthSalesJson?.sales) ? (monthSalesJson.sales as Record<string, unknown>[]) : (Array.isArray(monthSalesJson?.data) ? (monthSalesJson.data as Record<string, unknown>[]) : []));
         const todaySales = Array.isArray(todaySalesJson)
           ? (todaySalesJson as Record<string, unknown>[])
-          : (Array.isArray(todaySalesJson?.sales) ? (todaySalesJson.sales as Record<string, unknown>[]) : []);
+          : (Array.isArray(todaySalesJson?.sales) ? (todaySalesJson.sales as Record<string, unknown>[]) : (Array.isArray(todaySalesJson?.data) ? (todaySalesJson.data as Record<string, unknown>[]) : []));
 
         const monthlySalesTotal = monthSales.reduce((sum, item) => {
           const row = item as Record<string, unknown>;
@@ -418,6 +394,8 @@ function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
 /* ProfitGauge removed — replaced by ProfitBarChart in the layout */
 
 export default function DashboardPage() {
+  type RangePreset = 'day' | 'week' | 'month' | 'custom';
+
   // Date range state (default: last 7 days)
   const [endDate, setEndDate] = React.useState<Date>(() => new Date());
   const [startDate, setStartDate] = React.useState<Date>(() => {
@@ -426,24 +404,55 @@ export default function DashboardPage() {
     return d;
   });
   const [pickerOpen, setPickerOpen] = React.useState(false);
-  const [tmpStart, setTmpStart] = React.useState<string>(() => startDate.toISOString().slice(0, 10));
-  const [tmpEnd, setTmpEnd] = React.useState<string>(() => endDate.toISOString().slice(0, 10));
+  const [rangePreset, setRangePreset] = React.useState<RangePreset>('week');
+  const [tmpStart, setTmpStart] = React.useState<string>(() => formatDateOnlyInJakarta(startDate));
+  const [tmpEnd, setTmpEnd] = React.useState<string>(() => formatDateOnlyInJakarta(endDate));
 
   React.useEffect(() => {
-    setTmpStart(startDate.toISOString().slice(0, 10));
-    setTmpEnd(endDate.toISOString().slice(0, 10));
+    setTmpStart(formatDateOnlyInJakarta(startDate));
+    setTmpEnd(formatDateOnlyInJakarta(endDate));
   }, [startDate, endDate]);
 
-  const startRange = startDate.toISOString().slice(0, 10);
-  const endRange = endDate.toISOString().slice(0, 10);
-  const { data: summary, loading: summaryLoading } = use7DaySummary(startRange, endRange);
+  const startRange = formatDateOnlyInJakarta(startDate);
+  const endRange = formatDateOnlyInJakarta(endDate);
+  const { data: summary, loading: summaryLoading } = useRangeSummary(startRange, endRange);
   const { kpis, loading: kpisLoading } = useKpis(startRange, endRange);
   const { data: dashboardSummary, loading: dashboardLoading } = useDashboardSummary();
 
+  const applyPreset = (preset: RangePreset) => {
+    const today = new Date();
+    const end = new Date(today);
+    let start = new Date(today);
+
+    if (preset === 'day') {
+      start = new Date(today);
+    } else if (preset === 'week') {
+      const day = today.getDay();
+      const diffToMonday = (day + 6) % 7;
+      start = new Date(today);
+      start.setDate(today.getDate() - diffToMonday);
+      start.setHours(0, 0, 0, 0);
+      end.setTime(start.getTime());
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+    } else if (preset === 'month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else {
+      start = new Date(startDate);
+    }
+
+    setRangePreset(preset);
+    setStartDate(start);
+    setEndDate(end);
+    setTmpStart(formatDateOnlyInJakarta(start));
+    setTmpEnd(formatDateOnlyInJakarta(end));
+    setPickerOpen(false);
+  };
+
   const formatRangeLabel = (s: Date, e: Date) => {
-    const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
+    const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' };
     const sLabel = s.toLocaleDateString('id-ID', opts);
-    const eLabel = e.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    const eLabel = e.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' });
     return `${sLabel} — ${eLabel} ▾`;
   };
 
@@ -454,9 +463,21 @@ export default function DashboardPage() {
           <h1>Ringkasan Performa Papi Kopi</h1>
         </div>
         <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, justifyContent: 'flex-end' }}>
+            {(['day', 'week', 'month'] as RangePreset[]).map((preset) => (
+              <button
+                key={preset}
+                onClick={() => applyPreset(preset)}
+                className={`btn secondary ${rangePreset === preset ? 'active' : ''}`}
+                style={{ padding: '6px 10px', fontSize: 12, border: rangePreset === preset ? '1px solid #0f766e' : '1px solid #d1d5db', background: rangePreset === preset ? '#ccfbf1' : '#fff', color: rangePreset === preset ? '#115e59' : '#374151' }}
+              >
+                {preset === 'day' ? 'Hari' : preset === 'week' ? 'Minggu' : 'Bulan'}
+              </button>
+            ))}
+          </div>
           <button className="date-range" onClick={() => {
-            setTmpStart(startDate.toISOString().slice(0, 10));
-            setTmpEnd(endDate.toISOString().slice(0, 10));
+            setTmpStart(formatDateOnlyInJakarta(startDate));
+            setTmpEnd(formatDateOnlyInJakarta(endDate));
             setPickerOpen((s) => !s);
           }} aria-expanded={pickerOpen}>
             {formatRangeLabel(startDate, endDate)}
@@ -474,23 +495,24 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button onClick={() => { setTmpStart(startDate.toISOString().slice(0,10)); setTmpEnd(endDate.toISOString().slice(0,10)); setPickerOpen(false); }} className="btn secondary">Batal</button>
+                <button onClick={() => { setTmpStart(formatDateOnlyInJakarta(startDate)); setTmpEnd(formatDateOnlyInJakarta(endDate)); setPickerOpen(false); }} className="btn secondary">Batal</button>
                 <button onClick={() => {
-                  const s = new Date(tmpStart);
-                  const e = new Date(tmpEnd);
+                  const s = parseDateOnlyAsJakarta(tmpStart);
+                  const e = parseDateOnlyAsJakarta(tmpEnd);
                   if (isNaN(s.getTime()) || isNaN(e.getTime())) return;
                   // ensure start <= end
                   if (s.getTime() > e.getTime()) {
                     setStartDate(e);
                     setEndDate(s);
-                    setTmpStart(e.toISOString().slice(0, 10));
-                    setTmpEnd(s.toISOString().slice(0, 10));
+                    setTmpStart(formatDateOnlyInJakarta(e));
+                    setTmpEnd(formatDateOnlyInJakarta(s));
                   } else {
                     setStartDate(s);
                     setEndDate(e);
-                    setTmpStart(s.toISOString().slice(0, 10));
-                    setTmpEnd(e.toISOString().slice(0, 10));
+                    setTmpStart(formatDateOnlyInJakarta(s));
+                    setTmpEnd(formatDateOnlyInJakarta(e));
                   }
+                  setRangePreset('custom');
                   setPickerOpen(false);
                 }} className="btn primary">Terapkan</button>
               </div>
@@ -665,7 +687,12 @@ export default function DashboardPage() {
           <div className="top-grid">
             
             <div className="card cost-breakdown">
-              <h3>Cost Breakdown</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <h3>Cost Breakdown</h3>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {rangePreset === 'day' ? 'Hari ini' : rangePreset === 'week' ? 'Minggu (Senin–Minggu)' : rangePreset === 'month' ? 'Bulan berjalan' : 'Kustom'}
+                </span>
+              </div>
               <div className="donut-area">
                 {summaryLoading ? (
                   <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', height: '100%' }}>
@@ -685,7 +712,12 @@ export default function DashboardPage() {
             </div>
 
             <div className="card profit-margin">
-              <h3>Profit Margin</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <h3>Profit Margin</h3>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {rangePreset === 'day' ? 'Hari ini' : rangePreset === 'week' ? 'Minggu (Senin–Minggu)' : rangePreset === 'month' ? 'Bulan berjalan' : 'Kustom'}
+                </span>
+              </div>
               <ProfitBarChart summary={summary} />
             </div>
           </div>
