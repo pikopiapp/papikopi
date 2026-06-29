@@ -379,6 +379,11 @@ export function aggregateDailyOutletSummary(
     meal_amount?: number | null;
   }>,
   outletBusinessDayHours?: Record<string, number>
+  ,
+  options?: {
+    forceRecomputeBonus?: boolean;
+    forceRecomputeMeal?: boolean;
+  }
 ): DailyOutletSummaryRow[] {
   const buckets = new Map<string, DailyOutletSummaryRow>();
 
@@ -429,10 +434,14 @@ export function aggregateDailyOutletSummary(
   return Array.from(buckets.values()).map((bucket) => {
     const storedBonus = Math.round(bucket.bonus || 0);
     const storedMeal = Math.round(bucket.meal || 0);
-    const bonus = storedBonus > 0
-      ? storedBonus
-      : Math.round((calculateBonusFromJson(bucket.revenue, DEFAULT_BONUS_TIERS)?.totalBonus) || 0);
-    const meal = storedMeal > 0 ? storedMeal : Math.round(calculateMealAllowance(bucket.revenue));
+    const bonus = (options?.forceRecomputeBonus)
+      ? Math.round((calculateBonusFromJson(bucket.revenue, DEFAULT_BONUS_TIERS)?.totalBonus) || 0)
+      : (storedBonus > 0
+        ? storedBonus
+        : Math.round((calculateBonusFromJson(bucket.revenue, DEFAULT_BONUS_TIERS)?.totalBonus) || 0));
+    const meal = (options?.forceRecomputeMeal)
+      ? Math.round(calculateMealAllowance(bucket.revenue))
+      : (storedMeal > 0 ? storedMeal : Math.round(calculateMealAllowance(bucket.revenue)));
     const profit = Math.round(bucket.revenue - bucket.hpp - bonus - meal);
 
     return {

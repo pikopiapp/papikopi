@@ -6,6 +6,7 @@ import type { ChartOptions } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { SalesBarChart, OrdersLineChart, ProfitBarChart } from './Charts';
 import { formatDateOnlyInJakarta, parseDateOnlyAsJakarta } from '@/lib/helpers/business-day';
+import { aggregateDailyOutletSummary } from '@/lib/bonus-calculator';
 
 const IconSales = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -245,6 +246,9 @@ function useDashboardSummary() {
     monthlyCups: number;
     monthlySales: number;
     monthlyProfit: number;
+    monthlyMeal: number;
+    monthlyBonus: number;
+    monthlyHpp: number;
     cupsToday: number;
     salesToday: number;
   }>(null);
@@ -293,10 +297,38 @@ function useDashboardSummary() {
           return sum + Number(row.total_amount || 0);
         }, 0 as number);
 
-        const monthlyProfitTotal = monthSales.reduce((sum, item) => {
-          const row = item as Record<string, unknown>;
-          return sum + Number(row.profit || 0);
+        // compute monthly totals
+        // monthlyProfit is computed as: sales - meal - bonus - hpp (prefer explicit recompute)
+        const monthlyHppTotal = monthSales.reduce((sum, item) => {
+          const row = item as Record<string, any>;
+          const hppFromRow = Number(row.hpp_total ?? row.hpp ?? 0);
+          if (hppFromRow && hppFromRow > 0) return sum + hppFromRow;
+          // fallback: sum hpp from sale_items if present
+          const items = Array.isArray(row.sale_items) ? row.sale_items as Record<string, any>[] : (Array.isArray(row.items) ? row.items as Record<string, any>[] : []);
+          const itemsHpp = items.reduce((s2, it) => {
+            const qty = Number(it.quantity ?? it.qty ?? 1) || 1;
+            const hppVal = Number(it.hpp ?? it.hpp_value ?? 0) || 0;
+            return s2 + (hppVal * qty);
+          }, 0);
+          return sum + itemsHpp;
         }, 0 as number);
+
+        // Recompute monthly bonus and meal by aggregating per-outlet daily values (force recompute)
+        const rowsForAgg = monthSales.map((r) => ({
+          date: typeof r.date === 'string' ? String(r.date) : undefined,
+          created_at: typeof r.created_at === 'string' ? String(r.created_at) : undefined,
+          outlet_id: r.outlet_id,
+          total_amount: r.total_amount,
+          profit: r.profit,
+          hpp_total: r.hpp_total,
+          bonus_amount: r.bonus_amount,
+          meal_amount: r.meal_amount,
+        }));
+        const perOutletAggForMonth = aggregateDailyOutletSummary(rowsForAgg as any, undefined, { forceRecomputeBonus: true, forceRecomputeMeal: true });
+        const monthlyBonusTotal = perOutletAggForMonth.reduce((s, r) => s + (r.bonus || 0), 0);
+        const monthlyMealTotal = perOutletAggForMonth.reduce((s, r) => s + (r.meal || 0), 0);
+
+        const monthlyProfitTotal = Math.round((monthlySalesTotal - monthlyMealTotal - monthlyBonusTotal - monthlyHppTotal));
 
         const countCups = (rows: Record<string, unknown>[]) => rows.reduce((sum, sale) => {
           const row = sale as Record<string, unknown>;
@@ -320,6 +352,9 @@ function useDashboardSummary() {
             monthlyCups: monthCupsTotal,
             monthlySales: monthlySalesTotal,
             monthlyProfit: monthlyProfitTotal,
+            monthlyMeal: monthlyMealTotal,
+            monthlyBonus: monthlyBonusTotal,
+            monthlyHpp: monthlyHppTotal,
             cupsToday: todayCupsTotal,
             salesToday: todaySalesTotal,
           });
@@ -521,36 +556,56 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <section className="summary-grid">
-        {dashboardLoading || !dashboardSummary ? (
-          <div className="summary-card loading" style={{ gridColumn: '1 / -1' }}>Memuat ringkasan...</div>
-        ) : (
-          <>
-            <div className="summary-card">
-              <div className="summary-label">Monthly Cups</div>
-              <div className="summary-value">{dashboardSummary.monthlyCups.toLocaleString('id-ID')}</div>
+      <div className="dashboard-two-column">
+        <section className="summary-grid">
+          {dashboardLoading || !dashboardSummary ? (
+            <div className="summary-card loading" style={{ gridColumn: '1 / -1' }}>Memuat ringkasan...</div>
+          ) : (
+            <div className="summary-card summary-card-single">
+              <div className="summary-card-single__title">Monthly Summary</div>
+              <div className="summary-card-single__stats" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <div className="summary-label">Monthly Cups</div>
+                    <div className="summary-value">{dashboardSummary.monthlyCups.toLocaleString('id-ID')}</div>
+                  </div>
+                  <div>
+                    <div className="summary-label">Monthly Sales</div>
+                    <div className="summary-value">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(dashboardSummary.monthlySales)}</div>
+                  </div>
+                  <div>
+                    <div className="summary-label">Monthly Meal</div>
+                    <div className="summary-value">Rp {(dashboardSummary.monthlyMeal ?? 0).toLocaleString('id-ID')}</div>
+                  </div>
+                  <div>
+                    <div className="summary-label">Monthly Bonus</div>
+                    <div className="summary-value">Rp {(dashboardSummary.monthlyBonus ?? 0).toLocaleString('id-ID')}</div>
+                  </div>
+                  <div>
+                    <div className="summary-label">Monthly HPP</div>
+                    <div className="summary-value">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(dashboardSummary.monthlyHpp ?? 0)}</div>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <div className="summary-label">Monthly Profit</div>
+                    <div className="summary-value summary-value--profit">{new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(dashboardSummary.monthlyProfit)}</div>
+                  </div>
+                </div>
+                <div style={{ width: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ padding: 12, borderRadius: 8, background: '#fff', boxShadow: '0 4px 10px rgba(15,23,42,0.04)' }}>
+                    <div className="summary-label">Cup Today</div>
+                    <div className="summary-value">{dashboardSummary.cupsToday.toLocaleString('id-ID')}</div>
+                  </div>
+                  <div style={{ padding: 12, borderRadius: 8, background: '#fff', boxShadow: '0 4px 10px rgba(15,23,42,0.04)' }}>
+                    <div className="summary-label">Sales Today</div>
+                    <div className="summary-value">Rp {dashboardSummary.salesToday.toLocaleString('id-ID')}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="summary-card">
-              <div className="summary-label">Monthly Sales</div>
-              <div className="summary-value">{dashboardSummary.monthlySales.toLocaleString('id-ID')}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Monthly Profit</div>
-              <div className="summary-value">{dashboardSummary.monthlyProfit.toLocaleString('id-ID')}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Cup Today</div>
-              <div className="summary-value">{dashboardSummary.cupsToday.toLocaleString('id-ID')}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Sales Today</div>
-              <div className="summary-value">Rp {dashboardSummary.salesToday.toLocaleString('id-ID')}</div>
-            </div>
-          </>
-        )}
-      </section>
+          )}
+        </section>
 
-      <section className="kpi-grid">
+        <section className="kpi-grid">
         <div className="kpi card">
           <div className="kpi-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -681,6 +736,7 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+      </div>
 
       <section className="main-grid">
         <div className="left">
@@ -923,15 +979,24 @@ export default function DashboardPage() {
    KPI
 ========================= */
 
-  .summary-grid {
+  .dashboard-two-column {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
+  /* increase Monthly Summary column width further to give more room */
+  grid-template-columns: minmax(420px, 0.40fr) minmax(0, 0.60fr);
+  gap: 24px;
   margin-bottom: 24px;
+  align-items: start;
 }
 
-.summary-card {
-  background: #0f172a;
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+ .summary-card {
+  /* theme-friendly background color (was #0f172a) */
+  background: #2563eb;
   color: #fff;
   border-radius: 18px;
   padding: 20px;
@@ -940,6 +1005,40 @@ export default function DashboardPage() {
   flex-direction: column;
   justify-content: center;
   min-height: 115px;
+}
+
+/* allow inner flex children to shrink and prevent the small white boxes from overflowing */
+.summary-card { overflow: hidden; position: relative; }
+.summary-card-single__stats > div { min-width: 0; }
+.summary-card-single__stats > div:last-child { flex: 0 1 160px; max-width: 160px; }
+
+/* compact style for the small right-side boxes */
+.summary-card-single__stats > div:last-child .summary-label {
+  color: #0f172a;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.summary-card-single__stats > div:last-child .summary-value {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.summary-card-single {
+  gap: 16px;
+}
+
+.summary-card-single__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.summary-card-single__stats {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .summary-card.loading {
@@ -963,11 +1062,18 @@ export default function DashboardPage() {
   line-height: 1;
 }
 
+/* larger, theme-colored monthly profit value */
+.summary-value--profit {
+  font-size: 44px;
+  font-weight: 900;
+  color: #fbbf24; /* yellow */
+  line-height: 1;
+}
+
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5,1fr); /* show five KPIs on wide screens */
-  gap: 24px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 16px;
 }
 
 .kpi {
@@ -1318,6 +1424,10 @@ export default function DashboardPage() {
 }
 
 @media (max-width: 1024px) {
+
+  .dashboard-two-column {
+    grid-template-columns: 1fr;
+  }
 
   .kpi-grid {
     grid-template-columns: repeat(2,1fr);

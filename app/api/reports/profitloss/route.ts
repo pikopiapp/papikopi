@@ -25,7 +25,7 @@ export async function GET(req: Request) {
 
     const res = await supabaseServer
       .from('sales')
-      .select('created_at, total_amount, hpp_total, bonus_amount, meal_amount, profit')
+      .select('created_at, outlet_id, total_amount, hpp_total, bonus_amount, meal_amount, profit')
       .gte('created_at', start)
       .lte('created_at', end)
       .order('created_at', { ascending: true });
