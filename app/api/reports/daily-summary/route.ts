@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { aggregateDailyOutletSummary, calculateBonusFromJson, calculateMealAllowance, DEFAULT_BONUS_TIERS } from '@/lib/bonus-calculator';
-import { getBusinessDayDate, getDateBoundaryInJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
+import { getBusinessDayDate, getDateBoundaryInJakarta, formatDateOnlyInJakarta, isValidDateOnly } from '@/lib/helpers/business-day';
 
 export async function GET(req: Request) {
   try {
@@ -14,8 +14,27 @@ export async function GET(req: Request) {
     // Validate dates; default to last 7 days if missing.
     // Interpret date-only params as whole days in Asia/Jakarta so the server and browser
     // produce identical ranges regardless of runtime timezone.
+    if (start && !isValidDateOnly(start)) {
+      return NextResponse.json({ error: 'Invalid start date', debug: { received: start } }, { status: 400 });
+    }
+    if (end && !isValidDateOnly(end)) {
+      return NextResponse.json({ error: 'Invalid end date', debug: { received: end } }, { status: 400 });
+    }
+
     const endDate = end ? getDateBoundaryInJakarta(end, true) : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date()), true);
     const startDate = start ? getDateBoundaryInJakarta(start, false) : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)), false);
+
+    // Validate computed boundaries to avoid 'Invalid time value' when calling
+    // Date methods like getUTCFullYear() or toISOString(). Return debug info.
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return NextResponse.json(
+        {
+          error: 'Invalid computed date boundary',
+          debug: { startParam: start, endParam: end, startDate: String(startDate), endDate: String(endDate) },
+        },
+        { status: 400 }
+      );
+    }
 
     // Build query
     let query = supabase
@@ -101,36 +120,45 @@ export async function GET(req: Request) {
       map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
     }
 
+    const rowErrors: any[] = [];
     if (rows && Array.isArray(rows)) {
       for (const r of rows) {
-        // Normalize DB `created_at` to an explicit UTC ISO before creating a Date,
-        // because some DB drivers return "YYYY-MM-DD HH:mm:ss[.ffffff]" (no TZ),
-        // and `new Date(...)` may be interpreted inconsistently. Treat values
-        // without an explicit timezone as UTC by appending 'Z'.
-        let created = String(r.created_at || '');
-        const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
-        if (!hasTZ) {
-          created = created.replace(' ', 'T');
-          if (!created.endsWith('Z')) created = created + 'Z';
+        try {
+          // Normalize DB `created_at` to an explicit UTC ISO before creating a Date,
+          // because some DB drivers return "YYYY-MM-DD HH:mm:ss[.ffffff]" (no TZ),
+          // and `new Date(...)` may be interpreted inconsistently. Treat values
+          // without an explicit timezone as UTC by appending 'Z'.
+          let created = String(r.created_at || '');
+          if (!created.trim()) throw new Error('missing created_at');
+          const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
+          if (!hasTZ) {
+            created = created.replace(' ', 'T');
+            if (!created.endsWith('Z')) created = created + 'Z';
+          }
+          const outletId = r.outlet_id ? String(r.outlet_id) : 'unknown';
+          const businessDayStartHour = outletBusinessDayHours[outletId] ?? 4;
+          const businessDay = getBusinessDayDate(created, businessDayStartHour);
+          if (Number.isNaN(businessDay.getTime())) throw new Error('invalid created_at parsed');
+          const key = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          if (!map[key]) map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
+          map[key].revenue += Number(r.total_amount || 0);
+          // aggregate stored profit/hpp if present, but we'll recompute profit later
+          map[key].profit += Number(r.profit || 0);
+          map[key].orders += 1;
+          map[key].hpp += Number(r.hpp_total || 0);
+          // prefer stored bonus (sum of sale-level values)
+          map[key].bonus += Number(r.bonus_amount || 0);
+          // accumulate meal per outlet to avoid double-counting — sum each outlet's meal_amount then total per day
+          if (!mealByDateOutlet[key]) mealByDateOutlet[key] = {};
+          mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + Number(r.meal_amount || 0);
+          // accumulate revenue per outlet for per-outlet meal allowance fallback
+          if (!revenueByDateOutlet[key]) revenueByDateOutlet[key] = {};
+          revenueByDateOutlet[key][outletId] = (revenueByDateOutlet[key][outletId] || 0) + Number(r.total_amount || 0);
+        } catch (e) {
+          rowErrors.push({ row: r, error: e instanceof Error ? e.message : String(e) });
+          // skip invalid row
+          continue;
         }
-        const outletId = r.outlet_id ? String(r.outlet_id) : 'unknown';
-        const businessDayStartHour = outletBusinessDayHours[outletId] ?? 4;
-        const businessDay = getBusinessDayDate(created, businessDayStartHour);
-        const key = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        if (!map[key]) map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
-        map[key].revenue += Number(r.total_amount || 0);
-        // aggregate stored profit/hpp if present, but we'll recompute profit later
-        map[key].profit += Number(r.profit || 0);
-        map[key].orders += 1;
-        map[key].hpp += Number(r.hpp_total || 0);
-        // prefer stored bonus (sum of sale-level values)
-        map[key].bonus += Number(r.bonus_amount || 0);
-        // accumulate meal per outlet to avoid double-counting — sum each outlet's meal_amount then total per day
-        if (!mealByDateOutlet[key]) mealByDateOutlet[key] = {};
-        mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + Number(r.meal_amount || 0);
-        // accumulate revenue per outlet for per-outlet meal allowance fallback
-        if (!revenueByDateOutlet[key]) revenueByDateOutlet[key] = {};
-        revenueByDateOutlet[key][outletId] = (revenueByDateOutlet[key][outletId] || 0) + Number(r.total_amount || 0);
       }
       // done processing rows
     }
@@ -251,6 +279,6 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ data: perOutletResponse.length > 0 ? perOutletResponse : aggregated, meta });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || String(err) }, { status: 500 });
+    return NextResponse.json({ error: err.message || String(err), stack: err.stack }, { status: 500 });
   }
 }

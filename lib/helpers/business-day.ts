@@ -23,6 +23,23 @@ export function parseDateOnlyAsJakarta(value: string | Date): Date {
 }
 
 /**
+ * Validate a YYYY-MM-DD date-only string or Date and return boolean
+ */
+export function isValidDateOnly(value: string | Date): boolean {
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  const trimmed = String(value).trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (!match) return false;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/**
  * Build an explicit start/end boundary for a date-only value in Asia/Jakarta.
  */
 export function getDateBoundaryInJakarta(value: string | Date, endOfDay = false): Date {

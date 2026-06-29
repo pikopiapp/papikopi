@@ -365,6 +365,8 @@ export interface DailyOutletSummaryRow {
   meal: number;
 }
 
+import { parseTimestampAsJakarta } from './helpers/business-day';
+
 export function aggregateDailyOutletSummary(
   rows: Array<{
     date?: string;
@@ -384,8 +386,22 @@ export function aggregateDailyOutletSummary(
     const created = row.date || row.created_at || '';
     const outletId = row.outlet_id ? String(row.outlet_id) : 'unknown';
     const businessDayStartHour = outletBusinessDayHours?.[outletId] ?? 4;
-    const businessDay = created ? getBusinessDayDate(created, businessDayStartHour) : new Date();
-    const date = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    let businessDay: Date;
+    if (created) {
+      try {
+        businessDay = getBusinessDayDate(created, businessDayStartHour);
+      } catch (e) {
+        try {
+          const parsed = parseTimestampAsJakarta(created);
+          businessDay = getBusinessDayDate(parsed, businessDayStartHour);
+        } catch (e2) {
+          businessDay = new Date();
+        }
+      }
+    } else {
+      businessDay = new Date();
+    }
+    const date = Number.isNaN(businessDay.getTime()) ? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) : businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     const key = `${date}::${outletId}`;
 
     if (!buckets.has(key)) {
