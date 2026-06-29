@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
-import { calculateBonusFromJson, calculateMealAllowance, DEFAULT_BONUS_TIERS } from '@/lib/bonus-calculator';
+import { parseISO, startOfDay, endOfDay } from 'date-fns';
+import { aggregateDailyOutletSummary, calculateBonusFromJson, calculateMealAllowance, DEFAULT_BONUS_TIERS } from '@/lib/bonus-calculator';
+import { getBusinessDayDate } from '@/lib/helpers/business-day';
 
 export async function GET(req: Request) {
   try {
@@ -68,18 +69,35 @@ export async function GET(req: Request) {
 
     const map: Record<string, { date: string; revenue: number; profit: number; orders: number; hpp: number; bonus: number; meal: number }> = {};
 
+    const outletBusinessDayHours: Record<string, number> = {};
+    const outletIds = Array.from(new Set((rows || []).map((r) => r?.outlet_id).filter(Boolean) as string[]));
+    if (outletIds.length > 0) {
+      try {
+        const { data: outletsData } = await supabase
+          .from('outlets')
+          .select('id, business_day_start_hour')
+          .in('id', outletIds);
+        (outletsData || []).forEach((outlet: any) => {
+          outletBusinessDayHours[String(outlet.id)] = Number(outlet.business_day_start_hour ?? 4);
+        });
+      } catch (e) {
+        // ignore and fall back to default business day hour
+      }
+    }
+
     // helper to accumulate meal per-date-per-outlet, so we sum each outlet once per day
     const mealByDateOutlet: Record<string, Record<string, number>> = {};
     // track revenue per outlet per date so allowances are computed per-outlet (not from total revenue)
     const revenueByDateOutlet: Record<string, Record<string, number>> = {};
 
-    // initialize all dates in range using UTC day boundaries and format keys
-    // with Jakarta timezone so initialization matches grouping logic below
+    // initialize all dates in range using business-day buckets so the response stays aligned
+    // with the outlet reset hour instead of the calendar day
     const startMs = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
     const endMs = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
     for (let ms = startMs; ms <= endMs; ms += 24 * 60 * 60 * 1000) {
       const d = new Date(ms);
-      const key = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const defaultBusinessDay = getBusinessDayDate(d, 4);
+      const key = defaultBusinessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
       map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
     }
 
@@ -95,8 +113,10 @@ export async function GET(req: Request) {
           created = created.replace(' ', 'T');
           if (!created.endsWith('Z')) created = created + 'Z';
         }
-        const createdDate = new Date(created);
-        const key = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const outletId = r.outlet_id ? String(r.outlet_id) : 'unknown';
+        const businessDayStartHour = outletBusinessDayHours[outletId] ?? 4;
+        const businessDay = getBusinessDayDate(created, businessDayStartHour);
+        const key = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
         if (!map[key]) map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
         map[key].revenue += Number(r.total_amount || 0);
         // aggregate stored profit/hpp if present, but we'll recompute profit later
@@ -106,7 +126,6 @@ export async function GET(req: Request) {
         // prefer stored bonus (sum of sale-level values)
         map[key].bonus += Number(r.bonus_amount || 0);
         // accumulate meal per outlet to avoid double-counting — sum each outlet's meal_amount then total per day
-        const outletId = r.outlet_id ? String(r.outlet_id) : 'unknown';
         if (!mealByDateOutlet[key]) mealByDateOutlet[key] = {};
         mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + Number(r.meal_amount || 0);
         // accumulate revenue per outlet for per-outlet meal allowance fallback
@@ -150,6 +169,38 @@ export async function GET(req: Request) {
       // ignore and fall back to JS aggregation
     }
 
+    const perOutletAgg = aggregateDailyOutletSummary(
+      (rows || []).map((r) => ({
+        date: r.created_at ? String(r.created_at).slice(0, 10) : undefined,
+        created_at: r.created_at,
+        outlet_id: r.outlet_id,
+        total_amount: r.total_amount,
+        profit: r.profit,
+        hpp_total: r.hpp_total,
+        bonus_amount: r.bonus_amount,
+        meal_amount: r.meal_amount,
+      })),
+      outletBusinessDayHours
+    );
+
+    const perOutletResponse = perOutletAgg.map((row) => {
+      const revenue = Math.round(row.revenue);
+      const hpp = Math.round(row.hpp);
+      const bonus = Math.round(row.bonus || 0);
+      const meal = Math.round(row.meal || 0);
+      const profit = Math.round(revenue - hpp - bonus - meal);
+      return {
+        date: row.date,
+        outlet_id: row.outlet_id,
+        revenue,
+        profit,
+        orders: row.orders,
+        hpp,
+        bonus,
+        meal,
+      };
+    });
+
     // Compute bonus and meal per day from revenue and recompute profit = revenue - hpp - bonus - meal
     const aggregated = Object.values(map).map((v) => {
       const revenue = Math.round(v.revenue);
@@ -191,7 +242,7 @@ export async function GET(req: Request) {
       meta.rawSampleTail = Array.isArray(rows) ? rows.slice(-10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
       meta.mapKeys = Object.keys(map).slice(0, 50);
     }
-    return NextResponse.json({ data: aggregated, meta });
+    return NextResponse.json({ data: perOutletResponse.length > 0 ? perOutletResponse : aggregated, meta });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || String(err) }, { status: 500 });
   }

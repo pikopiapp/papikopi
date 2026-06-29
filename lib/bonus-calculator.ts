@@ -1,3 +1,5 @@
+import { getBusinessDayDate } from './helpers/business-day';
+
 /**
  * Progressive Bonus Calculator
  * Calculates bonus based on tiered/graduated rates (like progressive tax)
@@ -350,4 +352,81 @@ export function calculateBonusFromJson(
     percentage: t.percentage,
   }));
   return calculateBonus(omset, isSpecial, tiers);
+}
+
+export interface DailyOutletSummaryRow {
+  date: string;
+  outlet_id: string;
+  revenue: number;
+  profit: number;
+  orders: number;
+  hpp: number;
+  bonus: number;
+  meal: number;
+}
+
+export function aggregateDailyOutletSummary(
+  rows: Array<{
+    date?: string;
+    created_at?: string;
+    outlet_id?: string | null;
+    total_amount?: number | null;
+    profit?: number | null;
+    hpp_total?: number | null;
+    bonus_amount?: number | null;
+    meal_amount?: number | null;
+  }>,
+  outletBusinessDayHours?: Record<string, number>
+): DailyOutletSummaryRow[] {
+  const buckets = new Map<string, DailyOutletSummaryRow>();
+
+  for (const row of rows) {
+    const created = row.date || row.created_at || '';
+    const outletId = row.outlet_id ? String(row.outlet_id) : 'unknown';
+    const businessDayStartHour = outletBusinessDayHours?.[outletId] ?? 4;
+    const businessDay = created ? getBusinessDayDate(created, businessDayStartHour) : new Date();
+    const date = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    const key = `${date}::${outletId}`;
+
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        date,
+        outlet_id: outletId,
+        revenue: 0,
+        profit: 0,
+        orders: 0,
+        hpp: 0,
+        bonus: 0,
+        meal: 0,
+      });
+    }
+
+    const bucket = buckets.get(key)!;
+    bucket.revenue += Number(row.total_amount || 0);
+    bucket.profit += Number(row.profit || 0);
+    bucket.orders += 1;
+    bucket.hpp += Number(row.hpp_total || 0);
+    bucket.bonus += Number(row.bonus_amount || 0);
+    bucket.meal += Number(row.meal_amount || 0);
+  }
+
+  return Array.from(buckets.values()).map((bucket) => {
+    const storedBonus = Math.round(bucket.bonus || 0);
+    const storedMeal = Math.round(bucket.meal || 0);
+    const bonus = storedBonus > 0
+      ? storedBonus
+      : Math.round((calculateBonusFromJson(bucket.revenue, DEFAULT_BONUS_TIERS)?.totalBonus) || 0);
+    const meal = storedMeal > 0 ? storedMeal : Math.round(calculateMealAllowance(bucket.revenue));
+    const profit = Math.round(bucket.revenue - bucket.hpp - bonus - meal);
+
+    return {
+      ...bucket,
+      bonus,
+      meal,
+      profit,
+    };
+  }).sort((a, b) => {
+    if (a.date === b.date) return a.outlet_id.localeCompare(b.outlet_id);
+    return a.date.localeCompare(b.date);
+  });
 }
