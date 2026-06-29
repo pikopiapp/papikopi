@@ -8,8 +8,25 @@
  * This avoids timezone drift when the UI/API receives values like YYYY-MM-DD.
  */
 export function parseDateOnlyAsJakarta(value: string | Date): Date {
+  const toJakartaParts = (date: Date) => {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '0';
+    return {
+      year: Number(getPart('year')),
+      month: Number(getPart('month')),
+      day: Number(getPart('day')),
+    };
+  };
+
   if (value instanceof Date) {
-    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0) - 7 * 60 * 60 * 1000);
+    const { year, month, day } = toJakartaParts(value);
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) - 7 * 60 * 60 * 1000);
   }
 
   const trimmed = String(value).trim();
@@ -229,6 +246,23 @@ export function formatBusinessDay(businessDay: Date): string {
  * @param businessDayStartHour - Hour when business day resets (0-23)
  * @returns Object with start and end timestamps
  */
+function getJakartaLocalDateParts(date: Date): { year: number; month: number; day: number } {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '0';
+
+  return {
+    year: Number(getPart('year')),
+    month: Number(getPart('month')),
+    day: Number(getPart('day')),
+  };
+}
+
 export function getBusinessDayRange(
   businessDay: Date,
   businessDayStartHour: number
@@ -236,12 +270,10 @@ export function getBusinessDayRange(
   // Return start/end as UTC instants that correspond to the business day in Asia/Jakarta
   const JAKARTA_OFFSET = 7; // hours ahead of UTC
 
-  const year = businessDay.getFullYear();
-  const month = businessDay.getMonth();
-  const date = businessDay.getDate();
+  const { year, month, day } = getJakartaLocalDateParts(businessDay);
 
   // Business day start in Jakarta local -> convert to UTC by subtracting offset
-  const startUtc = new Date(Date.UTC(year, month, date, businessDayStartHour - JAKARTA_OFFSET, 0, 0, 0));
+  const startUtc = new Date(Date.UTC(year, month - 1, day, businessDayStartHour - JAKARTA_OFFSET, 0, 0, 0));
   const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
 
   return { start: startUtc, end: endUtc };

@@ -7,6 +7,7 @@ import {
   getBusinessDayDate,
   getBusinessDayRange,
   getBusinessDayRangeLocalIso,
+  parseDateOnlyAsJakarta,
   parseTimestampAsJakarta,
   isInBusinessDay,
 } from './helpers/business-day';
@@ -76,6 +77,13 @@ test('getBusinessDayDate assigns midnight sale to prior business day', () => {
 test('getBusinessDayRange returns the expected UTC start and end for business day 2026-06-01', () => {
   assertEquals(formatIso(rangeForJune1.start), '2026-05-31T21:00:00.000Z');
   assertEquals(formatIso(rangeForJune1.end), '2026-06-01T20:59:59.999Z');
+});
+
+test('getBusinessDayRange handles a Jakarta date-only parsed business day correctly', () => {
+  const businessDay = parseDateOnlyAsJakarta('2026-06-22');
+  const range = getBusinessDayRange(businessDay, businessDayStartHour);
+  assertEquals(formatIso(range.start), '2026-06-21T21:00:00.000Z');
+  assertEquals(formatIso(range.end), '2026-06-22T20:59:59.999Z');
 });
 
 test('getBusinessDayRangeLocalIso returns Jakarta local ISO intervals', () => {
