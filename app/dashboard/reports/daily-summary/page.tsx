@@ -136,7 +136,11 @@ export default function DailySummaryReport() {
         const units = rawSales.reduce((sum: number, srow: any) => {
           const t = new Date(String(srow.created_at || '')).getTime();
           if (Number.isNaN(t) || t < startMs || t > endMs) return sum;
-          const items = Array.isArray(srow.items) ? srow.items : [];
+          const items = Array.isArray(srow.sale_items)
+            ? srow.sale_items
+            : Array.isArray(srow.items)
+              ? srow.items
+              : [];
           const saleUnits = items.reduce((ss: number, it: any) => ss + (Number(it.quantity || it.units || it.cups || 0) || 0), 0);
           return sum + saleUnits;
         }, 0);

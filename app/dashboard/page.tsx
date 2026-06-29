@@ -54,7 +54,13 @@ const IconAvg = ({ className = "" }: { className?: string }) => (
 
 // Client-side fetch for 7-day daily summary used by the small cards
 type SummaryItem = { date: string; revenue: number; hpp: number; bonus: number; meal: number; orders: number; profit: number };
-function use7DaySummary(rangeStart?: Date, rangeEnd?: Date) {
+function parseRangeDate(value?: Date | string) {
+  if (!value) return undefined;
+  if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  return new Date(`${value}T00:00:00`);
+}
+
+function use7DaySummary(rangeStart?: string, rangeEnd?: string) {
   const [data, setData] = React.useState<SummaryItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
@@ -62,8 +68,8 @@ function use7DaySummary(rangeStart?: Date, rangeEnd?: Date) {
     const fetchIt = async () => {
       try {
         setLoading(true);
-        const end = rangeEnd ? new Date(rangeEnd) : new Date();
-        const start = rangeStart ? new Date(rangeStart) : new Date(end);
+        const end = parseRangeDate(rangeEnd) ?? new Date();
+        const start = parseRangeDate(rangeStart) ?? new Date(end);
         if (!rangeStart) start.setDate(end.getDate() - 6);
         const fmt = (d: Date) => {
           const y = d.getFullYear();
@@ -107,12 +113,12 @@ function use7DaySummary(rangeStart?: Date, rangeEnd?: Date) {
     };
     void fetchIt();
     return () => { mounted = false; };
-  }, [rangeStart?.toISOString?.(), rangeEnd?.toISOString?.()]);
+  }, [rangeStart, rangeEnd]);
   return { data, loading };
 }
 
 // Fetch KPI totals for current 7-day period and previous 7-day period, compute changes
-function useKpis(rangeStart?: Date, rangeEnd?: Date) {
+function useKpis(rangeStart?: string, rangeEnd?: string) {
   const [kpis, setKpis] = React.useState<null | {
     sales: number;
     orders: number;
@@ -160,23 +166,32 @@ function useKpis(rangeStart?: Date, rangeEnd?: Date) {
     const fetchUnits = async (start: Date, end: Date) => {
       try {
         // Use the JSON API that returns sales with items: /api/sales/by-outlet
-        const res = await fetch(`/api/sales/by-outlet`);
+        const fmt = (d: Date) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${dd}`;
+        };
+        const q = new URLSearchParams({ since: fmt(start), until: fmt(end) });
+        const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
         if (!res.ok) return 0;
         const json = await res.json();
         const rawSales = Array.isArray(json) ? json as unknown[] : (Array.isArray(json?.sales) ? json.sales as unknown[] : []);
-
-        // build inclusive end timestamp
-        const startTime = new Date(start).setHours(0, 0, 0, 0);
-        const endInclusive = new Date(end);
-        endInclusive.setHours(23, 59, 59, 999);
-        const endTime = endInclusive.getTime();
+        const startTime = new Date(start);
+        startTime.setHours(0, 0, 0, 0);
+        const endTime = new Date(end);
+        endTime.setHours(23, 59, 59, 999);
 
         const total = rawSales.reduce((sum: number, s) => {
           const sale = s as Record<string, unknown>;
           const t = new Date(String(sale['created_at'] || '')).getTime();
           if (Number.isNaN(t)) return sum;
-          if (t < startTime || t > endTime) return sum;
-          const items = Array.isArray(sale['items']) ? sale['items'] as Record<string, unknown>[] : [];
+          if (t < startTime.getTime() || t > endTime.getTime()) return sum;
+          const items = Array.isArray(sale['sale_items'])
+            ? sale['sale_items'] as Record<string, unknown>[]
+            : Array.isArray(sale['items'])
+              ? sale['items'] as Record<string, unknown>[]
+              : [];
           const saleUnits = items.reduce((ss: number, it) => {
             const qty = Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0;
             return ss + qty;
@@ -193,8 +208,9 @@ function useKpis(rangeStart?: Date, rangeEnd?: Date) {
 
     const load = async () => {
       try {
-        const end = rangeEnd ? new Date(rangeEnd) : new Date();
-        const start = rangeStart ? new Date(rangeStart) : new Date(end);
+        setLoading(true);
+        const end = parseRangeDate(rangeEnd) ?? new Date();
+        const start = parseRangeDate(rangeStart) ?? new Date(end);
         if (!rangeStart) start.setDate(end.getDate() - 6);
 
         const prevEnd = new Date(start);
@@ -245,9 +261,105 @@ function useKpis(rangeStart?: Date, rangeEnd?: Date) {
 
     void load();
     return () => { mounted = false; };
-  }, [rangeStart?.toISOString?.(), rangeEnd?.toISOString?.()]);
+  }, [rangeStart, rangeEnd]);
 
   return { kpis, loading };
+}
+
+function useDashboardSummary() {
+  const [data, setData] = React.useState<null | {
+    monthlyCups: number;
+    monthlySales: number;
+    monthlyProfit: number;
+    cupsToday: number;
+    salesToday: number;
+  }>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const fmt = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    };
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        const today = new Date();
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const startIso = fmt(monthStart);
+        const endIso = fmt(today);
+
+        const [monthSalesRes, todaySalesRes] = await Promise.all([
+          fetch(`/api/sales/by-outlet?since=${startIso}&until=${endIso}`),
+          fetch(`/api/sales/by-outlet?since=${endIso}&until=${endIso}`),
+        ]);
+
+        if (!monthSalesRes.ok || !todaySalesRes.ok) {
+          throw new Error('Failed to load dashboard summary');
+        }
+
+        const monthSalesJson = await monthSalesRes.json();
+        const todaySalesJson = await todaySalesRes.json();
+
+        const monthSales = Array.isArray(monthSalesJson)
+          ? (monthSalesJson as Record<string, unknown>[])
+          : (Array.isArray(monthSalesJson?.sales) ? (monthSalesJson.sales as Record<string, unknown>[]) : []);
+        const todaySales = Array.isArray(todaySalesJson)
+          ? (todaySalesJson as Record<string, unknown>[])
+          : (Array.isArray(todaySalesJson?.sales) ? (todaySalesJson.sales as Record<string, unknown>[]) : []);
+
+        const monthlySalesTotal = monthSales.reduce((sum, item) => {
+          const row = item as Record<string, unknown>;
+          return sum + Number(row.total_amount || 0);
+        }, 0 as number);
+
+        const monthlyProfitTotal = monthSales.reduce((sum, item) => {
+          const row = item as Record<string, unknown>;
+          return sum + Number(row.profit || 0);
+        }, 0 as number);
+
+        const countCups = (rows: Record<string, unknown>[]) => rows.reduce((sum, sale) => {
+          const row = sale as Record<string, unknown>;
+          const items = Array.isArray(row.sale_items)
+            ? row.sale_items as Record<string, unknown>[]
+            : Array.isArray(row.items)
+              ? row.items as Record<string, unknown>[]
+              : [];
+          return sum + items.reduce((qtySum, it) => qtySum + (Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0), 0);
+        }, 0);
+
+        const monthCupsTotal = countCups(monthSales);
+        const todayCupsTotal = countCups(todaySales);
+        const todaySalesTotal = todaySales.reduce((sum, sale) => {
+          const row = sale as Record<string, unknown>;
+          return sum + Number(row.total_amount || 0);
+        }, 0);
+
+        if (mounted) {
+          setData({
+            monthlyCups: monthCupsTotal,
+            monthlySales: monthlySalesTotal,
+            monthlyProfit: monthlyProfitTotal,
+            cupsToday: todayCupsTotal,
+            salesToday: todaySalesTotal,
+          });
+        }
+      } catch (err) {
+        console.error('useDashboardSummary', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => { mounted = false; };
+  }, []);
+
+  return { data, loading };
 }
 
 function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
@@ -317,8 +429,16 @@ export default function DashboardPage() {
   const [tmpStart, setTmpStart] = React.useState<string>(() => startDate.toISOString().slice(0, 10));
   const [tmpEnd, setTmpEnd] = React.useState<string>(() => endDate.toISOString().slice(0, 10));
 
-  const { data: summary, loading: summaryLoading } = use7DaySummary(startDate, endDate);
-  const { kpis, loading: kpisLoading } = useKpis(startDate, endDate);
+  React.useEffect(() => {
+    setTmpStart(startDate.toISOString().slice(0, 10));
+    setTmpEnd(endDate.toISOString().slice(0, 10));
+  }, [startDate, endDate]);
+
+  const startRange = startDate.toISOString().slice(0, 10);
+  const endRange = endDate.toISOString().slice(0, 10);
+  const { data: summary, loading: summaryLoading } = use7DaySummary(startRange, endRange);
+  const { kpis, loading: kpisLoading } = useKpis(startRange, endRange);
+  const { data: dashboardSummary, loading: dashboardLoading } = useDashboardSummary();
 
   const formatRangeLabel = (s: Date, e: Date) => {
     const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
@@ -334,7 +454,11 @@ export default function DashboardPage() {
           <h1>Ringkasan Performa Papi Kopi</h1>
         </div>
         <div style={{ position: 'relative' }}>
-          <button className="date-range" onClick={() => setPickerOpen((s) => !s)} aria-expanded={pickerOpen}>
+          <button className="date-range" onClick={() => {
+            setTmpStart(startDate.toISOString().slice(0, 10));
+            setTmpEnd(endDate.toISOString().slice(0, 10));
+            setPickerOpen((s) => !s);
+          }} aria-expanded={pickerOpen}>
             {formatRangeLabel(startDate, endDate)}
           </button>
           {pickerOpen && (
@@ -357,12 +481,15 @@ export default function DashboardPage() {
                   if (isNaN(s.getTime()) || isNaN(e.getTime())) return;
                   // ensure start <= end
                   if (s.getTime() > e.getTime()) {
-                    // swap
                     setStartDate(e);
                     setEndDate(s);
+                    setTmpStart(e.toISOString().slice(0, 10));
+                    setTmpEnd(s.toISOString().slice(0, 10));
                   } else {
                     setStartDate(s);
                     setEndDate(e);
+                    setTmpStart(s.toISOString().slice(0, 10));
+                    setTmpEnd(e.toISOString().slice(0, 10));
                   }
                   setPickerOpen(false);
                 }} className="btn primary">Terapkan</button>
@@ -371,6 +498,35 @@ export default function DashboardPage() {
           )}
         </div>
       </header>
+
+      <section className="summary-grid">
+        {dashboardLoading || !dashboardSummary ? (
+          <div className="summary-card loading" style={{ gridColumn: '1 / -1' }}>Memuat ringkasan...</div>
+        ) : (
+          <>
+            <div className="summary-card">
+              <div className="summary-label">Monthly Cups</div>
+              <div className="summary-value">{dashboardSummary.monthlyCups.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="summary-card">
+              <div className="summary-label">Monthly Sales</div>
+              <div className="summary-value">{dashboardSummary.monthlySales.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="summary-card">
+              <div className="summary-label">Monthly Profit</div>
+              <div className="summary-value">{dashboardSummary.monthlyProfit.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="summary-card">
+              <div className="summary-label">Cup Today</div>
+              <div className="summary-value">{dashboardSummary.cupsToday.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="summary-card">
+              <div className="summary-label">Sales Today</div>
+              <div className="summary-value">Rp {dashboardSummary.salesToday.toLocaleString('id-ID')}</div>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="kpi-grid">
         <div className="kpi card">
@@ -735,7 +891,47 @@ export default function DashboardPage() {
    KPI
 ========================= */
 
-  .kpi-grid {
+  .summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.summary-card {
+  background: #0f172a;
+  color: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 115px;
+}
+
+.summary-card.loading {
+  grid-column: 1 / -1;
+  background: #fff;
+  color: #0f172a;
+  border-color: #e5e7eb;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: rgba(241,245,249,0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.summary-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.kpi-grid {
   display: grid;
   grid-template-columns: repeat(5,1fr); /* show five KPIs on wide screens */
   gap: 24px;

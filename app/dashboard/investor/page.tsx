@@ -171,7 +171,11 @@ export default function InvestorDashboard() {
       const profit = (salesData || []).reduce((s: number, r: any) => s + (Number(r.profit) || 0), 0);
       const orders = (salesData || []).length;
       const units = (salesData || []).reduce((s: number, r: any) => {
-        const items = Array.isArray(r.items) ? r.items : [];
+        const items = Array.isArray(r.sale_items)
+          ? r.sale_items
+          : Array.isArray(r.items)
+            ? r.items
+            : [];
         return s + items.reduce((si: number, it: any) => si + Number(it.quantity || it.units || 0), 0);
       }, 0);
       const aov = orders > 0 ? Math.round(revenue / orders) : 0;

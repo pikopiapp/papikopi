@@ -69,50 +69,74 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (saleError) throw saleError;
+    const saleId = saleData.id;
 
-// Add sale items and decrease product batch quantities
-    for (const item of items) {
-      const { error: itemError } = await supabase
-        .from("sale_items")
-        .insert({
-          sale_id: saleData.id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price,
-          hpp: item.hpp,
-        });
+    // Insert sale_items in batch so we can rollback if needed
+    const saleItemsToInsert = items.map((item: any) => ({
+      sale_id: saleId,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      price: item.price,
+      hpp: item.hpp,
+    }));
 
-      if (itemError) throw itemError;
+    const { error: saleItemsError } = await supabase
+      .from("sale_items")
+      .insert(saleItemsToInsert);
 
-      // Decrease product batch quantity for this outlet
-      // Find available batches assigned to this outlet for this product
-      const { data: batches } = await supabase
-        .from("product_batches")
-        .select("id, quantity")
-        .eq("outlet_id", outlet_id)
-        .eq("product_id", item.product_id)
-        .eq("status", "assigned")
-        .gt("quantity", 0)
-        .order("created_at", { ascending: true });
+    if (saleItemsError) {
+      await supabase.from("sales").delete().eq("id", saleId);
+      throw saleItemsError;
+    }
 
-      let remainingToDeduct = item.quantity;
-      if (batches && batches.length > 0) {
-        for (const batch of batches) {
-          if (remainingToDeduct <= 0) break;
-          const deductAmount = Math.min(batch.quantity, remainingToDeduct);
-          const newQty = batch.quantity - deductAmount;
-          
-          await supabase
-            .from("product_batches")
-            .update({ 
-              quantity: newQty,
-              status: newQty === 0 ? "sold" : "assigned"
-            })
-            .eq("id", batch.id);
-          
-          remainingToDeduct -= deductAmount;
+    // Decrease product batch quantity for this outlet and restore on failure
+    const updatedBatches: Array<{ id: string; quantity: number; status: string }> = [];
+    try {
+      for (const item of items) {
+        const { data: batches, error: batchesError } = await supabase
+          .from("product_batches")
+          .select("id, quantity, status")
+          .eq("outlet_id", outlet_id)
+          .eq("product_id", item.product_id)
+          .eq("status", "assigned")
+          .gt("quantity", 0)
+          .order("created_at", { ascending: true });
+
+        if (batchesError) throw batchesError;
+
+        let remainingToDeduct = item.quantity;
+        if (batches && batches.length > 0) {
+          for (const batch of batches) {
+            if (remainingToDeduct <= 0) break;
+            const deductAmount = Math.min(batch.quantity, remainingToDeduct);
+            const newQty = batch.quantity - deductAmount;
+
+            const { error: batchUpdateError } = await supabase
+              .from("product_batches")
+              .update({
+                quantity: newQty,
+                status: newQty === 0 ? "sold" : "assigned",
+              })
+              .eq("id", batch.id);
+
+            if (batchUpdateError) throw batchUpdateError;
+
+            updatedBatches.push({ id: batch.id, quantity: batch.quantity, status: batch.status });
+            remainingToDeduct -= deductAmount;
+          }
         }
       }
+    } catch (batchError) {
+      console.error("Rollback product batch error:", batchError);
+      for (const batch of updatedBatches) {
+        await supabase
+          .from("product_batches")
+          .update({ quantity: batch.quantity, status: batch.status })
+          .eq("id", batch.id);
+      }
+      await supabase.from("sale_items").delete().eq("sale_id", saleId);
+      await supabase.from("sales").delete().eq("id", saleId);
+      throw batchError;
     }
 
     // Trigger notification
