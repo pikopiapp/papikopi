@@ -21,8 +21,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Invalid end date', debug: { received: end } }, { status: 400 });
     }
 
-    const todayJakarta = parseDateOnlyAsJakarta(new Date());
-    const currentBusinessDay = getBusinessDayDate(todayJakarta, 4);
+    const currentBusinessDay = getBusinessDayDate(new Date(), 4);
     const endDate = end ? parseDateOnlyAsJakarta(end) : currentBusinessDay;
     const startDate = start ? parseDateOnlyAsJakarta(start) : new Date(endDate.getTime() - 6 * 24 * 60 * 60 * 1000);
     const startRange = getBusinessDayRange(startDate, 4);
