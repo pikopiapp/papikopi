@@ -80,7 +80,13 @@ export async function GET(request: NextRequest) {
 
       const report = dailyReports[date];
       report.revenue += Number(sale.total_amount);
-      report.profit += Number(sale.profit);
+      // compute profit explicitly as sales - (hpp + bonus + meal)
+      const total = Number(sale.total_amount || 0);
+      const hpp = Number(sale.hpp_total || 0);
+      const bonus = Number(sale.bonus_amount || 0);
+      const meal = Number(sale.meal_amount || 0);
+      const computedProfit = total - (hpp + bonus + meal);
+      report.profit += computedProfit;
       report.bonus += Number(sale.bonus_amount);
       report.hpp += Number(sale.hpp_total);
       report.transactions += 1;

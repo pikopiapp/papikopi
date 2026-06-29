@@ -48,10 +48,10 @@ export async function GET(req: Request) {
       // continue to fallback
     }
 
-    // Fallback: Fetch only needed columns and aggregate in application layer
+    // Fallback: Fetch needed columns (including cost components) and aggregate in application layer
     let query = supabaseServer
       .from('sales')
-      .select('created_at, total_amount, profit, outlet_id')
+      .select('created_at, total_amount, hpp_total, bonus_amount, meal_amount, profit, outlet_id')
       .gte('created_at', startIso)
       .lte('created_at', endIso)
       .order('created_at', { ascending: true });
@@ -83,8 +83,13 @@ export async function GET(req: Request) {
         : `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
 
       if (!map[key]) map[key] = { sales: 0, profit: 0, count: 0 };
-      map[key].sales += Number(r.total_amount || 0);
-      map[key].profit += Number(r.profit || 0);
+      const total = Number(r.total_amount || 0);
+      const hpp = Number(r.hpp_total || 0);
+      const bonus = Number(r.bonus_amount || 0);
+      const meal = Number(r.meal_amount || 0);
+      const computedProfit = total - (hpp + bonus + meal);
+      map[key].sales += total;
+      map[key].profit += computedProfit;
       map[key].count += 1;
     }
 

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
 
     const res = await supabaseServer
       .from('sales')
-      .select('created_at, total_amount, hpp_total, profit')
+      .select('created_at, total_amount, hpp_total, bonus_amount, meal_amount, profit')
       .gte('created_at', start)
       .lte('created_at', end)
       .order('created_at', { ascending: true });
@@ -44,9 +44,16 @@ export async function GET(req: Request) {
         : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
 
       if (!map[key]) map[key] = { revenue: 0, cost: 0, profit: 0, count: 0 };
-      map[key].revenue += Number(r.total_amount || 0);
-      map[key].cost += Number(r.hpp_total || 0);
-      map[key].profit += Number(r.profit || 0);
+      const total = Number(r.total_amount || 0);
+      const hpp = Number(r.hpp_total || 0);
+      const bonus = Number(r.bonus_amount || 0);
+      const meal = Number(r.meal_amount || 0);
+      const computedProfit = total - (hpp + bonus + meal);
+
+      map[key].revenue += total;
+      // treat cost as sum of HPP + bonuses + meal allowances
+      map[key].cost += hpp + bonus + meal;
+      map[key].profit += computedProfit;
       map[key].count += 1;
     }
 

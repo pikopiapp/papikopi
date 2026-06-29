@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
 
     const buildQuery = () => {
-      let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount');
+      let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount,meal_amount');
       if (outlet_id) q = q.eq('outlet_id', outlet_id);
 
       if (since) {
@@ -33,8 +33,8 @@ export async function GET(request: Request) {
       }
 
       // server-side: exclude zero/negative sales or refunds so all clients see the same filtered results
-      // allow zero profit transactions but exclude negative profits (refunds)
-      q = q.gt('total_amount', 0).gte('profit', 0);
+      // allow zero profit transactions; filter only by total_amount positive
+      q = q.gt('total_amount', 0);
       // ensure we don't include rows dated in the future or far beyond 'now'
       q = q.lte('created_at', new Date().toISOString()).order('created_at', { ascending: true });
       return q;
@@ -106,7 +106,12 @@ export async function GET(request: Request) {
         if (!r?.created_at) return;
         const period = r.created_at.slice(0, 7); // YYYY-MM
         if (!agg[period]) agg[period] = { period, outlet_profit: 0, transactions: 0 };
-        agg[period].outlet_profit += Number(r.profit) || 0;
+        const total = Number(r.total_amount || 0);
+        const hpp = Number(r.hpp_total || 0);
+        const bonus = Number(r.bonus_amount || 0);
+        const meal = Number(r.meal_amount || 0);
+        const computed = total - (hpp + bonus + meal);
+        agg[period].outlet_profit += computed;
         agg[period].transactions += 1;
       });
       const out = Object.values(agg).sort((a, b) => a.period.localeCompare(b.period));

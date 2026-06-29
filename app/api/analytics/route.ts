@@ -33,8 +33,15 @@ export async function GET(request: NextRequest) {
 
     // Calculate metrics
     const totalRevenue = sales.reduce((sum, s) => sum + Number(s.total_amount), 0);
-    const totalProfit = sales.reduce((sum, s) => sum + Number(s.profit), 0);
     const totalBonus = sales.reduce((sum, s) => sum + Number(s.bonus_amount), 0);
+    // compute profit as total_amount - (hpp_total + bonus_amount + meal_amount)
+    const totalProfit = sales.reduce((sum, s) => {
+      const total = Number(s.total_amount || 0);
+      const hpp = Number(s.hpp_total || 0);
+      const bonus = Number(s.bonus_amount || 0);
+      const meal = Number(s.meal_amount || 0);
+      return sum + (total - (hpp + bonus + meal));
+    }, 0);
     const avgTransaction = sales.length > 0 ? totalRevenue / sales.length : 0;
 
     // Top products
@@ -81,7 +88,12 @@ export async function GET(request: NextRequest) {
       const barista = baristaMap.get(sale.barista_id)!;
       barista.transactions += 1;
       barista.revenue += Number(sale.total_amount);
-      barista.profit += Number(sale.profit);
+      // compute per-sale profit explicitly
+      const total = Number(sale.total_amount || 0);
+      const hpp = Number(sale.hpp_total || 0);
+      const bonus = Number(sale.bonus_amount || 0);
+      const meal = Number(sale.meal_amount || 0);
+      barista.profit += total - (hpp + bonus + meal);
     });
 
     const baristaPerformance = Array.from(baristaMap.values())
@@ -103,7 +115,11 @@ export async function GET(request: NextRequest) {
       const day = dailySales.get(date)!;
       day.revenue += Number(sale.total_amount);
       day.transactions += 1;
-      day.profit += Number(sale.profit);
+      const totalD = Number(sale.total_amount || 0);
+      const hppD = Number(sale.hpp_total || 0);
+      const bonusD = Number(sale.bonus_amount || 0);
+      const mealD = Number(sale.meal_amount || 0);
+      day.profit += totalD - (hppD + bonusD + mealD);
     });
 
     const dailyTrend = Array.from(dailySales.values())
