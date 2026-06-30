@@ -6,8 +6,9 @@ import { DollarSign, ArrowLeft, TrendingUp, AlertCircle, RefreshCw, User, Calend
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { calculateMealAllowance } from '@/lib/bonus-calculator';
-import { getBusinessDayDate, parseTimestampAsJakarta, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
+import { calculateDailyWage } from '@/lib/bonus-calculator';
+import { isHoliday, getHolidayDescription } from '@/lib/holiday-detector';
+import { getBusinessDayDate, getBusinessDayRangeLocalIso, parseTimestampAsJakarta, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 // Use DB-backed holidays via /api/holidays
 
 interface WagePayment {
@@ -64,6 +65,8 @@ interface DailyBaristaWage {
   meal_allowance: number;
   total_wage: number;
   status: string;
+  is_holiday?: boolean;
+  holiday_name?: string;
 }
 
 export default function WagesPage() {
@@ -82,12 +85,24 @@ export default function WagesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dailyWagesStatusFilter, setDailyWagesStatusFilter] = useState<string>('all');
   const [selectedBarista, setSelectedBarista] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>(() => formatDateOnlyInJakarta(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatDateOnlyInJakarta(getBusinessDayDate(new Date(), 4)));
+  const selectedBusinessDay = parseDateOnlyAsJakarta(selectedDate);
+  const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, 4);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customHolidays, setCustomHolidays] = useState<Map<string,string>>(new Map());
   const [nationalHolidays, setNationalHolidays] = useState<Map<string,string>>(new Map());
+
+  const getHolidayInfoForDate = useCallback((date: Date) => {
+    const iso = formatDateOnlyInJakarta(date);
+    const isHolidayDate = isHoliday(date) || nationalHolidays.has(iso) || customHolidays.has(iso);
+    const holidayName = isHolidayDate
+      ? customHolidays.get(iso) ?? nationalHolidays.get(iso) ?? getHolidayDescription(date)
+      : undefined;
+
+    return { isHolidayDate, holidayName };
+  }, [customHolidays, nationalHolidays]);
 
   useEffect(() => {
     let mounted = true;
@@ -121,16 +136,32 @@ export default function WagesPage() {
       setRefreshing(true);
       setError(null);
 
-      // Fetch sales data from the sales table
-      const { data: salesData, error: salesError } = await supabase
-        .from('sales')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(0, 100000); // Supabase defaults to 1000 rows if range is omitted
+      // Fetch sales data from the sales table in paginated batches.
+      // Supabase projects limit the response to 1,000 rows per request by default.
+      const pageSize = 1000;
+      let pageStart = 0;
+      const salesData: any[] = [];
 
-      if (salesError) {
-        console.error('Supabase query error:', salesError);
-        throw salesError;
+      while (true) {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('id, total_amount, bonus_amount, created_at, barista_id, outlet_id')
+          .gte('created_at', businessDaySince)
+          .lte('created_at', businessDayUntil)
+          .order('created_at', { ascending: true })
+          .range(pageStart, pageStart + pageSize - 1);
+
+        if (error) {
+          console.error('Supabase query error:', error);
+          throw error;
+        }
+
+        if (!data || data.length === 0) break;
+
+        salesData.push(...data);
+        if (data.length < pageSize) break;
+
+        pageStart += pageSize;
       }
 
       // Fetch barista and outlet names
@@ -167,6 +198,8 @@ export default function WagesPage() {
         const createdAtJakarta = parseTimestampAsJakarta(String(sale.created_at || ''));
         const businessDay = getBusinessDayDate(createdAtJakarta, 4);
         const createdAtNormalized = createdAtJakarta.toISOString().split('.')[0] + 'Z';
+        const { isHolidayDate, holidayName } = getHolidayInfoForDate(businessDay);
+
         return {
           id: sale.id,
           barista_id: sale.barista_id,
@@ -183,6 +216,8 @@ export default function WagesPage() {
           submitted_at: createdAtNormalized,
           approved_at: createdAtNormalized,
           date: formatDateOnlyInJakarta(businessDay),
+          is_holiday: isHolidayDate,
+          holiday_name: holidayName,
         };
       });
 
@@ -193,12 +228,11 @@ export default function WagesPage() {
       formattedPayments.forEach(payment => {
         const key = `${payment.date}-${payment.outlet_id}-${payment.barista_id}`;
         const existing = wagesMap.get(key);
-        
-        // Aggregate sales per barista per outlet per day
+
         const dailyOmset = (existing?.omset || 0) + payment.total_omset;
-        const dailyBonus = (existing?.bonus || 0) + payment.bonus;
-        const mealAllowance = calculateMealAllowance(dailyOmset); // Calculate based on daily omset ONLY
-        
+        const isHolidayDate = existing?.is_holiday || payment.is_holiday || false;
+        const wageResult = calculateDailyWage(dailyOmset, isHolidayDate, false);
+
         wagesMap.set(key, {
           barista_id: payment.barista_id,
           barista_name: payment.barista_name,
@@ -206,10 +240,12 @@ export default function WagesPage() {
           outlet_name: payment.outlet_name,
           date: payment.date,
           omset: dailyOmset,
-          bonus: dailyBonus,
-          meal_allowance: mealAllowance,
-          total_wage: dailyBonus + mealAllowance,
+          bonus: wageResult.bonus,
+          meal_allowance: wageResult.mealAllowance,
+          total_wage: wageResult.totalWage,
           status: 'approved',
+          is_holiday: isHolidayDate,
+          holiday_name: payment.holiday_name,
         });
       });
 
@@ -234,7 +270,7 @@ export default function WagesPage() {
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [businessDaySince, businessDayUntil, getHolidayInfoForDate]);
 
   useEffect(() => {
     fetchPayments();
@@ -380,7 +416,7 @@ export default function WagesPage() {
               ) : null;
             })()}
             <button
-              onClick={() => setSelectedDate(format(new Date(), 'yyyy-MM-dd'))}
+              onClick={() => setSelectedDate(formatDateOnlyInJakarta(getBusinessDayDate(new Date(), 4)))}
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
             >
               Hari Ini
@@ -431,7 +467,10 @@ export default function WagesPage() {
                 return a.barista_name.localeCompare(b.barista_name);
               })
               .map((wage, idx) => {
-                const isToday = format(new Date(wage.date), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                const currentBusinessDay = formatDateOnlyInJakarta(getBusinessDayDate(new Date(), 4));
+                const previousBusinessDay = formatDateOnlyInJakarta(new Date(getBusinessDayDate(new Date(), 4).getTime() - 24 * 60 * 60 * 1000));
+                const isToday = wage.date === currentBusinessDay;
+                const isYesterday = wage.date === previousBusinessDay;
               return (
                 <div
                   key={`${wage.date}-${wage.outlet_id}-${wage.barista_id}`}
@@ -442,16 +481,20 @@ export default function WagesPage() {
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-0.5 font-semibold uppercase">Outlet</p>
-                      <p className="text-sm text-gray-700 mb-2">{wage.outlet_name}</p>
-                      <p className="text-sm text-gray-500 mb-0.5">Barista</p>
-                      <p className="font-bold text-gray-800">{wage.barista_name}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-xs text-gray-500 font-semibold uppercase">Outlet</span>
+                        <span className="text-sm text-gray-700">{wage.outlet_name}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-xs text-gray-500 font-semibold uppercase">Barista</span>
+                        <span className="font-bold text-gray-800">{wage.barista_name}</span>
+                      </div>
                       <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                         <Calendar size={12} />
                         {format(new Date(wage.date), 'dd MMM yyyy', { locale: idLocale })}
                         {isToday && ' (Hari ini)'}
-                        {!isToday && new Date(wage.date).getTime() === new Date(new Date().setDate(new Date().getDate() - 1)).getTime() && ' (Kemarin)'}
+                        {isYesterday && ' (Kemarin)'}
                       </p>
                     </div>
                     {isToday && (
