@@ -52,8 +52,7 @@ export async function GET(req: Request) {
       const total = Number(r.total_amount || 0);
       const hpp = Number(r.hpp_total || 0);
       const bonus = Number(r.bonus_amount || 0);
-      const meal = Number(r.meal_amount || 0);
-      const computed = total - (hpp + bonus + meal);
+      const computed = total - (hpp + bonus);
       outletMap[id].sales += total;
       outletMap[id].profit += computed;
       outletMap[id].count += 1;
