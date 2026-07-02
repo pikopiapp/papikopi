@@ -1,5 +1,6 @@
 import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
 import { supabaseServer } from '@/lib/supabaseServer';
+import { getBusinessDayDate, getBusinessDayRange, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 import PeriodSelector from '../components/PeriodSelector.client';
 import ProfitLossChartServer from '../components/Charts/ProfitLossChart.server';
 
@@ -14,14 +15,18 @@ type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
 async function getProfitLossAggregated(startIso: string, endIso: string, group: 'day' | 'month') {
   try {
-    const rpc = await supabaseServer.rpc('reports_profitloss_agg', { start_ts: startIso, end_ts: endIso, grp: group });
-    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data;
+    const startDate = parseDateOnlyAsJakarta(startIso);
+    const endDate = parseDateOnlyAsJakarta(endIso);
+    const startRange = getBusinessDayRange(startDate, 4);
+    const endRange = getBusinessDayRange(endDate, 4);
+    const queryStartIso = startRange.start.toISOString();
+    const queryEndIso = endRange.end.toISOString();
 
     const res = await supabaseServer
       .from('sales')
       .select('created_at, total_amount, hpp_total, profit')
-      .gte('created_at', startIso)
-      .lte('created_at', endIso)
+      .gte('created_at', queryStartIso)
+      .lte('created_at', queryEndIso)
       .order('created_at', { ascending: true });
 
     if (res.error) return [];
@@ -29,10 +34,10 @@ async function getProfitLossAggregated(startIso: string, endIso: string, group: 
     const map: Record<string, { revenue: number; cost: number; profit: number; count: number }> = {};
 
     for (const r of rows) {
-      const dt = new Date(r.created_at);
+      const businessDay = getBusinessDayDate(r.created_at, 4);
       const key = group === 'day'
-        ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-        : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        ? formatDateOnlyInJakarta(businessDay)
+        : `${businessDay.getFullYear()}-${String(businessDay.getMonth() + 1).padStart(2, '0')}`;
       if (!map[key]) map[key] = { revenue: 0, cost: 0, profit: 0, count: 0 };
       map[key].revenue += Number(r.total_amount || 0);
       map[key].cost += Number(r.hpp_total || 0);
@@ -113,7 +118,7 @@ export default async function ProfitLossReport({ searchParams }: { searchParams?
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       label = monthNames[monthNum - 1] || periodKey;
     } else {
-      const d = new Date(periodKey);
+      const d = parseDateOnlyAsJakarta(periodKey);
       label = format(d, 'MMM dd');
     }
 

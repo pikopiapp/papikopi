@@ -34,41 +34,75 @@ export default function InvestorSettings() {
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    fetchProfile();
+    let isMounted = true;
+
+    const loadProfile = async () => {
+      if (!user?.id) {
+        if (isMounted) {
+          setProfile(null);
+          setBankDetails({
+            account_holder: '',
+            bank_name: '',
+            account_number: '',
+            routing_number: '',
+          });
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setLoading(true);
+      }
+
+      try {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id, email, name, phone')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (userData) {
+          setProfile(userData);
+        } else {
+          setProfile(null);
+        }
+
+        const { data: bankData } = await supabase
+          .from('investor_profiles')
+          .select('account_holder, bank_name, account_number, routing_number')
+          .eq('investor_id', user.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (bankData) {
+          setBankDetails(bankData);
+        } else {
+          setBankDetails({
+            account_holder: '',
+            bank_name: '',
+            account_number: '',
+            routing_number: '',
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching profile:', error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user?.id]);
-
-  const fetchProfile = async () => {
-    if (!user?.id) return;
-    setLoading(true);
-
-    try {
-      // Fetch user profile
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, email, name, phone')
-        .eq('id', user.id)
-        .single();
-
-      if (userData) {
-        setProfile(userData);
-      }
-
-      // Fetch bank details from investor_profiles table (if exists)
-      const { data: bankData } = await supabase
-        .from('investor_profiles')
-        .select('account_holder, bank_name, account_number, routing_number')
-        .eq('investor_id', user.id)
-        .single();
-
-      if (bankData) {
-        setBankDetails(bankData);
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleProfileChange = (field: string, value: string) => {
     if (profile) {

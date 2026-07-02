@@ -4,16 +4,35 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import type { AppUser } from '@/lib/store/auth';
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store/auth";
+import { getRoleFromUser } from '@/lib/admin-access';
 
 interface AuthContextType {
-  user: AppUser;  
+  user: AppUser;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ user: AppUser; profile: { role?: string | null; outlet_id?: string | null } | null } | null>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const AUTH_COOKIE_OPTIONS = "path=/; sameSite=lax" + (typeof window !== "undefined" && window.location.protocol === "https:" ? "; secure" : "");
+
+const setAuthTokenCookies = (accessToken: string | null | undefined, refreshToken: string | null | undefined) => {
+  if (typeof document === "undefined") return;
+
+  if (accessToken) {
+    document.cookie = `sb-access-token=${encodeURIComponent(accessToken)}; ${AUTH_COOKIE_OPTIONS}`;
+  } else {
+    document.cookie = `sb-access-token=; Max-Age=0; ${AUTH_COOKIE_OPTIONS}`;
+  }
+
+  if (refreshToken) {
+    document.cookie = `sb-refresh-token=${encodeURIComponent(refreshToken)}; ${AUTH_COOKIE_OPTIONS}`;
+  } else {
+    document.cookie = `sb-refresh-token=; Max-Age=0; ${AUTH_COOKIE_OPTIONS}`;
+  }
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLocalLoading] = useState(true);
@@ -28,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch user profile with 5 second timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 5000);
 
       try {
         const response = await fetch("/api/auth/user", {
@@ -56,6 +75,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       } catch (timeoutErr) {
         clearTimeout(timeoutId);
+        if (timeoutErr instanceof DOMException && timeoutErr.name === 'AbortError') {
+          console.warn('Profile fetch aborted after timeout');
+          return null;
+        }
         console.error("Profile fetch timeout:", timeoutErr);
         return null;
       }
@@ -64,6 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
   }, []);
+
+  const syncSessionCookies = (accessToken: string | null | undefined, refreshToken: string | null | undefined) => {
+    setAuthTokenCookies(accessToken, refreshToken);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -80,15 +107,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
 
         if (data.session?.user) {
+          syncSessionCookies(data.session.access_token, data.session.refresh_token);
+
           // Set user immediately without waiting for profile
           setUser(data.session.user as unknown as AppUser);
           
           // Try to fetch profile in background
           const userData = await fetchUserProfile(data.session.user.id);
-          if (mounted && userData) {
-            setRole(userData.role);
-            setOutletId(userData.outlet_id);
+          if (mounted) {
+            if (userData?.role) {
+              setRole(userData.role);
+            } else {
+              setRole(getRoleFromUser(data.session.user));
+            }
+            setOutletId(userData?.outlet_id ?? null);
           }
+        } else {
+          syncSessionCookies(null, null);
         }
       } catch (err) {
         console.error("Auth check error:", err);
@@ -102,21 +137,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     checkAuth();
 
-    // Auth state listener - just update state without fetching profile
+    // Auth state listener - just update state and keep cookies in sync
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return;
 
         if (session?.user) {
+          syncSessionCookies(session.access_token, session.refresh_token);
           setUser(session.user as unknown as AppUser);
           
           // Fetch profile in background
           const userData = await fetchUserProfile(session.user.id);
-          if (mounted && userData) {
-            setRole(userData.role);
-            setOutletId(userData.outlet_id);
+          if (mounted) {
+            if (userData?.role) {
+              setRole(userData.role);
+            } else {
+              setRole(getRoleFromUser(session.user));
+            }
+            setOutletId(userData?.outlet_id ?? null);
           }
         } else {
+          syncSessionCookies(null, null);
           setUser(null);
           setRole(null);
           setOutletId(null);
@@ -128,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [setUser, setRole, setOutletId, fetchUserProfile]);
+  }, [setUser, setRole, setOutletId, setLoading, fetchUserProfile]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -140,11 +181,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (error) throw error;
 
-      // Set user immediately after login
+      if (data.session) {
+        syncSessionCookies(data.session.access_token, data.session.refresh_token);
+      }
+
       if (data.user) {
         setUser(data.user as unknown as AppUser);
-        // Profile will be fetched by auth state listener
+
+        const profile = await fetchUserProfile(data.user.id);
+        if (profile) {
+          setRole(profile.role || getRoleFromUser(data.user));
+          setOutletId(profile.outlet_id ?? null);
+        } else {
+          setRole(getRoleFromUser(data.user));
+        }
+
+        return { user: data.user as unknown as AppUser, profile };
       }
+      return null;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Login failed";
       setError(errorMsg);
@@ -156,6 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const { error } = await supabase.auth.signOut();
+      syncSessionCookies(null, null);
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Logout failed");

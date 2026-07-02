@@ -5,8 +5,12 @@ import Link from 'next/link';
 import type { ChartOptions } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { SalesBarChart, OrdersLineChart, ProfitBarChart } from './Charts';
-import { formatDateOnlyInJakarta, parseDateOnlyAsJakarta } from '@/lib/helpers/business-day';
+import { formatDateOnlyInJakarta, parseDateOnlyAsJakarta, getBusinessDayDate } from '@/lib/helpers/business-day';
 import { aggregateDailyOutletSummary } from '@/lib/bonus-calculator';
+import { getDefaultMonthValue, getMonthRange } from '@/lib/month-range';
+
+const DASHBOARD_USE_BUSINESS_DAY = true;
+const BUSINESS_DAY_START_HOUR = 4;
 
 const IconSales = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -62,7 +66,42 @@ function parseRangeDate(value?: Date | string) {
   return parseDateOnlyAsJakarta(value);
 }
 
-function useRangeSummary(rangeStart?: string, rangeEnd?: string) {
+function weekValueFromDate(d: Date) {
+  // returns YYYY-Www (ISO week)
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  // Thursday in current week decides the year
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const yyyy = date.getUTCFullYear();
+  const ww = String(weekNo).padStart(2, '0');
+  return `${yyyy}-W${ww}`;
+}
+
+function weekRangeFromValue(val: string) {
+  // val expected like '2026-W27'
+  const parts = String(val || '').split('-W');
+  if (parts.length !== 2) return null;
+  const year = Number(parts[0]);
+  const week = Number(parts[1]);
+  if (!year || !week) return null;
+  // ISO week: find Thursday of the week
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dayOfWeek = jan4.getUTCDay() || 7; // 1..7
+  const thursday = new Date(jan4);
+  thursday.setUTCDate(jan4.getUTCDate() - (dayOfWeek - 4) + (week - 1) * 7);
+  // Monday is 3 days before Thursday
+  const monday = new Date(thursday);
+  monday.setUTCDate(thursday.getUTCDate() - 3);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  // convert to local Jakarta dates (keep midnight local)
+  const start = new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate(), 0, 0, 0, 0);
+  const end = new Date(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate(), 23, 59, 59, 999);
+  return { start, end };
+}
+
+function useRangeSummary(rangeStart?: string, rangeEnd?: string, useBusinessDay = DASHBOARD_USE_BUSINESS_DAY) {
   const [data, setData] = React.useState<SummaryItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => {
@@ -70,11 +109,19 @@ function useRangeSummary(rangeStart?: string, rangeEnd?: string) {
     const fetchIt = async () => {
       try {
         setLoading(true);
-        const end = parseRangeDate(rangeEnd) ?? new Date();
-        const start = parseRangeDate(rangeStart) ?? new Date(end);
-        if (!rangeStart) start.setDate(end.getDate() - 6);
+        const now = new Date();
+        const end = parseRangeDate(rangeEnd) ?? (useBusinessDay ? getBusinessDayDate(now, BUSINESS_DAY_START_HOUR) : now);
+        const start = rangeStart
+          ? parseRangeDate(rangeStart) ?? new Date(end.getTime())
+          : new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
         const fmt = (d: Date) => formatDateOnlyInJakarta(d);
-        const q = new URLSearchParams({ start: fmt(start), end: fmt(end), debug: '1' });
+        const q = new URLSearchParams({
+          start: fmt(start),
+          end: fmt(end),
+          business_day: useBusinessDay ? '1' : '0',
+          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          debug: '1',
+        });
         const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
         if (!res.ok) throw new Error('Failed to load daily summary');
         const json = await res.json();
@@ -127,7 +174,7 @@ function useRangeSummary(rangeStart?: string, rangeEnd?: string) {
 }
 
 // Fetch KPI totals for current 7-day period and previous 7-day period, compute changes
-function useKpis(rangeStart?: string, rangeEnd?: string) {
+function useKpis(rangeStart?: string, rangeEnd?: string, useBusinessDay = DASHBOARD_USE_BUSINESS_DAY) {
   const [kpis, setKpis] = React.useState<null | {
     sales: number;
     orders: number;
@@ -146,24 +193,36 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
     let mounted = true;
     const fetchSalesRange = async (start: Date, end: Date) => {
       const fmt = (d: Date) => formatDateOnlyInJakarta(d);
-      const q = new URLSearchParams({ since: fmt(start), until: fmt(end), debug: '1' });
+      const q = new URLSearchParams({
+        since: fmt(start),
+        until: fmt(end),
+        business_day: useBusinessDay ? '1' : '0',
+        business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+        debug: '1',
+      });
       const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
       if (!res.ok) throw new Error('Failed to load sales range');
       const json = await res.json();
       if (json?.meta) {
         try { console.debug('sales-by-outlet meta', json.meta); } catch (e) {}
       }
-      const rawSales = Array.isArray(json) ? json as unknown[] : (Array.isArray(json?.sales) ? json.sales as unknown[] : (Array.isArray(json?.data) ? json.data as unknown[] : []));
-      const startTime = new Date(start);
-      startTime.setHours(0, 0, 0, 0);
-      const endTime = new Date(end);
-      endTime.setHours(23, 59, 59, 999);
+      const rawSales = (Array.isArray(json)
+        ? json as unknown[]
+        : (Array.isArray(json?.sales) ? json.sales as unknown[] : (Array.isArray(json?.data) ? json.data as unknown[] : []))) as Record<string, unknown>[];
+      const filteredSales = useBusinessDay
+        ? rawSales
+        : rawSales.filter((sale) => {
+          const t = new Date(String(sale['created_at'] || '')).getTime();
+          if (Number.isNaN(t)) return false;
+          const startTime = new Date(start);
+          startTime.setHours(0, 0, 0, 0);
+          const endTime = new Date(end);
+          endTime.setHours(23, 59, 59, 999);
+          return t >= startTime.getTime() && t <= endTime.getTime();
+        });
 
-      return rawSales.reduce((acc: { revenue: number; orders: number; profit: number; units: number }, s) => {
+      return filteredSales.reduce((acc: { revenue: number; orders: number; profit: number; units: number }, s) => {
         const sale = s as Record<string, unknown>;
-        const t = new Date(String(sale['created_at'] || '')).getTime();
-        if (Number.isNaN(t)) return acc;
-        if (t < startTime.getTime() || t > endTime.getTime()) return acc;
 
         const revenue = Number(sale['total_amount'] || 0);
         const profit = Number(sale['profit'] || 0);
@@ -188,9 +247,11 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
     const load = async () => {
       try {
         setLoading(true);
-        const end = parseRangeDate(rangeEnd) ?? new Date();
-        const start = parseRangeDate(rangeStart) ?? new Date(end);
-        if (!rangeStart) start.setDate(end.getDate() - 6);
+        const now = new Date();
+        const end = parseRangeDate(rangeEnd) ?? (DASHBOARD_USE_BUSINESS_DAY ? getBusinessDayDate(now, BUSINESS_DAY_START_HOUR) : now);
+        const start = rangeStart
+          ? parseRangeDate(rangeStart) ?? new Date(end.getTime())
+          : new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
 
         const prevEnd = new Date(start);
         prevEnd.setDate(start.getDate() - 1);
@@ -241,7 +302,7 @@ function useKpis(rangeStart?: string, rangeEnd?: string) {
   return { kpis, loading };
 }
 
-function useDashboardSummary() {
+function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusinessDay = DASHBOARD_USE_BUSINESS_DAY) {
   const [data, setData] = React.useState<null | {
     monthlyCups: number;
     monthlySales: number;
@@ -262,21 +323,57 @@ function useDashboardSummary() {
       try {
         setLoading(true);
         const today = new Date();
-        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        const startIso = fmt(monthStart);
-        const endIso = fmt(today);
+        const todayBusinessDay = getBusinessDayDate(today, BUSINESS_DAY_START_HOUR);
+        const selectedStart = parseRangeDate(rangeStart) ?? new Date(today.getFullYear(), today.getMonth(), 1);
+        const selectedEnd = parseRangeDate(rangeEnd) ?? new Date(today);
+        const startIso = fmt(selectedStart);
+        const endIso = fmt(selectedEnd);
+        const todayIso = fmt(todayBusinessDay);
 
-        const [monthSalesRes, todaySalesRes] = await Promise.all([
-          fetch(`/api/sales/by-outlet?since=${startIso}&until=${endIso}&debug=1`),
-          fetch(`/api/sales/by-outlet?since=${endIso}&until=${endIso}&debug=1`),
+        const queryParams = new URLSearchParams({
+          since: startIso,
+          until: endIso,
+          business_day: useBusinessDay ? '1' : '0',
+          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          debug: '1',
+        });
+        const todayParams = new URLSearchParams({
+          since: todayIso,
+          until: todayIso,
+          business_day: useBusinessDay ? '1' : '0',
+          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          debug: '1',
+        });
+        const summaryParams = new URLSearchParams({
+          start: startIso,
+          end: endIso,
+          business_day: useBusinessDay ? '1' : '0',
+          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          debug: '1',
+        });
+        const todaySummaryParams = new URLSearchParams({
+          start: todayIso,
+          end: todayIso,
+          business_day: useBusinessDay ? '1' : '0',
+          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          debug: '1',
+        });
+
+        const [monthSalesRes, todaySalesRes, monthSummaryRes, todaySummaryRes] = await Promise.all([
+          fetch(`/api/sales/by-outlet?${queryParams.toString()}`),
+          fetch(`/api/sales/by-outlet?${todayParams.toString()}`),
+          fetch(`/api/reports/daily-summary?${summaryParams.toString()}`),
+          fetch(`/api/reports/daily-summary?${todaySummaryParams.toString()}`),
         ]);
 
-        if (!monthSalesRes.ok || !todaySalesRes.ok) {
+        if (!monthSalesRes.ok || !todaySalesRes.ok || !monthSummaryRes.ok || !todaySummaryRes.ok) {
           throw new Error('Failed to load dashboard summary');
         }
 
         const monthSalesJson = await monthSalesRes.json();
         const todaySalesJson = await todaySalesRes.json();
+        const monthSummaryJson = await monthSummaryRes.json();
+        const todaySummaryJson = await todaySummaryRes.json();
 
         if (monthSalesJson?.meta) {
           try { console.debug('dashboard month sales meta', monthSalesJson.meta); } catch (e) {}
@@ -291,44 +388,73 @@ function useDashboardSummary() {
         const todaySales = Array.isArray(todaySalesJson)
           ? (todaySalesJson as Record<string, unknown>[])
           : (Array.isArray(todaySalesJson?.sales) ? (todaySalesJson.sales as Record<string, unknown>[]) : (Array.isArray(todaySalesJson?.data) ? (todaySalesJson.data as Record<string, unknown>[]) : []));
+        const monthSummaryData = Array.isArray(monthSummaryJson?.data)
+          ? (monthSummaryJson.data as Array<Record<string, unknown>>)
+          : [];
+        const todaySummaryData = Array.isArray(todaySummaryJson?.data)
+          ? (todaySummaryJson.data as Array<Record<string, unknown>>)
+          : [];
 
-        const monthlySalesTotal = monthSales.reduce((sum, item) => {
-          const row = item as Record<string, unknown>;
-          return sum + Number(row.total_amount || 0);
-        }, 0 as number);
+        const monthlySalesTotal = monthSummaryData.length > 0
+          ? monthSummaryData.reduce((sum, item) => sum + Number(item.revenue || 0), 0 as number)
+          : monthSales.reduce((sum, item) => {
+              const row = item as Record<string, unknown>;
+              return sum + Number(row.total_amount || 0);
+            }, 0 as number);
 
-        // compute monthly totals
-        // monthlyProfit is computed as: sales - meal - bonus - hpp (prefer explicit recompute)
-        const monthlyHppTotal = monthSales.reduce((sum, item) => {
-          const row = item as Record<string, any>;
-          const hppFromRow = Number(row.hpp_total ?? row.hpp ?? 0);
-          if (hppFromRow && hppFromRow > 0) return sum + hppFromRow;
-          // fallback: sum hpp from sale_items if present
-          const items = Array.isArray(row.sale_items) ? row.sale_items as Record<string, any>[] : (Array.isArray(row.items) ? row.items as Record<string, any>[] : []);
-          const itemsHpp = items.reduce((s2, it) => {
-            const qty = Number(it.quantity ?? it.qty ?? 1) || 1;
-            const hppVal = Number(it.hpp ?? it.hpp_value ?? 0) || 0;
-            return s2 + (hppVal * qty);
-          }, 0);
-          return sum + itemsHpp;
-        }, 0 as number);
+        // compute monthly totals from the daily-summary aggregation when available
+        const monthlyHppTotal = monthSummaryData.length > 0
+          ? monthSummaryData.reduce((sum, item) => sum + Number(item.hpp || 0), 0 as number)
+          : monthSales.reduce((sum, item) => {
+              const row = item as Record<string, any>;
+              const hppFromRow = Number(row.hpp_total ?? row.hpp ?? 0);
+              if (hppFromRow && hppFromRow > 0) return sum + hppFromRow;
+              const items = Array.isArray(row.sale_items) ? row.sale_items as Record<string, any>[] : (Array.isArray(row.items) ? row.items as Record<string, any>[] : []);
+              const itemsHpp = items.reduce((s2, it) => {
+                const qty = Number(it.quantity ?? it.qty ?? 1) || 1;
+                const hppVal = Number(it.hpp ?? it.hpp_value ?? 0) || 0;
+                return s2 + (hppVal * qty);
+              }, 0);
+              return sum + itemsHpp;
+            }, 0 as number);
 
-        // Recompute monthly bonus and meal by aggregating per-outlet daily values (force recompute)
-        const rowsForAgg = monthSales.map((r) => ({
-          date: typeof r.date === 'string' ? String(r.date) : undefined,
-          created_at: typeof r.created_at === 'string' ? String(r.created_at) : undefined,
-          outlet_id: r.outlet_id,
-          total_amount: r.total_amount,
-          profit: r.profit,
-          hpp_total: r.hpp_total,
-          bonus_amount: r.bonus_amount,
-          meal_amount: r.meal_amount,
-        }));
-        const perOutletAggForMonth = aggregateDailyOutletSummary(rowsForAgg as any, undefined, { forceRecomputeBonus: true, forceRecomputeMeal: true });
-        const monthlyBonusTotal = perOutletAggForMonth.reduce((s, r) => s + (r.bonus || 0), 0);
-        const monthlyMealTotal = perOutletAggForMonth.reduce((s, r) => s + (r.meal || 0), 0);
+        const monthlyBonusTotal = monthSummaryData.length > 0
+          ? monthSummaryData.reduce((sum, item) => sum + Number(item.bonus || 0), 0 as number)
+          : (() => {
+              const rowsForAgg = monthSales.map((r) => ({
+                date: typeof r.date === 'string' ? String(r.date) : undefined,
+                created_at: typeof r.created_at === 'string' ? String(r.created_at) : undefined,
+                outlet_id: r.outlet_id,
+                total_amount: r.total_amount,
+                profit: r.profit,
+                hpp_total: r.hpp_total,
+                bonus_amount: r.bonus_amount,
+                meal_amount: r.meal_amount,
+              }));
+              const perOutletAggForMonth = aggregateDailyOutletSummary(rowsForAgg as any, undefined, { forceRecomputeBonus: true, forceRecomputeMeal: true });
+              return perOutletAggForMonth.reduce((s, r) => s + (r.bonus || 0), 0);
+            })();
 
-        const monthlyProfitTotal = Math.round((monthlySalesTotal - monthlyMealTotal - monthlyBonusTotal - monthlyHppTotal));
+        const monthlyMealTotal = monthSummaryData.length > 0
+          ? monthSummaryData.reduce((sum, item) => sum + Number(item.meal || 0), 0 as number)
+          : (() => {
+              const rowsForAgg = monthSales.map((r) => ({
+                date: typeof r.date === 'string' ? String(r.date) : undefined,
+                created_at: typeof r.created_at === 'string' ? String(r.created_at) : undefined,
+                outlet_id: r.outlet_id,
+                total_amount: r.total_amount,
+                profit: r.profit,
+                hpp_total: r.hpp_total,
+                bonus_amount: r.bonus_amount,
+                meal_amount: r.meal_amount,
+              }));
+              const perOutletAggForMonth = aggregateDailyOutletSummary(rowsForAgg as any, undefined, { forceRecomputeBonus: true, forceRecomputeMeal: true });
+              return perOutletAggForMonth.reduce((s, r) => s + (r.meal || 0), 0);
+            })();
+
+        const monthlyProfitTotal = monthSummaryData.length > 0
+          ? monthSummaryData.reduce((sum, item) => sum + Number(item.profit || 0), 0 as number)
+          : Math.round((monthlySalesTotal - monthlyMealTotal - monthlyBonusTotal - monthlyHppTotal));
 
         const countCups = (rows: Record<string, unknown>[]) => rows.reduce((sum, sale) => {
           const row = sale as Record<string, unknown>;
@@ -342,10 +468,12 @@ function useDashboardSummary() {
 
         const monthCupsTotal = countCups(monthSales);
         const todayCupsTotal = countCups(todaySales);
-        const todaySalesTotal = todaySales.reduce((sum, sale) => {
-          const row = sale as Record<string, unknown>;
-          return sum + Number(row.total_amount || 0);
-        }, 0);
+        const todaySalesTotal = todaySummaryData.length > 0
+          ? todaySummaryData.reduce((sum, item) => sum + Number(item.revenue || 0), 0 as number)
+          : todaySales.reduce((sum, sale) => {
+              const row = sale as Record<string, unknown>;
+              return sum + Number(row.total_amount || 0);
+            }, 0);
 
         if (mounted) {
           setData({
@@ -368,7 +496,7 @@ function useDashboardSummary() {
 
     void load();
     return () => { mounted = false; };
-  }, []);
+  }, [rangeStart, rangeEnd]);
 
   return { data, loading };
 }
@@ -431,32 +559,60 @@ function CostDoughnut({ summary }: { summary: SummaryItem[] }) {
 export default function DashboardPage() {
   type RangePreset = 'day' | 'week' | 'month' | 'custom';
 
-  // Date range state (default: last 7 days)
-  const [endDate, setEndDate] = React.useState<Date>(() => new Date());
-  const [startDate, setStartDate] = React.useState<Date>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    return d;
+  // Date range state (default: current Jakarta business day)
+  const [endDate, setEndDate] = React.useState<Date>(() => {
+    const today = new Date();
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+    return monthEnd;
   });
+  const [startDate, setStartDate] = React.useState<Date>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [pickerOpen, setPickerOpen] = React.useState(false);
-  const [rangePreset, setRangePreset] = React.useState<RangePreset>('week');
+  const [rangePreset, setRangePreset] = React.useState<RangePreset>('month');
+  const [selectedMonthValue, setSelectedMonthValue] = React.useState<string>(() => getDefaultMonthValue());
   const [tmpStart, setTmpStart] = React.useState<string>(() => formatDateOnlyInJakarta(startDate));
   const [tmpEnd, setTmpEnd] = React.useState<string>(() => formatDateOnlyInJakarta(endDate));
+  const [tmpDate, setTmpDate] = React.useState<string>(() => formatDateOnlyInJakarta(startDate));
+  const [tmpWeek, setTmpWeek] = React.useState<string>(() => weekValueFromDate(startDate));
 
   React.useEffect(() => {
     setTmpStart(formatDateOnlyInJakarta(startDate));
     setTmpEnd(formatDateOnlyInJakarta(endDate));
+    // keep single-date picker in sync when start==end
+    if (startDate.getTime() === endDate.getTime()) setTmpDate(formatDateOnlyInJakarta(startDate));
+    // sync week picker when range matches an ISO week Monday..Sunday
+    try {
+      const maybeWeek = weekValueFromDate(startDate);
+      const r = weekRangeFromValue(maybeWeek);
+      if (r && r.start.getFullYear() === startDate.getFullYear() && r.start.getMonth() === startDate.getMonth() && r.start.getDate() === startDate.getDate() && r.end.getFullYear() === endDate.getFullYear() && r.end.getMonth() === endDate.getMonth() && r.end.getDate() === endDate.getDate()) {
+        setTmpWeek(maybeWeek);
+      }
+    } catch (e) {}
   }, [startDate, endDate]);
 
   const startRange = formatDateOnlyInJakarta(startDate);
   const endRange = formatDateOnlyInJakarta(endDate);
-  const { data: summary, loading: summaryLoading } = useRangeSummary(startRange, endRange);
-  const { kpis, loading: kpisLoading } = useKpis(startRange, endRange);
-  const { data: dashboardSummary, loading: dashboardLoading } = useDashboardSummary();
+  const isFullMonthSelection = startDate.getDate() === 1 && endDate.getDate() === new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate() && startDate.getMonth() === endDate.getMonth() && startDate.getFullYear() === endDate.getFullYear();
+  const useBusinessDayForCurrentRange = false;
+  const { data: summary, loading: summaryLoading } = useRangeSummary(startRange, endRange, useBusinessDayForCurrentRange);
+  const { kpis, loading: kpisLoading } = useKpis(startRange, endRange, useBusinessDayForCurrentRange);
+  const { data: dashboardSummary, loading: dashboardLoading } = useDashboardSummary(startRange, endRange, useBusinessDayForCurrentRange);
+
+  const monthOptions = React.useMemo(() => {
+    const options = [] as Array<{ value: string; label: string }>;
+    const today = new Date();
+    for (let i = 0; i < 24; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const value = getDefaultMonthValue(date);
+      const label = date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+      options.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
+    }
+    return options;
+  }, []);
 
   const applyPreset = (preset: RangePreset) => {
     const today = new Date();
-    const end = new Date(today);
+    let end = new Date(today);
     let start = new Date(today);
 
     if (preset === 'day') {
@@ -472,15 +628,31 @@ export default function DashboardPage() {
       end.setHours(23, 59, 59, 999);
     } else if (preset === 'month') {
       start = new Date(today.getFullYear(), today.getMonth(), 1);
+      end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      end.setHours(23, 59, 59, 999);
     } else {
       start = new Date(startDate);
     }
 
     setRangePreset(preset);
+    if (preset === 'month') {
+      setSelectedMonthValue(getDefaultMonthValue(start));
+    }
     setStartDate(start);
     setEndDate(end);
     setTmpStart(formatDateOnlyInJakarta(start));
     setTmpEnd(formatDateOnlyInJakarta(end));
+    setPickerOpen(false);
+  };
+
+  const applyMonthSelection = (monthValue: string) => {
+    const monthRange = getMonthRange(monthValue);
+    setSelectedMonthValue(monthValue);
+    setStartDate(monthRange.start);
+    setEndDate(monthRange.end);
+    setTmpStart(formatDateOnlyInJakarta(monthRange.start));
+    setTmpEnd(formatDateOnlyInJakarta(monthRange.end));
+    setRangePreset('month');
     setPickerOpen(false);
   };
 
@@ -498,25 +670,77 @@ export default function DashboardPage() {
           <h1>Ringkasan Performa Papi Kopi</h1>
         </div>
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8, justifyContent: 'flex-end' }}>
-            {(['day', 'week', 'month'] as RangePreset[]).map((preset) => (
-              <button
-                key={preset}
-                onClick={() => applyPreset(preset)}
-                className={`btn secondary ${rangePreset === preset ? 'active' : ''}`}
-                style={{ padding: '6px 10px', fontSize: 12, border: rangePreset === preset ? '1px solid #0f766e' : '1px solid #d1d5db', background: rangePreset === preset ? '#ccfbf1' : '#fff', color: rangePreset === preset ? '#115e59' : '#374151' }}
-              >
-                {preset === 'day' ? 'Hari' : preset === 'week' ? 'Minggu' : 'Bulan'}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', alignItems: 'center' }}>
+              {(['day', 'week', 'month'] as RangePreset[]).map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => applyPreset(preset)}
+                  className={`btn secondary ${rangePreset === preset ? 'active' : ''}`}
+                  style={{ padding: '6px 10px', fontSize: 12, border: rangePreset === preset ? '1px solid #0f766e' : '1px solid #d1d5db', background: rangePreset === preset ? '#ccfbf1' : '#fff', color: rangePreset === preset ? '#115e59' : '#374151' }}
+                >
+                  {preset === 'day' ? 'Hari' : preset === 'week' ? 'Minggu' : 'Bulan'}
+                </button>
+              ))}
+
+              <button className="date-range" aria-expanded={pickerOpen} onClick={() => { setTmpStart(formatDateOnlyInJakarta(startDate)); setTmpEnd(formatDateOnlyInJakarta(endDate)); setPickerOpen((s) => !s); }} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #0f766e', background: '#ccfbf1', color: '#115e59' }}>
+                {formatRangeLabel(startDate, endDate)}
               </button>
-            ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', padding: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              <label htmlFor="dateSelect" style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', marginRight: 6 }}>Tanggal</label>
+              <input
+                id="dateSelect"
+                type="date"
+                value={tmpDate}
+                onChange={(e) => {
+                  setTmpDate(e.target.value);
+                  const d = parseDateOnlyAsJakarta(e.target.value);
+                  if (!isNaN(d.getTime())) {
+                    setStartDate(d);
+                    setEndDate(d);
+                    setTmpStart(formatDateOnlyInJakarta(d));
+                    setTmpEnd(formatDateOnlyInJakarta(d));
+                    setRangePreset('day');
+                    setSelectedMonthValue(getDefaultMonthValue(d));
+                  }
+                }}
+                style={{ border: '1px solid #e5e7eb', borderRadius: 6, background: '#fff', padding: '6px 8px', fontSize: 13, color: '#374151' }}
+              />
+
+              <label htmlFor="weekSelect" style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', marginLeft: 8 }}>Minggu</label>
+              <input
+                id="weekSelect"
+                type="week"
+                value={tmpWeek}
+                onChange={(e) => {
+                  setTmpWeek(e.target.value);
+                  const r = weekRangeFromValue(e.target.value);
+                  if (r) {
+                    setStartDate(r.start);
+                    setEndDate(r.end);
+                    setTmpStart(formatDateOnlyInJakarta(r.start));
+                    setTmpEnd(formatDateOnlyInJakarta(r.end));
+                    setRangePreset('week');
+                    setSelectedMonthValue(getDefaultMonthValue(r.start));
+                  }
+                }}
+                style={{ border: '1px solid #e5e7eb', borderRadius: 6, background: '#fff', padding: '6px 8px', fontSize: 13, color: '#374151' }}
+              />
+
+              <label htmlFor="monthSelect" style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', marginLeft: 6 }}>Bulan</label>
+              <input
+                id="monthSelect"
+                type="month"
+                value={selectedMonthValue}
+                onChange={(e) => applyMonthSelection(e.target.value)}
+                style={{ border: '1px solid #e5e7eb', borderRadius: 6, background: '#fff', padding: '6px 8px', fontSize: 13, color: '#374151' }}
+              />
+
+              {/* range button moved to presets row */}
+            </div>
           </div>
-          <button className="date-range" onClick={() => {
-            setTmpStart(formatDateOnlyInJakarta(startDate));
-            setTmpEnd(formatDateOnlyInJakarta(endDate));
-            setPickerOpen((s) => !s);
-          }} aria-expanded={pickerOpen}>
-            {formatRangeLabel(startDate, endDate)}
-          </button>
           {pickerOpen && (
             <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 40, background: '#fff', border: '1px solid #e5e7eb', boxShadow: '0 6px 18px rgba(15,23,42,0.08)', padding: 12, borderRadius: 8, minWidth: 260 }}>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>

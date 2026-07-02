@@ -1,0 +1,404 @@
+[
+  {
+    "id": "9996847e-25ed-4218-a534-9bb2efc56ca0",
+    "email": "fachreinrachman26@gmail.com",
+    "name": "Rachman",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T02:00:35.419136",
+    "investor_profile": {
+      "id": "e20901d3-3595-4cd1-bed7-f4cb7cc979d7",
+      "investor_id": "9996847e-25ed-4218-a534-9bb2efc56ca0",
+      "account_holder": "Rachman",
+      "bank_name": "Mandiri",
+      "account_number": "1630001835225",
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "fb611a75-9d26-4b55-b102-7765b1c7b8d5",
+        "investor_id": "9996847e-25ed-4218-a534-9bb2efc56ca0",
+        "outlet_id": "8a5d3c53-2c59-4948-aeaf-497bf5b3d89b",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2026-01-01",
+        "outlet": {
+          "id": "8a5d3c53-2c59-4948-aeaf-497bf5b3d89b",
+          "name": "Papi 2212"
+        }
+      }
+    ]
+  },
+  {
+    "id": "c6cbb600-0fa3-41ee-9fa8-d94b601eeb5e",
+    "email": "andilala@gmail.com",
+    "name": "Andi Lala",
+    "phone": "081947395712",
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-05-30T23:53:33.498796",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "d05c42b6-f721-4f97-8df2-80f437d45bb0",
+        "investor_id": "c6cbb600-0fa3-41ee-9fa8-d94b601eeb5e",
+        "outlet_id": "46bac30c-133a-4f38-ae4d-db404f1feee0",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2025-04-01",
+        "outlet": {
+          "id": "46bac30c-133a-4f38-ae4d-db404f1feee0",
+          "name": "Papi 2207"
+        }
+      }
+    ]
+  },
+  {
+    "id": "46ed8e0f-f0e3-48d3-9082-363f3e5b5fa8",
+    "email": "iradiansoemantri@gmail.com",
+    "name": "Ira Dianartati",
+    "phone": "0878-8181-1069",
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T02:05:54.159739",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "85851a8c-abe6-4065-9275-901e3fe4b9b1",
+        "investor_id": "46ed8e0f-f0e3-48d3-9082-363f3e5b5fa8",
+        "outlet_id": "eb1328dd-8172-4f78-8609-1fc2d914139a",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2026-03-31",
+        "outlet": {
+          "id": "eb1328dd-8172-4f78-8609-1fc2d914139a",
+          "name": "Papi 2204"
+        }
+      }
+    ]
+  },
+  {
+    "id": "a998d267-b707-490f-9729-b860464e3d9d",
+    "email": "suwidahdedeh@gmail.com",
+    "name": "Dedeh Suwidah",
+    "phone": "0817-4869-234",
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T02:18:50.530549",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "01fe623c-abea-4413-a94f-5ae7f09490d7",
+        "investor_id": "a998d267-b707-490f-9729-b860464e3d9d",
+        "outlet_id": "616f03f1-9841-4c60-8c3b-1ba964f18a26",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2025-01-01",
+        "outlet": {
+          "id": "616f03f1-9841-4c60-8c3b-1ba964f18a26",
+          "name": "Papi 2202"
+        }
+      }
+    ]
+  },
+  {
+    "id": "9c60ca2e-7cba-422b-91dd-bdc26390dae1",
+    "email": "romibackdoor@gmail.com",
+    "name": "Romi Ramdani",
+    "phone": "081220779977",
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T02:22:15.006641",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "ce1073ce-b5fd-4840-99fd-a15cc8cc11ed",
+        "investor_id": "9c60ca2e-7cba-422b-91dd-bdc26390dae1",
+        "outlet_id": "264efacd-5a9c-4050-b0cf-7e6fb58416b4",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2025-01-01",
+        "outlet": {
+          "id": "264efacd-5a9c-4050-b0cf-7e6fb58416b4",
+          "name": "Papi 2206"
+        }
+      },
+      {
+        "id": "0c055f64-f09b-42bc-adae-681e0c34072f",
+        "investor_id": "9c60ca2e-7cba-422b-91dd-bdc26390dae1",
+        "outlet_id": "14e50f48-a5c2-464e-a573-904b58ac9ddc",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2025-01-01",
+        "outlet": {
+          "id": "14e50f48-a5c2-464e-a573-904b58ac9ddc",
+          "name": "Papi 2210"
+        }
+      }
+    ]
+  },
+  {
+    "id": "109129b1-bec5-42f8-a7b2-e94fd0b96c96",
+    "email": "zallitaputri1@gmail.com",
+    "name": "Zallita Putri",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:53:01.10059",
+    "investor_profile": {
+      "id": "677722a0-e8c7-43f4-a51d-5826b36fa533",
+      "investor_id": "109129b1-bec5-42f8-a7b2-e94fd0b96c96",
+      "account_holder": "Zallita Putri",
+      "bank_name": "BCA",
+      "account_number": "860854511",
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "99a5dc83-af9d-467a-bf23-69c0514876e6",
+        "investor_id": "109129b1-bec5-42f8-a7b2-e94fd0b96c96",
+        "outlet_id": "46bac30c-133a-4f38-ae4d-db404f1feee0",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2025-06-01",
+        "outlet": {
+          "id": "46bac30c-133a-4f38-ae4d-db404f1feee0",
+          "name": "Papi 2207"
+        }
+      }
+    ]
+  },
+  {
+    "id": "b91aeffe-00c7-471d-91c5-21a6cc7cd563",
+    "email": "aristriutomo@gmail.com",
+    "name": "Aris Tri Utomo",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:53:57.764213",
+    "investor_profile": {
+      "id": "41fd9a30-ffae-49ac-8d4a-fe076947099b",
+      "investor_id": "b91aeffe-00c7-471d-91c5-21a6cc7cd563",
+      "account_holder": "Aris Tri Utomo",
+      "bank_name": "BCA",
+      "account_number": "2800552560",
+      "routing_number": null
+    },
+    "assignments": []
+  },
+  {
+    "id": "13d24038-2614-4811-ba6b-efe7fdcb1bf4",
+    "email": "nadhiranaila1903@gmail.com",
+    "name": "Naila",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-05-06T13:24:34.26356",
+    "investor_profile": {
+      "id": "ba5adddf-9fc8-4310-ab43-8e31264622b3",
+      "investor_id": "13d24038-2614-4811-ba6b-efe7fdcb1bf4",
+      "account_holder": "Naila",
+      "bank_name": "BCA",
+      "account_number": null,
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "b1aff7be-9ff2-45b9-8284-469dcd40e2c2",
+        "investor_id": "13d24038-2614-4811-ba6b-efe7fdcb1bf4",
+        "outlet_id": "b8fd7ecf-b89d-49fc-8c2e-0064d152daac",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2024-12-01",
+        "outlet": {
+          "id": "b8fd7ecf-b89d-49fc-8c2e-0064d152daac",
+          "name": "Papi 2205"
+        }
+      }
+    ]
+  },
+  {
+    "id": "cceae90b-1a55-4511-af16-1ec4ded64d7d",
+    "email": "jenderalsigma@gmail.com",
+    "name": "Elang",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:54:42.668203",
+    "investor_profile": {
+      "id": "8c9b9ae0-1557-458f-8fd5-0643ae59f2e9",
+      "investor_id": "cceae90b-1a55-4511-af16-1ec4ded64d7d",
+      "account_holder": "Elang",
+      "bank_name": "Gopay",
+      "account_number": "70001082310616858",
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "1eb8a58b-30b4-4823-adc7-06fbee9843b4",
+        "investor_id": "cceae90b-1a55-4511-af16-1ec4ded64d7d",
+        "outlet_id": "b8fd7ecf-b89d-49fc-8c2e-0064d152daac",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2024-12-01",
+        "outlet": {
+          "id": "b8fd7ecf-b89d-49fc-8c2e-0064d152daac",
+          "name": "Papi 2205"
+        }
+      }
+    ]
+  },
+  {
+    "id": "34fb95c4-0093-4124-97c1-289f81b110e7",
+    "email": "mamaalby2025@gmail.com",
+    "name": "Bu Wanti",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:55:48.030168",
+    "investor_profile": {
+      "id": "3aabe757-3ade-4dab-abc1-b90fd2c403aa",
+      "investor_id": "34fb95c4-0093-4124-97c1-289f81b110e7",
+      "account_holder": "Bu Wanti",
+      "bank_name": "BRI",
+      "account_number": "368101030053539",
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "a8b5f4c3-abcd-464d-a0bb-c40e79ea6977",
+        "investor_id": "34fb95c4-0093-4124-97c1-289f81b110e7",
+        "outlet_id": "264efacd-5a9c-4050-b0cf-7e6fb58416b4",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2025-09-01",
+        "outlet": {
+          "id": "264efacd-5a9c-4050-b0cf-7e6fb58416b4",
+          "name": "Papi 2206"
+        }
+      }
+    ]
+  },
+  {
+    "id": "cb4d45bf-e167-4b51-bdd3-71e1a1f2772e",
+    "email": "andilalayau@gmail.com",
+    "name": "Andi Lala",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-30T11:46:46.17912",
+    "investor_profile": {
+      "id": "cbbdbe4b-bc7a-4911-88db-302d69a48d71",
+      "investor_id": "cb4d45bf-e167-4b51-bdd3-71e1a1f2772e",
+      "account_holder": "Andi Lala",
+      "bank_name": "BCA",
+      "account_number": "7750192577",
+      "routing_number": null
+    },
+    "assignments": []
+  },
+  {
+    "id": "3048ea35-9ded-4221-a9b6-d3af69036157",
+    "email": "ademaria19@gmail.com",
+    "name": "Ade Siti Maria",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:56:28.282605",
+    "investor_profile": null,
+    "assignments": []
+  },
+  {
+    "id": "c89151f8-0b18-4ebd-96b0-1b45cb153d00",
+    "email": "luckyirawannn@gmail.com",
+    "name": "Lucky Irawan",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:57:02.250875",
+    "investor_profile": {
+      "id": "f6d78fe7-8ad3-42ac-b208-5473d5d39608",
+      "investor_id": "c89151f8-0b18-4ebd-96b0-1b45cb153d00",
+      "account_holder": "Lucky Irawan",
+      "bank_name": "BCA",
+      "account_number": "4371211131",
+      "routing_number": null
+    },
+    "assignments": [
+      {
+        "id": "fe4cb6e6-592a-4c8d-a0b4-f03455033b20",
+        "investor_id": "c89151f8-0b18-4ebd-96b0-1b45cb153d00",
+        "outlet_id": "2b0b5c57-d55e-49c7-982b-2d7dd0abfcab",
+        "investment_amount": 25000000,
+        "margin_percentage": 40,
+        "status": "active",
+        "start_date": "2025-11-01",
+        "outlet": {
+          "id": "2b0b5c57-d55e-49c7-982b-2d7dd0abfcab",
+          "name": "Papi 2209"
+        }
+      }
+    ]
+  },
+  {
+    "id": "31f8d349-247a-4978-a6fb-5a9a62cdb8fa",
+    "email": "kemalshariff77@gmail.com",
+    "name": "Kemal",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:59:04.067158",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "bd4bcfa5-089f-4bcb-b888-a000b271b651",
+        "investor_id": "31f8d349-247a-4978-a6fb-5a9a62cdb8fa",
+        "outlet_id": "429c554b-0c8f-4098-900d-ec08739b9896",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2026-05-01",
+        "outlet": {
+          "id": "429c554b-0c8f-4098-900d-ec08739b9896",
+          "name": "Papi 2211"
+        }
+      }
+    ]
+  },
+  {
+    "id": "f038c76e-617f-473c-9761-5fbb79c684f6",
+    "email": "opan96@yahoo.com",
+    "name": "Sofwan Sofyan",
+    "phone": null,
+    "role": "investor",
+    "is_active": true,
+    "created_at": "2026-06-23T01:59:43.552195",
+    "investor_profile": null,
+    "assignments": [
+      {
+        "id": "8330f56d-58e3-48bf-86c2-b87628dd01f2",
+        "investor_id": "f038c76e-617f-473c-9761-5fbb79c684f6",
+        "outlet_id": "429c554b-0c8f-4098-900d-ec08739b9896",
+        "investment_amount": 12500000,
+        "margin_percentage": 20,
+        "status": "active",
+        "start_date": "2026-05-01",
+        "outlet": {
+          "id": "429c554b-0c8f-4098-900d-ec08739b9896",
+          "name": "Papi 2211"
+        }
+      }
+    ]
+  }
+]

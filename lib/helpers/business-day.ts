@@ -8,25 +8,8 @@
  * This avoids timezone drift when the UI/API receives values like YYYY-MM-DD.
  */
 export function parseDateOnlyAsJakarta(value: string | Date): Date {
-  const toJakartaParts = (date: Date) => {
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Jakarta',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const parts = formatter.formatToParts(date);
-    const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '0';
-    return {
-      year: Number(getPart('year')),
-      month: Number(getPart('month')),
-      day: Number(getPart('day')),
-    };
-  };
-
   if (value instanceof Date) {
-    const { year, month, day } = toJakartaParts(value);
-    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) - 7 * 60 * 60 * 1000);
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0) - 7 * 60 * 60 * 1000);
   }
 
   const trimmed = String(value).trim();
@@ -56,33 +39,13 @@ export function isValidDateOnly(value: string | Date): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
-function truncateToSeconds(date: Date): Date {
-  return new Date(Math.floor(date.getTime() / 1000) * 1000);
-}
-
 /**
- * Build an explicit start/end boundary for a date-only or datetime value in Asia/Jakarta.
- * Date-only values become midnight/end-of-day in Jakarta local time.
- * Datetime values keep their exact wall-clock time and ignore fractional milliseconds.
+ * Build an explicit start/end boundary for a date-only value in Asia/Jakarta.
  */
 export function getDateBoundaryInJakarta(value: string | Date, endOfDay = false): Date {
-  if (value instanceof Date) {
-    const normalized = truncateToSeconds(value);
-    return endOfDay ? new Date(normalized.getTime() + 24 * 60 * 60 * 1000 - 1000) : normalized;
-  }
-
-  const trimmed = String(value).trim();
-  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
-
-  if (!isDateOnly) {
-    const parsed = truncateToSeconds(parseTimestampAsJakarta(trimmed));
-    return parsed;
-  }
-
-  const base = parseDateOnlyAsJakarta(trimmed);
-  const normalizedBase = truncateToSeconds(base);
-  if (!endOfDay) return normalizedBase;
-  return new Date(normalizedBase.getTime() + 24 * 60 * 60 * 1000 - 1000);
+  const base = parseDateOnlyAsJakarta(value);
+  if (!endOfDay) return base;
+  return new Date(base.getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
 /**
@@ -219,7 +182,6 @@ export function formatTimestampInJakarta(
  */
 export function formatAsJakartaLocalIso(timestamp: string | Date): string {
   const date = timestamp instanceof Date ? new Date(timestamp.getTime()) : parseTimestampAsJakarta(timestamp);
-  const normalizedDate = truncateToSeconds(date);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta',
     hour12: false,
@@ -230,9 +192,10 @@ export function formatAsJakartaLocalIso(timestamp: string | Date): string {
     minute: '2-digit',
     second: '2-digit',
   });
-  const parts = formatter.formatToParts(normalizedDate);
+  const parts = formatter.formatToParts(date);
   const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+  // Append explicit Jakarta timezone offset so DB comparisons are unambiguous
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}:${getPart('second')}+07:00`;
 }
 
 export function getBusinessDayRangeLocalIso(
@@ -267,23 +230,6 @@ export function formatBusinessDay(businessDay: Date): string {
  * @param businessDayStartHour - Hour when business day resets (0-23)
  * @returns Object with start and end timestamps
  */
-function getJakartaLocalDateParts(date: Date): { year: number; month: number; day: number } {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = formatter.formatToParts(date);
-  const getPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '0';
-
-  return {
-    year: Number(getPart('year')),
-    month: Number(getPart('month')),
-    day: Number(getPart('day')),
-  };
-}
-
 export function getBusinessDayRange(
   businessDay: Date,
   businessDayStartHour: number
@@ -291,11 +237,13 @@ export function getBusinessDayRange(
   // Return start/end as UTC instants that correspond to the business day in Asia/Jakarta
   const JAKARTA_OFFSET = 7; // hours ahead of UTC
 
-  const { year, month, day } = getJakartaLocalDateParts(businessDay);
+  const year = businessDay.getFullYear();
+  const month = businessDay.getMonth();
+  const date = businessDay.getDate();
 
   // Business day start in Jakarta local -> convert to UTC by subtracting offset
-  const startUtc = truncateToSeconds(new Date(Date.UTC(year, month - 1, day, businessDayStartHour - JAKARTA_OFFSET, 0, 0, 0)));
-  const endUtc = truncateToSeconds(new Date(startUtc.getTime() + 24 * 60 * 60 * 1000 - 1000));
+  const startUtc = new Date(Date.UTC(year, month, date, businessDayStartHour - JAKARTA_OFFSET, 0, 0, 0));
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
 
   return { start: startUtc, end: endUtc };
 }

@@ -68,7 +68,7 @@ export default function ProfitLossChartServer({ data, formatCurrency }: { data: 
   const tickValues = Array.from({ length: ticks + 1 }, (_, i) => Math.round((max * i) / ticks));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="auto" role="img" aria-label="Profit and loss chart">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="Profit and loss chart">
       <rect x={0} y={0} width={width} height={height} fill="transparent" />
 
       {/* grid + y labels */}

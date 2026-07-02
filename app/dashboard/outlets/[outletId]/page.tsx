@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC } from '@/lib/helpers/business-day';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { typeLabel } from '@/lib/utils/outletTypes';
 import { Building2, ArrowLeft, DollarSign, TrendingUp, Package, Calendar, User, CreditCard, Flame } from 'lucide-react';
 
@@ -32,6 +32,7 @@ interface OutletDetails {
     total_transactions: number;
     today_revenue: number;
     today_transactions: number;
+    total_cups_sold: number;
     cash_revenue: number;
     qris_revenue: number;
   };
@@ -60,6 +61,7 @@ interface OutletDetails {
 export default function OutletDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const outletId = params.outletId as string;
   const [details, setDetails] = useState<OutletDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,8 @@ export default function OutletDetailPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/outlets/${outletId}/details?limit=100`);
+      const selectedDate = searchParams.get('date') || new Date().toISOString();
+      const res = await fetch(`/api/outlets/${outletId}/details?limit=100&date=${encodeURIComponent(selectedDate)}`);
       if (!res.ok) throw new Error('Failed to fetch details');
       const data = await res.json();
       setDetails(data);
@@ -120,6 +123,8 @@ export default function OutletDetailPage() {
       </div>
     );
   }
+
+  const totalCupsSold = Number(details.sales_summary.total_cups_sold || 0);
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -184,8 +189,8 @@ export default function OutletDetailPage() {
           <p className="text-3xl font-bold text-gray-800">{details.sales_summary.today_transactions}</p>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-lg">
-          <p className="text-gray-500 text-sm">HPP Total</p>
-          <p className="text-xl font-bold text-gray-800">{details.sales_summary.total_hpp.toLocaleString('id-ID')}</p>
+          <p className="text-gray-500 text-sm">Cups Sold</p>
+          <p className="text-3xl font-bold text-gray-800">{totalCupsSold.toLocaleString('id-ID')}</p>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-lg">
           <p className="text-gray-500 text-sm">Avg per Transaction</p>
@@ -255,7 +260,7 @@ export default function OutletDetailPage() {
                   </div>
                   <div>
                     <p className="font-semibold text-gray-800">{sale.product_name}</p>
-                    <p className="text-sm text-gray-500">{sale.quantity} units sold</p>
+                    <p className="text-sm text-gray-500">{sale.quantity} cups sold</p>
                   </div>
                 </div>
                 <p className="text-xl font-bold text-green-600">

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     // Fetch sales with outlets
     const res = await supabaseServer
       .from('sales')
-      .select('outlet_id, total_amount, hpp_total, bonus_amount, profit, created_at, outlets(id, name)')
+      .select('outlet_id, total_amount, hpp_total, bonus_amount, meal_amount, profit, created_at, outlets(id, name)')
       .gte('created_at', start)
       .lte('created_at', end);
 
@@ -52,7 +52,8 @@ export async function GET(req: Request) {
       const total = Number(r.total_amount || 0);
       const hpp = Number(r.hpp_total || 0);
       const bonus = Number(r.bonus_amount || 0);
-      const computed = total - (hpp + bonus);
+      const meal = Number(r.meal_amount || 0);
+      const computed = total - (hpp + bonus + meal);
       outletMap[id].sales += total;
       outletMap[id].profit += computed;
       outletMap[id].count += 1;

@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useAuth } from "@/app/providers/auth-provider";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getRoleFromUser } from "@/lib/admin-access";
+import type { AppUser } from "@/lib/store/auth";
 import { LogIn } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams?.get('redirect') || null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +23,30 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      router.push("/dashboard");
+      const loginResult = await login(email, password);
+      const authUser = loginResult?.user as AppUser | null;
+      const role = loginResult?.profile?.role || getRoleFromUser(authUser) || authUser?.role || authUser?.user_metadata?.role || authUser?.app_metadata?.role || null;
+
+      // If a redirect query param was provided, only follow it when the
+      // user's role matches the destination. Default to role-based root.
+      if (redirectParam) {
+        if (redirectParam.startsWith('/investor') && role === 'investor') {
+          router.push(redirectParam);
+          return;
+        }
+
+        if (!redirectParam.startsWith('/investor') && role !== 'investor') {
+          router.push(redirectParam);
+          return;
+        }
+        // otherwise fall through to role default
+      }
+
+      if (role === 'investor') {
+        router.push('/investor');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -87,5 +113,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

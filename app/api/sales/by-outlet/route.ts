@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getDateBoundaryInJakarta } from '@/lib/helpers/business-day';
+import { getDateBoundaryInJakarta, parseDateOnlyAsJakarta, getBusinessDayRange, formatAsJakartaLocalIso } from '@/lib/helpers/business-day';
+import { fetchAllPaginatedRows } from '../../../../lib/supabase-pagination';
+
+function normalizeNumber(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,6 +23,9 @@ export async function GET(request: Request) {
     const outlet_id = url.searchParams.get('outlet_id') || url.searchParams.get('outlet');
     const since = url.searchParams.get('since');
     const until = url.searchParams.get('until');
+    const businessDay = url.searchParams.get('business_day');
+    const businessDayStartHour = Number(url.searchParams.get('business_day_start_hour') ?? 4);
+    const useBusinessDay = businessDay === '1' || businessDay === 'true' || businessDay === 'yes';
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
 
     const buildQuery = () => {
@@ -24,34 +33,29 @@ export async function GET(request: Request) {
       if (outlet_id) q = q.eq('outlet_id', outlet_id);
 
       if (since) {
-        const parsed = getDateBoundaryInJakarta(since as string, false);
-        q = q.gte('created_at', parsed.toISOString());
+        const parsed = useBusinessDay
+          ? getBusinessDayRange(parseDateOnlyAsJakarta(since as string), businessDayStartHour).start
+          : getDateBoundaryInJakarta(since as string, false);
+        q = q.gte('created_at', formatAsJakartaLocalIso(parsed));
       }
       if (until) {
-        const parsed = getDateBoundaryInJakarta(until as string, true);
-        q = q.lte('created_at', parsed.toISOString());
+        const parsed = useBusinessDay
+          ? getBusinessDayRange(parseDateOnlyAsJakarta(until as string), businessDayStartHour).end
+          : getDateBoundaryInJakarta(until as string, true);
+        q = q.lte('created_at', formatAsJakartaLocalIso(parsed));
       }
 
-      // server-side: exclude zero/negative sales or refunds so all clients see the same filtered results
-      // allow zero profit transactions but exclude negative profits (refunds)
-      q = q.gt('total_amount', 0).gte('profit', 0);
-      // ensure we don't include rows dated in the future or far beyond 'now'
-      q = q.lte('created_at', new Date().toISOString()).order('created_at', { ascending: true });
+      q = q.gte('total_amount', 0);
+      q = q.lte('created_at', formatAsJakartaLocalIso(new Date())).order('created_at', { ascending: true });
       return q;
     };
 
-    const allRows: any[] = [];
-    const pageSize = 1000;
-    let pageStart = 0;
-
-    while (true) {
-      const pageQuery = buildQuery().range(pageStart, pageStart + pageSize - 1);
-      const { data: pageData, error } = await pageQuery;
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      if (!pageData || pageData.length === 0) break;
-      allRows.push(...(pageData as any[]));
-      if (pageData.length < pageSize) break;
-      pageStart += pageSize;
+    let allRows: any[] = [];
+    try {
+      allRows = await fetchAllPaginatedRows<any>(buildQuery());
+      allRows = (allRows || []).filter((row) => normalizeNumber(row?.total_amount) >= 0);
+    } catch (error: any) {
+      return NextResponse.json({ error: error?.message || String(error) }, { status: 500 });
     }
 
     // Normalize result: fetch barista names for barista_id values
@@ -92,10 +96,11 @@ export async function GET(request: Request) {
 
     const group = url.searchParams.get('group');
     const meta = {
-      requested: { outlet_id, since, until, group },
+      requested: { outlet_id, since, until, group, business_day: useBusinessDay, business_day_start_hour: businessDayStartHour },
       rowsFetched: allRows.length,
       normalizedCount: normalized.length,
       sampleIds: allRows.slice(0, 5).map((r) => r.id),
+      sumTotalAmount: allRows.reduce((sum, row) => sum + normalizeNumber(row?.total_amount), 0),
     };
 
     // support server-side monthly aggregation to reduce client work

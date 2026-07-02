@@ -2,25 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title as ChartTitle,
-  Tooltip as ChartTooltip,
-  Legend as ChartLegend,
-} from 'chart.js';
-import { format } from 'date-fns';
-import { getBusinessDayDate, getBusinessDayRange, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTitle, ChartTooltip, ChartLegend);
+import { format, subDays, startOfDay } from 'date-fns';
 
 interface DailySalesData {
   date: string;
-  dateLabel: string;
   sales: number;
   revenue: number;
   orders: number;
@@ -45,20 +30,28 @@ export default function DailySummaryReport() {
   const [data, setData] = useState<DailySalesData[]>([]);
   const [rangeStats, setRangeStats] = useState({ totalSales: 0, totalOrders: 0, avgOrderValue: 0, profit: 0 });
   const [prevRangeStats, setPrevRangeStats] = useState({ totalSales: 0, totalOrders: 0 });
-  const localYMD = (d: Date) => formatDateOnlyInJakarta(d);
+  const localYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
 
   const [startDate, setStartDate] = useState(() => {
-    const currentBusinessDay = getBusinessDayDate(new Date(), 4);
-    const startDate = new Date(currentBusinessDay);
-    startDate.setDate(startDate.getDate() - 6);
-    return localYMD(startDate);
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return localYMD(d);
   });
-  const [endDate, setEndDate] = useState(() => {
-    const currentBusinessDay = getBusinessDayDate(new Date(), 4);
-    return localYMD(currentBusinessDay);
-  });
+  const [endDate, setEndDate] = useState(() => localYMD(new Date()));
   const [outletId, setOutletId] = useState<string | null>(null);
   const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
+  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({
+    revenue: true,
+    hpp: true,
+    bonus: true,
+    meal: true,
+    profit: true,
+  });
 
   // fetches happen after functions are declared
 
@@ -73,48 +66,35 @@ export default function DailySummaryReport() {
 
   const fetchSalesData = async (opts?: { start?: string; end?: string; outlet?: string | null }) => {
     try {
+      console.time('fetchSalesData');
       setLoading(true);
       const sRaw = opts?.start ?? startDate;
       const eRaw = opts?.end ?? endDate;
-      const s = formatDateOnlyInJakarta(parseDateOnlyAsJakarta(sRaw));
-      const e = formatDateOnlyInJakarta(parseDateOnlyAsJakarta(eRaw));
+      const s = typeof sRaw === 'string' ? sRaw : localYMD(new Date(sRaw));
+      const e = typeof eRaw === 'string' ? eRaw : localYMD(new Date(eRaw));
       const outlet = opts?.outlet ?? outletId;
 
       const q = new URLSearchParams();
       if (s) q.set('start', s);
       if (e) q.set('end', e);
       if (outlet) q.set('outlet', outlet);
+      q.set('business_day', '1');
+      q.set('business_day_start_hour', '4');
 
       const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
       const json = await res.json();
       if (json?.data) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const chartData = (json.data as RawDaily[])
-          .slice()
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map((r) => {
-            const jakartaLabel = (() => {
-              if (!r.date) return '';
-              const parts = r.date.split('-');
-              if (parts.length !== 3) return r.date;
-              const [year, month, day] = parts;
-              const monthIndex = Number(month) - 1;
-              if (Number.isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) return r.date;
-              return `${day} ${monthNames[monthIndex]}`;
-            })();
-
-            return {
-              date: r.date,
-              dateLabel: jakartaLabel,
-              sales: r.revenue,
-              revenue: r.revenue,
-              orders: r.orders,
-              profit: r.profit,
-              hpp: r.hpp ?? 0,
-              bonus: r.bonus ?? 0,
-              meal: r.meal ?? 0,
-            };
-          });
+        // convert date key to label (Mon/Tue)
+        const chartData = (json.data as RawDaily[]).map((r) => ({
+          date: format(new Date(r.date), 'EEE').substring(0, 3),
+          sales: r.revenue,
+          revenue: r.revenue,
+          orders: r.orders,
+          profit: r.profit,
+          hpp: r.hpp ?? 0,
+          bonus: r.bonus ?? 0,
+          meal: r.meal ?? 0,
+        }));
         setData(chartData);
       }
 
@@ -130,12 +110,17 @@ export default function DailySummaryReport() {
       setRangeStats({ totalSales: curTotals.revenue, totalOrders: curTotals.orders, avgOrderValue: avgVal, profit: curTotals.profit });
 
       // Calculate previous range (same length immediately before startDate)
-      const sDate = parseDateOnlyAsJakarta(s);
-      const eDate = parseDateOnlyAsJakarta(e);
-      const dayCount = Math.round((eDate.getTime() - sDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-      const prevEnd = new Date(eDate.getTime() - 24 * 60 * 60 * 1000);
-      const prevStart = new Date(prevEnd.getTime() - (dayCount - 1) * 24 * 60 * 60 * 1000);
-      const prevQ = new URLSearchParams({ start: formatDateOnlyInJakarta(prevStart), end: formatDateOnlyInJakarta(prevEnd) });
+      const sDate = new Date(s);
+      const eDate = new Date(e);
+      const dayCount = Math.round((eDate.getTime() - startOfDay(sDate).getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      const prevEnd = subDays(startOfDay(sDate), 1);
+      const prevStart = subDays(prevEnd, dayCount - 1);
+      const prevQ = new URLSearchParams({
+        start: format(prevStart, 'yyyy-MM-dd'),
+        end: format(prevEnd, 'yyyy-MM-dd'),
+        business_day: '1',
+        business_day_start_hour: '4',
+      });
       try {
         const pres = await fetch(`/api/reports/daily-summary?${prevQ.toString()}`);
         const pjson = await pres.json();
@@ -147,16 +132,19 @@ export default function DailySummaryReport() {
         setPrevRangeStats({ totalSales: 0, totalOrders: 0 });
       }
 
-      // Count units (cups) in this range by scanning /api/sales/by-outlet (items.quantity)
+      // Count units (cups) in this range by scanning /api/sales/by-outlet with the same business-day boundaries
       try {
-        const resItems = await fetch('/api/sales/by-outlet');
+        const qItems = new URLSearchParams({
+          since: s,
+          until: e,
+          business_day: '1',
+          business_day_start_hour: '4',
+        });
+        if (outlet) qItems.set('outlet_id', outlet);
+        const resItems = await fetch(`/api/sales/by-outlet?${qItems.toString()}`);
         const itemsJson = await resItems.json();
         const rawSales = Array.isArray(itemsJson) ? itemsJson : (Array.isArray(itemsJson?.sales) ? itemsJson.sales : []);
-        const businessStart = getBusinessDayRange(parseDateOnlyAsJakarta(s), 4).start;
-        const businessEnd = getBusinessDayRange(parseDateOnlyAsJakarta(e), 4).end;
         const units = rawSales.reduce((sum: number, srow: any) => {
-          const t = parseDateOnlyAsJakarta(String(srow.created_at || ''));
-          if (Number.isNaN(t.getTime()) || t.getTime() < businessStart.getTime() || t.getTime() > businessEnd.getTime()) return sum;
           const items = Array.isArray(srow.sale_items)
             ? srow.sale_items
             : Array.isArray(srow.items)
@@ -174,6 +162,7 @@ export default function DailySummaryReport() {
       console.error('Error fetching sales data:', err);
     } finally {
       setLoading(false);
+      console.timeEnd('fetchSalesData');
     }
   };
 
@@ -215,6 +204,10 @@ export default function DailySummaryReport() {
     URL.revokeObjectURL(url);
   };
 
+  const toggleSeries = (key: string) => {
+    setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const calculateChange = (today: number, yesterday: number): string => {
     if (yesterday === 0) return '0%';
     const change = ((today - yesterday) / yesterday) * 100;
@@ -230,46 +223,31 @@ export default function DailySummaryReport() {
     }).format(amount);
   };
 
+  const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number; lines: string[] }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    lines: [],
+  });
+
+  const showTooltip = (e: React.MouseEvent, lines: string[]) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltip({ visible: true, x: rect.left + rect.width / 2, y: rect.top - 8, lines });
+  };
+  const moveTooltip = (e: React.MouseEvent) => {
+    setTooltip((t) => ({ ...t, x: e.clientX, y: e.clientY - 12 }));
+  };
+  const hideTooltip = () => setTooltip({ visible: false, x: 0, y: 0, lines: [] });
+
   if (loading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-3">
-              <div className="h-4 w-24 bg-slate-200 rounded" />
-              <div className="h-10 bg-slate-100 rounded" />
-            </div>
-            <div className="space-y-3">
-              <div className="h-4 w-24 bg-slate-200 rounded" />
-              <div className="h-10 bg-slate-100 rounded" />
-            </div>
-            <div className="space-y-3">
-              <div className="h-4 w-24 bg-slate-200 rounded" />
-              <div className="h-10 bg-slate-100 rounded" />
-            </div>
-            <div className="space-y-3">
-              <div className="h-4 w-24 bg-slate-200 rounded" />
-              <div className="h-10 bg-slate-100 rounded w-full md:w-3/4" />
-            </div>
-          </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="animate-pulse bg-white rounded-lg shadow p-4 h-24" />
+            ))}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-lg shadow p-4 h-28" />
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-lg shadow p-4 h-28" />
-          ))}
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="h-6 w-48 bg-slate-200 rounded mb-4" />
-          <div className="h-80 bg-slate-100 rounded" />
-        </div>
+        <div className="bg-white rounded-lg shadow-md p-6 h-96 animate-pulse" />
       </div>
     );
   }
@@ -375,98 +353,124 @@ export default function DailySummaryReport() {
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Sales Trend</h2>
-        <p className="text-sm text-gray-500 mb-4">{format(parseDateOnlyAsJakarta(startDate), 'd MMM yyyy')} – {format(parseDateOnlyAsJakarta(endDate), 'd MMM yyyy')}</p>
-        <div style={{ width: '100%', minHeight: 360 }}>
-          <Line
-            data={{
-              labels: data.map((d) => d.dateLabel || format(parseDateOnlyAsJakarta(d.date), 'd MMM')),
-              datasets: [
-                {
-                  label: 'Revenue',
-                  data: data.map((d) => d.revenue),
-                  borderColor: '#8884d8',
-                  backgroundColor: 'rgba(136, 132, 216, 0.2)',
-                  tension: 0.35,
-                  fill: false,
-                },
-                {
-                  label: 'HPP',
-                  data: data.map((d) => d.hpp ?? 0),
-                  borderColor: '#e55353',
-                  backgroundColor: 'rgba(229, 83, 83, 0.2)',
-                  tension: 0.35,
-                  fill: false,
-                },
-                {
-                  label: 'Bonus',
-                  data: data.map((d) => d.bonus ?? 0),
-                  borderColor: '#7c3aed',
-                  backgroundColor: 'rgba(124, 58, 237, 0.2)',
-                  tension: 0.35,
-                  fill: false,
-                },
-                {
-                  label: 'Meal',
-                  data: data.map((d) => d.meal ?? 0),
-                  borderColor: '#f59e0b',
-                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
-                  tension: 0.35,
-                  fill: false,
-                },
-                {
-                  label: 'Profit',
-                  data: data.map((d) => d.profit),
-                  borderColor: '#22c55e',
-                  backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                  tension: 0.35,
-                  fill: false,
-                },
-              ],
-            }}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              interaction: {
-                mode: 'index',
-                intersect: false,
-              },
-              plugins: {
-                legend: {
-                  position: 'bottom',
-                },
-                tooltip: {
-                  mode: 'index',
-                  intersect: false,
-                },
-                title: {
-                  display: false,
-                },
-              },
-              scales: {
-                x: {
-                  title: {
-                    display: true,
-                    text: 'Date',
-                  },
-                },
-                y: {
-                  title: {
-                    display: true,
-                    text: 'Amount (IDR)',
-                  },
-                  ticks: {
-                    callback: (value) => {
-                      if (typeof value === 'number') {
-                        return new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(value);
-                      }
-                      return value;
-                    },
-                  },
-                },
-              },
-            }}
-          />
+        <h2 className="text-xl font-bold text-gray-800 mb-4">7-Day Sales Trend</h2>
+        <div style={{ width: '100%', overflowX: 'auto', position: 'relative' }}>
+          {/* Tooltip */}
+          {tooltip.visible && (
+            <div style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '6px 8px', borderRadius: 6, fontSize: 12, pointerEvents: 'none', zIndex: 50 }}>
+              {tooltip.lines.map((l, i) => (
+                <div key={i}>{l}</div>
+              ))}
+            </div>
+          )}
+
+          <svg viewBox={`0 0 800 400`} width="100%" height={400} preserveAspectRatio="xMinYMid meet">
+            <line x1={60} y1={20} x2={60} y2={360} stroke="#eee" />
+            {(() => {
+              const barW = (680 / Math.max(1, data.length));
+              // scale against revenue, hpp, bonus and meal so all bars fit
+              const max = Math.max(1, ...data.map((dd) => Math.max(dd.revenue || 0, dd.hpp || 0, dd.bonus || 0, dd.meal || 0)));
+
+              return (
+                <>
+                  {data.map((d, i) => {
+                    const groupX = 60 + i * barW;
+                    const padding = barW * 0.1;
+                    const revenueW = barW * 0.5; // main bar width
+                    const smallW = barW * 0.12; // width for hpp/bonus/meal bars
+                    const gap = 4;
+                    const revenueX = groupX + padding;
+                    const smallStartX = revenueX + revenueW + gap;
+                    const hppX = smallStartX;
+                    const bonusX = hppX + smallW + gap;
+                    const mealX = bonusX + smallW + gap;
+
+                    const revenueH = ((d.revenue || 0) / max) * 300;
+                    const hppH = ((d.hpp || 0) / max) * 300;
+                    const bonusH = ((d.bonus || 0) / max) * 300;
+                    const mealH = ((d.meal || 0) / max) * 300;
+
+                    return (
+                      <g key={d.date}>
+                        {/* Revenue bar */}
+                        <rect
+                          x={revenueX}
+                          y={360 - revenueH}
+                          width={revenueW}
+                          height={revenueH}
+                          fill="#8884d8"
+                          onMouseEnter={(e) => showTooltip(e, [`Revenue: ${formatCurrency(d.revenue || 0)}`, `Orders: ${d.orders || 0}`])}
+                          onMouseMove={moveTooltip}
+                          onMouseLeave={hideTooltip}
+                        />
+                        {/* HPP bar (if enabled) */}
+                        {visibleSeries.hpp && (
+                          <rect
+                            x={hppX}
+                            y={360 - hppH}
+                            width={smallW}
+                            height={hppH}
+                            fill="#e55353"
+                            onMouseEnter={(e) => showTooltip(e, [`HPP: ${formatCurrency(d.hpp || 0)}`])}
+                            onMouseMove={moveTooltip}
+                            onMouseLeave={hideTooltip}
+                          />
+                        )}
+                        {/* Stacked Meal + Bonus bar (meal at bottom, bonus on top) */}
+                        {((visibleSeries.meal && (d.meal || 0) > 0) || (visibleSeries.bonus && (d.bonus || 0) > 0)) && (() => {
+                          const stackX = bonusX; // place stack where bonus was
+                          const stackMealH = mealH;
+                          const stackBonusH = bonusH;
+                          const stackTotalH = stackMealH + stackBonusH;
+                          const stackY = 360 - stackTotalH;
+
+                          return (
+                            <g>
+                              {/* meal (bottom) */}
+                              {visibleSeries.meal && stackMealH > 0 && (
+                                <rect
+                                  x={stackX}
+                                  y={360 - stackMealH}
+                                  width={smallW}
+                                  height={stackMealH}
+                                  fill="#f59e0b"
+                                />
+                              )}
+                              {/* bonus (top) */}
+                              {visibleSeries.bonus && stackBonusH > 0 && (
+                                <rect
+                                  x={stackX}
+                                  y={360 - (stackMealH + stackBonusH)}
+                                  width={smallW}
+                                  height={stackBonusH}
+                                  fill="#7c3aed"
+                                />
+                              )}
+                              {/* hover area shows both lines */}
+                              <rect
+                                x={stackX}
+                                y={stackY}
+                                width={smallW}
+                                height={Math.max(1, stackTotalH)}
+                                fill="transparent"
+                                onMouseEnter={(e) => showTooltip(e, [
+                                  `Meal: ${formatCurrency(d.meal || 0)}`,
+                                  `Bonus: ${formatCurrency(d.bonus || 0)}`,
+                                ])}
+                                onMouseMove={moveTooltip}
+                                onMouseLeave={hideTooltip}
+                              />
+                            </g>
+                          );
+                        })()}
+                        <text x={groupX + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${groupX + barW * 0.35},378)`}>{d.date}</text>
+                      </g>
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </svg>
         </div>
       </div>
     </div>

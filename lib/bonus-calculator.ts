@@ -303,6 +303,18 @@ export function calculateMealAllowance(
 }
 
 /**
+ * Calculate investor share from profit using a percentage.
+ */
+export function calculateInvestorShare(
+  profit: number,
+  sharePercentage: number
+): number {
+  const safeProfit = Number.isFinite(profit) ? profit : 0;
+  const safeSharePercentage = Number.isFinite(sharePercentage) ? sharePercentage : 0;
+  return Math.round(safeProfit * (safeSharePercentage / 100));
+}
+
+/**
  * Calculate daily wage (Upah Harian = Bonus + Uang Makan)
  *
  * @param omset - Total omset/sales amount

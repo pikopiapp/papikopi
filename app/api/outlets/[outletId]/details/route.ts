@@ -10,6 +10,12 @@ const supabase = createClient(
 export async function GET(request: NextRequest, { params }: { params: Promise<{ outletId: string }> }) {
   try {
     const { outletId } = await params;
+    const url = new URL(request.url);
+    const dateParam = url.searchParams.get('date');
+    const BUSINESS_DAY_START_HOUR = 4;
+    const selectedDate = dateParam ? new Date(dateParam) : new Date();
+    const selectedBusinessDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+    const { start: businessDayStart, end: businessDayEnd } = getBusinessDayRange(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
     
     // Get outlet info
     const { data: outlet, error: outletError } = await supabase
@@ -87,22 +93,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const totalBonus = (salesWithData || []).reduce((sum, s) => sum + Number(s.bonus_amount), 0);
     const totalHpp = (salesWithData || []).reduce((sum, s) => sum + Number(s.hpp_total), 0);
     const totalTransactions = salesWithData?.length || 0;
+    const totalCupsSold = (salesWithData || []).reduce((sum, sale) => {
+      const items = Array.isArray(sale.sale_items) ? sale.sale_items : [];
+      return sum + items.reduce((itemSum: number, item: any) => itemSum + Number(item.quantity || 0), 0);
+    }, 0);
 
-    // Today's sales (business day in Asia/Jakarta with start hour 04:00)
-    const BUSINESS_DAY_START_HOUR = 4;
-    const selectedBizDate = getBusinessDayDate(new Date(), BUSINESS_DAY_START_HOUR);
-    // Prefer API-provided UTC business-day window per sale when available
+    // Sales for the selected business day (Asia/Jakarta, 04:00 cutoff)
     const todaysSales = (salesWithData || []).filter((s: any) => {
       try {
-        const startUtc = s.business_day_start_utc;
-        const endUtc = s.business_day_end_utc;
         const createdUtc = s.created_at_utc || (s.created_at_jakarta ? parseTimestampAsJakarta(s.created_at_jakarta).toISOString() : s.created_at);
-        if (startUtc && endUtc && createdUtc) {
-          const t = new Date(createdUtc).getTime();
-          return t >= new Date(startUtc).getTime() && t <= new Date(endUtc).getTime();
-        }
-        const saleBizDate = getBusinessDayDate(s.created_at, BUSINESS_DAY_START_HOUR);
-        return saleBizDate.getTime() === selectedBizDate.getTime();
+        if (!createdUtc) return false;
+
+        const t = new Date(createdUtc).getTime();
+        return t >= businessDayStart.getTime() && t <= businessDayEnd.getTime();
       } catch (err) {
         return false;
       }
@@ -208,7 +211,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .reduce((sum: number, s: any) => sum + Number(s.total_amount), 0);
 
     // Respect optional `limit` query param to control how many recent sales to return.
-    const url = new URL(request.url);
     const limitParam = url.searchParams.get('limit');
     const limit = limitParam ? parseInt(limitParam, 10) : 10;
 
@@ -225,6 +227,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         total_transactions: totalTransactions,
         today_revenue: todayRevenue,
         today_transactions: todayTransactions,
+        total_cups_sold: totalCupsSold,
         // Expose both today's and all-time payment breakdown; UI expects today's values here
         cash_revenue: cashRevenueToday,
         qris_revenue: qrisRevenueToday,

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
-import { parseTimestampAsJakarta, getBusinessDayRange, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
+import { parseTimestampAsJakarta, parseDateOnlyAsJakarta, formatDateOnlyInJakarta, getDateBoundaryInJakarta } from '@/lib/helpers/business-day';
 import { useRouter } from 'next/navigation';
 import { DatePicker } from '@/app/components/DatePicker';
 
@@ -52,15 +52,28 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [sortOrder, setSortOrder] = useState<'default' | 'highest' | 'lowest'>('highest');
+  const [sortOrder, setSortOrder] = useState<'default' | 'highest' | 'lowest'>('default');
   const [sortPeriod, setSortPeriod] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
 
-  const BUSINESS_DAY_START_HOUR = 4;
-  const selectedBusinessDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-  const { start: businessDayStart, end: businessDayEnd } = getBusinessDayRange(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
-  const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, BUSINESS_DAY_START_HOUR);
+  const selectedBusinessDayLabel = useMemo(() => formatDateOnlyInJakarta(selectedDate), [selectedDate]);
+  const selectedBusinessDay = useMemo(() => parseDateOnlyAsJakarta(selectedBusinessDayLabel), [selectedBusinessDayLabel]);
+  const selectedDateRangeStart = useMemo(() => getDateBoundaryInJakarta(selectedBusinessDayLabel, false), [selectedBusinessDayLabel]);
+  const selectedDateRangeEnd = useMemo(() => getDateBoundaryInJakarta(selectedBusinessDayLabel, true), [selectedBusinessDayLabel]);
+  const selectedMonthStartLabel = useMemo(() => {
+    const monthStart = new Date(selectedBusinessDay.getFullYear(), selectedBusinessDay.getMonth(), 1);
+    return formatDateOnlyInJakarta(monthStart);
+  }, [selectedBusinessDay]);
+  const selectedMonthRangeStart = useMemo(() => getDateBoundaryInJakarta(selectedMonthStartLabel, false), [selectedMonthStartLabel]);
+  const selectedWeekStartLabel = useMemo(() => {
+    const weekStart = new Date(selectedBusinessDay);
+    const day = weekStart.getDay();
+    const diffToMonday = (day + 6) % 7;
+    weekStart.setDate(weekStart.getDate() - diffToMonday);
+    return formatDateOnlyInJakarta(weekStart);
+  }, [selectedBusinessDay]);
+  const selectedWeekRangeStart = useMemo(() => getDateBoundaryInJakarta(selectedWeekStartLabel, false), [selectedWeekStartLabel]);
 
-  const fetchSales = async () => {
+  const fetchSales = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -88,7 +101,7 @@ export default function TransactionsPage() {
       }
 
       const res = await fetch(
-        `/api/sales/by-outlet?since=${encodeURIComponent(businessDaySince)}&until=${encodeURIComponent(businessDayUntil)}`
+        `/api/sales/by-outlet?since=${encodeURIComponent(selectedMonthRangeStart.toISOString())}&until=${encodeURIComponent(selectedDateRangeEnd.toISOString())}`
       );
       if (!res.ok) throw new Error('Failed to fetch sales');
 
@@ -106,16 +119,11 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedMonthRangeStart, selectedDateRangeEnd]);
 
   useEffect(() => {
     void fetchSales();
-  }, [businessDaySince, businessDayUntil]);
-
-  const filteredSales = sales.filter((sale) => {
-    const saleDate = parseTimestampAsJakarta(sale.created_at);
-    return saleDate.getTime() >= businessDayStart.getTime() && saleDate.getTime() <= businessDayEnd.getTime();
-  });
+  }, [fetchSales]);
 
   // Group by outlet - initialize ALL outlets first
   interface OutletGroup {
@@ -131,6 +139,9 @@ export default function TransactionsPage() {
     omset_today?: number;
     omset_week?: number;
     omset_month?: number;
+    units_today?: number;
+    units_week?: number;
+    units_month?: number;
   }
 
   const outletGroups: Record<string, OutletGroup> = {};
@@ -151,7 +162,7 @@ export default function TransactionsPage() {
   });
 
   // Add sales data to outlets
-  filteredSales.forEach((sale) => {
+  sales.forEach((sale) => {
     if (!outletGroups[sale.outlet_id]) {
       outletGroups[sale.outlet_id] = {
         outlet_id: sale.outlet_id,
@@ -180,53 +191,50 @@ export default function TransactionsPage() {
     outletGroups[sale.outlet_id].transaction_count += 1;
   });
 
-  // Compute omset (totals) per outlet for selected business day/week/month using business-day boundaries
-  const totalsMap: Record<string, { today: number; week: number; month: number }> = {};
+  // Compute omset and unit totals per outlet for selected business day/week/month using business-day boundaries
+  const totalsMap: Record<string, { today: number; week: number; month: number; units_today: number; units_week: number; units_month: number }> = {};
   Object.keys(outletGroups).forEach((id) => {
-    totalsMap[id] = { today: 0, week: 0, month: 0 };
+    totalsMap[id] = { today: 0, week: 0, month: 0, units_today: 0, units_week: 0, units_month: 0 };
   });
 
-  const businessWeekDay = new Date(selectedBusinessDay);
-  const day = businessWeekDay.getDay(); // 0 (Sun) - 6 (Sat)
-  const diffToMonday = (day + 6) % 7; // days to subtract to get Monday
-  businessWeekDay.setDate(businessWeekDay.getDate() - diffToMonday);
-
-  const businessDayStartDate = selectedBusinessDay;
-
-  const businessWeekStartDate = new Date(businessWeekDay);
-  const businessMonthStartDate = new Date(selectedBusinessDay.getFullYear(), selectedBusinessDay.getMonth(), 1);
-  const nextMonthStartDate = new Date(selectedBusinessDay.getFullYear(), selectedBusinessDay.getMonth() + 1, 1);
-
-  const businessDayStartRange = getBusinessDayRange(businessDayStartDate, BUSINESS_DAY_START_HOUR);
-  const businessDayEndRange = businessDayStartRange.end;
-  const businessWeekStartRange = getBusinessDayRange(businessWeekStartDate, BUSINESS_DAY_START_HOUR);
-  const businessWeekEndRange = new Date(businessWeekStartRange.start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
-  const businessMonthStartRange = getBusinessDayRange(businessMonthStartDate, BUSINESS_DAY_START_HOUR);
-  const businessMonthEndRange = new Date(getBusinessDayRange(nextMonthStartDate, BUSINESS_DAY_START_HOUR).start.getTime() - 1);
+  const businessWeekEndRange = selectedDateRangeEnd;
+  const businessMonthEndRange = selectedDateRangeEnd;
 
   // Use ALL sales, not just filtered
   sales.forEach((sale) => {
     // Parse sale timestamp as Jakarta instant (handles naive strings and microseconds)
     const sDate = parseTimestampAsJakarta(sale.created_at);
     const oid = sale.outlet_id;
-    if (!totalsMap[oid]) totalsMap[oid] = { today: 0, week: 0, month: 0 }; // Initialize if outlet not in map
-    if (sDate.getTime() >= businessDayStartRange.start.getTime() && sDate.getTime() <= businessDayEndRange.getTime()) {
+    const saleItems = getSaleItems(sale);
+    const unitCount = saleItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+    if (!totalsMap[oid]) {
+      totalsMap[oid] = { today: 0, week: 0, month: 0, units_today: 0, units_week: 0, units_month: 0 };
+    }
+
+    if (sDate.getTime() >= selectedDateRangeStart.getTime() && sDate.getTime() <= selectedDateRangeEnd.getTime()) {
       totalsMap[oid].today += Number(sale.total_amount || 0);
+      totalsMap[oid].units_today += unitCount;
     }
-    if (sDate.getTime() >= businessWeekStartRange.start.getTime() && sDate.getTime() <= businessWeekEndRange.getTime()) {
+    if (sDate.getTime() >= selectedWeekRangeStart.getTime() && sDate.getTime() <= businessWeekEndRange.getTime()) {
       totalsMap[oid].week += Number(sale.total_amount || 0);
+      totalsMap[oid].units_week += unitCount;
     }
-    if (sDate.getTime() >= businessMonthStartRange.start.getTime() && sDate.getTime() <= businessMonthEndRange.getTime()) {
+    if (sDate.getTime() >= selectedMonthRangeStart.getTime() && sDate.getTime() <= businessMonthEndRange.getTime()) {
       totalsMap[oid].month += Number(sale.total_amount || 0);
+      totalsMap[oid].units_month += unitCount;
     }
   });
 
   // Attach totals to outlet groups
   Object.values(outletGroups).forEach((og) => {
-    const t = totalsMap[og.outlet_id] || { today: 0, week: 0, month: 0 };
+    const t = totalsMap[og.outlet_id] || { today: 0, week: 0, month: 0, units_today: 0, units_week: 0, units_month: 0 };
     og.omset_today = t.today;
     og.omset_week = t.week;
     og.omset_month = t.month;
+    og.units_today = t.units_today;
+    og.units_week = t.units_week;
+    og.units_month = t.units_month;
     // attach barista name if available from baristaMap
     if (!og.barista_name) og.barista_name = baristaMap[og.outlet_id] || '';
   });
@@ -241,28 +249,30 @@ export default function TransactionsPage() {
 
   // Show all outlets (including those with zero transactions) per user request
   const visibleOutletGroups = Object.values(outletGroups);
+  const outletOrderIndex = new Map(outlets.map((outlet, index) => [outlet.id, index]));
 
-  // Get top 3 outlets by omset based on selected period
-  const top3Ids = new Set(
-    visibleOutletGroups
-      .sort((a, b) => getOmsetByPeriod(b) - getOmsetByPeriod(a))
-      .slice(0, 3)
-      .map(o => o.outlet_id)
-  );
+  // Rank outlets by daily omset on the selected date so badge 1/2/3 always follows the highest-performing outlets.
+  const rankedByOmset = [...visibleOutletGroups]
+    .map((outlet) => ({
+      outletId: outlet.outlet_id,
+      value: outlet.omset_today || 0,
+      transactionCount: outlet.transaction_count || 0,
+      outletName: outlet.outlet_name || '',
+    }))
+    .sort((a, b) => {
+      if (b.value !== a.value) return b.value - a.value;
+      if (b.transactionCount !== a.transactionCount) return b.transactionCount - a.transactionCount;
+      return a.outletName.localeCompare(b.outletName);
+    })
+    .map((item, index) => ({ ...item, rank: index }));
+
+  const rankMap = new Map(rankedByOmset.map((item) => [item.outletId, item.rank]));
 
   const getTopBadge = (outletId: string) => {
-    if (!top3Ids.has(outletId)) return null;
-    const badges = ['🥇', '🥈', '🥉'];
-    const topIndex = Array.from(top3Ids).indexOf(outletId);
-    return badges[topIndex] || null;
+    const rank = rankMap.get(outletId);
+    if (rank == null || rank >= 3) return null;
+    return String(rank + 1);
   };
-
-  // Create ranking map for gradient coloring
-  const rankedByOmset = visibleOutletGroups
-    .sort((a, b) => getOmsetByPeriod(b) - getOmsetByPeriod(a))
-    .map((outlet, index) => ({ ...outlet, rank: index }));
-
-  const rankMap = new Map(rankedByOmset.map(o => [o.outlet_id, o.rank]));
   const totalOutlets = visibleOutletGroups.length;
 
   // Function to get header background and text color based on rank
@@ -288,15 +298,21 @@ export default function TransactionsPage() {
   };
 
   // Calculate min/max for heatmap coloring (based on omset_today)
-  const sortedOutlets = Object.values(visibleOutletGroups).sort((a, b) => {
+  const sortedOutlets = [...visibleOutletGroups].sort((a, b) => {
     if (sortOrder === 'highest') {
-      return getOmsetByPeriod(b) - getOmsetByPeriod(a);
+      const order = getOmsetByPeriod(b) - getOmsetByPeriod(a);
+      if (order !== 0) return order;
+      const countOrder = b.transaction_count - a.transaction_count;
+      if (countOrder !== 0) return countOrder;
+      return a.outlet_name.localeCompare(b.outlet_name);
     } else if (sortOrder === 'lowest') {
-      return getOmsetByPeriod(a) - getOmsetByPeriod(b);
+      const order = getOmsetByPeriod(a) - getOmsetByPeriod(b);
+      if (order !== 0) return order;
+      const countOrder = a.transaction_count - b.transaction_count;
+      if (countOrder !== 0) return countOrder;
+      return a.outlet_name.localeCompare(b.outlet_name);
     } else {
-      const outletNumA = parseInt(a.outlet_name.match(/\d+$/)?.[0] || '0');
-      const outletNumB = parseInt(b.outlet_name.match(/\d+$/)?.[0] || '0');
-      return outletNumA - outletNumB;
+      return outletOrderIndex.get(a.outlet_id)! - outletOrderIndex.get(b.outlet_id)!;
     }
   });
 
@@ -320,43 +336,59 @@ export default function TransactionsPage() {
       </div>
 
       {/* Date Picker at Top */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-col gap-2">
         <div className="max-w-xs">
           <DatePicker selectedDate={selectedDate} onDateChange={setSelectedDate} />
         </div>
+        <p className="text-xs text-gray-500">
+          Omset hari ini dihitung berdasarkan tanggal yang dipilih: 00:00&nbsp;sampai&nbsp;23:59 WIB.
+        </p>
+      </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
         {/* Sort Buttons */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSortOrder('default')}
-            className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
-              sortOrder === 'default'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Default
-          </button>
-          <button
-            onClick={() => setSortOrder('highest')}
-            className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
-              sortOrder === 'highest'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Tertinggi
-          </button>
-          <button
-            onClick={() => setSortOrder('lowest')}
-            className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
-              sortOrder === 'lowest'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Terendah
-          </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSortOrder('default')}
+              aria-pressed={sortOrder === 'default'}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                sortOrder === 'default'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Default
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder('highest')}
+              aria-pressed={sortOrder === 'highest'}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                sortOrder === 'highest'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Tertinggi
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder('lowest')}
+              aria-pressed={sortOrder === 'lowest'}
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                sortOrder === 'lowest'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Terendah
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            Sort aktif: <span className="font-semibold text-gray-900">{sortOrder}</span>, periode: <span className="font-semibold text-gray-900">{sortPeriod}</span>
+          </p>
         </div>
 
         {/* Period Dropdown */}
@@ -404,7 +436,7 @@ export default function TransactionsPage() {
                 >
                   {/* Trophy Badge */}
                   {getTopBadge(outlet.outlet_id) && (
-                    <div className="absolute top-1 right-2 text-5xl">
+                    <div className="absolute top-1 right-2 text-5xl font-bold text-white">
                       {getTopBadge(outlet.outlet_id)}
                     </div>
                   )}
@@ -427,6 +459,10 @@ export default function TransactionsPage() {
                     <span className="float-right font-semibold text-gray-800">Rp{Math.round(outlet.omset_today || 0).toLocaleString('id-ID')},-</span>
                   </div>
                   <div className="border-b border-gray-200 p-3 text-sm">
+                    <span className="text-gray-600">Unit (cup) hari ini:</span>
+                    <span className="float-right font-semibold text-gray-800">{(outlet.units_today || 0).toLocaleString('id-ID')} unit</span>
+                  </div>
+                  <div className="border-b border-gray-200 p-3 text-sm">
                     <span className="text-gray-600">Omset minggu ini:</span>
                     <span className="float-right font-semibold text-gray-800">Rp{Math.round(outlet.omset_week || 0).toLocaleString('id-ID')},-</span>
                   </div>
@@ -439,17 +475,9 @@ export default function TransactionsPage() {
                 {/* Stats */}
                 <div className="p-4 bg-gray-50 border-b border-gray-200">
                   <div className="space-y-2 text-sm">
-                    <p className="text-gray-600">Total Unit (cup)</p>
+                    <p className="text-gray-600">Unit (cup) hari ini</p>
                     <p className="text-2xl font-bold text-gray-800">
-                      {outlet.transaction_count === 0
-                        ? '-'
-                        : (
-                            outlet.transactions.reduce(
-                              (sum, t) =>
-                                sum + (getSaleItems(t).reduce((s, it) => s + (Number(it.quantity) || 0), 0) || 0),
-                              0
-                            )
-                          ).toLocaleString('id-ID')}
+                      {(outlet.units_today || 0).toLocaleString('id-ID')}
                       {' '}
                       unit (cup)
                     </p>
@@ -459,6 +487,7 @@ export default function TransactionsPage() {
                 {/* Detail Button */}
                 <div className="p-4">
                   <button
+                    type="button"
                     onClick={() => outlet.transaction_count > 0 && router.push(`/dashboard/outlets/transactions/${outlet.outlet_id}?date=${selectedDate.getTime()}`)}
                     disabled={outlet.transaction_count === 0}
                     className={`w-full font-medium py-2 rounded transition-colors ${

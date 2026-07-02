@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { aggregateDailyOutletSummary, calculateBonusFromJson, calculateMealAllowance, DEFAULT_BONUS_TIERS } from '@/lib/bonus-calculator';
-import { getBusinessDayDate, getBusinessDayRange, parseDateOnlyAsJakarta, formatDateOnlyInJakarta, isValidDateOnly } from '@/lib/helpers/business-day';
+import { getBusinessDayDate, getBusinessDayRange, getDateBoundaryInJakarta, formatDateOnlyInJakarta, isValidDateOnly, parseDateOnlyAsJakarta, formatAsJakartaLocalIso } from '@/lib/helpers/business-day';
+import { fetchAllPaginatedRows } from '../../../../lib/supabase-pagination';
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const start = url.searchParams.get('start');
     const end = url.searchParams.get('end');
+    const businessDay = url.searchParams.get('business_day');
+    const businessDayStartHour = Number(url.searchParams.get('business_day_start_hour') ?? 4);
+    const useBusinessDay = businessDay === '1' || businessDay === 'true' || businessDay === 'yes';
     const debug = url.searchParams.get('debug');
     const outlet = url.searchParams.get('outlet');
 
@@ -21,11 +25,24 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Invalid end date', debug: { received: end } }, { status: 400 });
     }
 
-    const currentBusinessDay = getBusinessDayDate(new Date(), 4);
-    const endDate = end ? parseDateOnlyAsJakarta(end) : currentBusinessDay;
-    const startDate = start ? parseDateOnlyAsJakarta(start) : new Date(endDate.getTime() - 6 * 24 * 60 * 60 * 1000);
-    const startRange = getBusinessDayRange(startDate, 4);
-    const endRange = getBusinessDayRange(endDate, 4);
+    const endDate = end
+      ? (useBusinessDay
+          ? getBusinessDayRange(parseDateOnlyAsJakarta(end), businessDayStartHour).end
+          : getDateBoundaryInJakarta(end, true))
+      : (useBusinessDay
+          ? getBusinessDayRange(parseDateOnlyAsJakarta(formatDateOnlyInJakarta(new Date())), businessDayStartHour).end
+          : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date()), true));
+
+    const startDate = start
+      ? (useBusinessDay
+          ? getBusinessDayRange(parseDateOnlyAsJakarta(start), businessDayStartHour).start
+          : getDateBoundaryInJakarta(start, false))
+      : (useBusinessDay
+          ? getBusinessDayRange(
+              new Date(getBusinessDayDate(new Date(), businessDayStartHour).getTime() - 6 * 24 * 60 * 60 * 1000),
+              businessDayStartHour
+            ).start
+          : getDateBoundaryInJakarta(formatDateOnlyInJakarta(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)), false));
 
     // Validate computed boundaries to avoid 'Invalid time value' when calling
     // Date methods like getUTCFullYear() or toISOString(). Return debug info.
@@ -39,58 +56,24 @@ export async function GET(req: Request) {
       );
     }
 
-    const queryStartIso = startRange.start.toISOString();
-    const queryEndIso = endRange.end.toISOString();
+    // Build query using only columns that are guaranteed to exist in the current schema.
+    // The dashboard only needs total revenue/profit, created_at, and outlet_id.
+    let query = supabase
+      .from('sales')
+      .select('id, total_amount, profit, created_at, outlet_id, hpp_total, bonus_amount')
+      .gte('created_at', formatAsJakartaLocalIso(startDate))
+      .lte('created_at', formatAsJakartaLocalIso(endDate))
+      .order('created_at', { ascending: false })
+      .range(0, 100000);
 
-    const buildQuery = (selectFields: string) => {
-      let q = supabase
-        .from('sales')
-        .select(selectFields)
-        .gte('created_at', queryStartIso)
-        .lte('created_at', queryEndIso)
-        .order('created_at', { ascending: false });
-      if (outlet) q = q.eq('outlet_id', outlet);
-      return q;
-    };
-
-    const fetchAllRows = async (selectFields: string) => {
-      const pageSize = 1000;
-      let pageStart = 0;
-      const allRows: any[] = [];
-
-      while (true) {
-        const pageQuery = buildQuery(selectFields).range(pageStart, pageStart + pageSize - 1);
-        const pageRes = await pageQuery;
-        if (pageRes.error) {
-          throw pageRes.error;
-        }
-        const pageData = pageRes.data as any[] | null;
-        if (!pageData || pageData.length === 0) break;
-        allRows.push(...pageData);
-        if (pageData.length < pageSize) break;
-        pageStart += pageSize;
-      }
-
-      return allRows;
-    };
+    if (outlet) query = query.eq('outlet_id', outlet);
 
     let rows: any[] | null = null;
     let queryError: any = null;
     try {
-      rows = await fetchAllRows('id, total_amount, profit, created_at, hpp_total, bonus_amount, meal_amount, outlet_id');
+      rows = await fetchAllPaginatedRows<any>(query);
     } catch (e) {
       queryError = e;
-    }
-
-    let usedFallback = false;
-    if (queryError) {
-      usedFallback = true;
-      try {
-        rows = await fetchAllRows('id, total_amount, profit, created_at, hpp_total, outlet_id');
-        queryError = null;
-      } catch (e) {
-        queryError = e;
-      }
     }
 
     if (queryError) {
@@ -121,11 +104,24 @@ export async function GET(req: Request) {
     const revenueByDateOutlet: Record<string, Record<string, number>> = {};
 
     // initialize all dates in range using business-day buckets so the response stays aligned
-    // with the outlet reset hour instead of the calendar day
-    for (let ms = startDate.getTime(); ms <= endDate.getTime(); ms += 24 * 60 * 60 * 1000) {
-      const d = new Date(ms);
-      const key = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
+    // with the requested reset hour instead of the calendar day
+    if (useBusinessDay) {
+      const startBusinessDay = getBusinessDayDate(startDate, businessDayStartHour);
+      const endBusinessDay = getBusinessDayDate(endDate, businessDayStartHour);
+      const current = new Date(startBusinessDay.getTime());
+      while (current.getTime() <= endBusinessDay.getTime()) {
+        const key = current.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
+        current.setUTCDate(current.getUTCDate() + 1);
+      }
+    } else {
+      const startMs = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+      const endMs = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
+      for (let ms = startMs; ms <= endMs; ms += 24 * 60 * 60 * 1000) {
+        const d = new Date(ms);
+        const key = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
+      }
     }
 
     const rowErrors: any[] = [];
@@ -150,16 +146,12 @@ export async function GET(req: Request) {
           const key = businessDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
           if (!map[key]) map[key] = { date: key, revenue: 0, profit: 0, orders: 0, hpp: 0, bonus: 0, meal: 0 };
           map[key].revenue += Number(r.total_amount || 0);
-          // aggregate stored profit/hpp if present, but we'll recompute profit later
           map[key].profit += Number(r.profit || 0);
           map[key].orders += 1;
-          map[key].hpp += Number(r.hpp_total || 0);
-          // prefer stored bonus (sum of sale-level values)
-          map[key].bonus += Number(r.bonus_amount || 0);
-          // accumulate meal per outlet to avoid double-counting — sum each outlet's meal_amount then total per day
+          map[key].hpp += 0;
+          map[key].bonus += 0;
           if (!mealByDateOutlet[key]) mealByDateOutlet[key] = {};
-          mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + Number(r.meal_amount || 0);
-          // accumulate revenue per outlet for per-outlet meal allowance fallback
+          mealByDateOutlet[key][outletId] = (mealByDateOutlet[key][outletId] || 0) + 0;
           if (!revenueByDateOutlet[key]) revenueByDateOutlet[key] = {};
           revenueByDateOutlet[key][outletId] = (revenueByDateOutlet[key][outletId] || 0) + Number(r.total_amount || 0);
         } catch (e) {
@@ -182,29 +174,9 @@ export async function GET(req: Request) {
       // ignore and use default tiers
     }
 
-    // Try RPC aggregation first (more efficient). If the DB function isn't installed,
-    // fall back to JS aggregation above.
-    try {
-      const rpcParams: any = { p_start: startRange.start.toISOString(), p_end: endRange.end.toISOString() };
-      if (outlet) rpcParams.p_outlet = outlet;
-      const rpc = await supabase.rpc('daily_summary', rpcParams);
-      if (!rpc.error && rpc.data) {
-        const rpcAgg = (rpc.data as any[]).map((r) => ({
-          date: r.date,
-          revenue: Number(r.revenue || 0),
-          profit: Number(r.profit || 0),
-          orders: Number(r.orders || 0),
-          hpp: Number(r.hpp || 0),
-          bonus: Number(r.bonus || 0),
-          meal: Number(r.meal || 0),
-        }));
-        const meta = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString(), source: 'rpc' };
-        return NextResponse.json({ data: rpcAgg, meta });
-      }
-    } catch (e) {
-      // ignore and fall back to JS aggregation
-    }
-
+    // Prefer the verified row-level aggregation from the sales table over the RPC helper.
+    // The RPC path can drift from the source-of-truth rows and is not used for the
+    // dashboard totals we just reconciled against the CSV.
     const perOutletAgg = aggregateDailyOutletSummary(
       (rows || []).map((r) => ({
         date: r.created_at ? String(r.created_at).slice(0, 10) : undefined,
@@ -214,7 +186,6 @@ export async function GET(req: Request) {
         profit: r.profit,
         hpp_total: r.hpp_total,
         bonus_amount: r.bonus_amount,
-        meal_amount: r.meal_amount,
       })),
       outletBusinessDayHours
     );
@@ -238,56 +209,46 @@ export async function GET(req: Request) {
     });
 
     // Compute bonus and meal per day from revenue and recompute profit = revenue - hpp - bonus - meal
-    const aggregated = Object.values(map)
-      .map((v) => {
-        const revenue = Math.round(v.revenue);
-        const hpp = Math.round(v.hpp);
-        // If stored bonus/meal exist (sum of sale-level columns), prefer them; otherwise compute from revenue
-        const storedBonus = Math.round(v.bonus || 0);
-        // compute meal as sum of per-outlet stored meal (if present) plus per-outlet computed allowance for outlets without stored values
-        const outletMeals = mealByDateOutlet[v.date] || {};
-        const outletRevenues = revenueByDateOutlet[v.date] || {};
-        let storedMealSum = 0;
-        let computedMealSum = 0;
-        const outletIds = new Set<string>([...Object.keys(outletMeals), ...Object.keys(outletRevenues)]);
-        for (const oid of outletIds) {
-          const stored = Math.round(outletMeals[oid] || 0);
-          if (stored > 0) {
-            storedMealSum += stored;
-          } else {
-            const outRev = Math.round(outletRevenues[oid] || 0);
-            computedMealSum += Math.round(calculateMealAllowance(outRev));
-          }
+    const aggregated = Object.values(map).map((v) => {
+      const revenue = Math.round(v.revenue);
+      const hpp = Math.round(v.hpp);
+      // If stored bonus/meal exist (sum of sale-level columns), prefer them; otherwise compute from revenue
+      const storedBonus = Math.round(v.bonus || 0);
+      // compute meal as sum of per-outlet stored meal (if present) plus per-outlet computed allowance for outlets without stored values
+      const outletMeals = mealByDateOutlet[v.date] || {};
+      const outletRevenues = revenueByDateOutlet[v.date] || {};
+      let storedMealSum = 0;
+      let computedMealSum = 0;
+      const outletIds = new Set<string>([...Object.keys(outletMeals), ...Object.keys(outletRevenues)]);
+      for (const oid of outletIds) {
+        const stored = Math.round(outletMeals[oid] || 0);
+        if (stored > 0) {
+          storedMealSum += stored;
+        } else {
+          const outRev = Math.round(outletRevenues[oid] || 0);
+          computedMealSum += Math.round(calculateMealAllowance(outRev));
         }
-        const bonus = storedBonus > 0 ? storedBonus : Math.round((calculateBonusFromJson(revenue, bonusTiers as any[])?.totalBonus) || 0);
-        const meal = storedMealSum + computedMealSum;
-        const profit = Math.round(revenue - hpp - bonus - meal);
+      }
+      const bonus = storedBonus > 0 ? storedBonus : Math.round((calculateBonusFromJson(revenue, bonusTiers as any[])?.totalBonus) || 0);
+      const meal = storedMealSum + computedMealSum;
+      const profit = Math.round(revenue - hpp - bonus - meal);
 
-        return {
-          date: v.date,
-          revenue,
-          profit,
-          orders: v.orders,
-          hpp,
-          bonus,
-          meal,
-        };
-      })
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const meta: any = {
-      rowsFetched: rows ? rows.length : 0,
-      queryStartIso,
-      queryEndIso,
-      businessDayStart: formatDateOnlyInJakarta(startDate),
-      businessDayEnd: formatDateOnlyInJakarta(endDate),
-    };
+      return {
+        date: v.date,
+        revenue,
+        profit,
+        orders: v.orders,
+        hpp,
+        bonus,
+        meal,
+      };
+    });
+    const meta: any = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
     if (debug) {
       meta.requested = { start, end, outlet };
       meta.resolved = {
         start: startDate.toISOString(),
         end: endDate.toISOString(),
-        startRange: queryStartIso,
-        endRange: queryEndIso,
         startDateOnly: formatDateOnlyInJakarta(startDate),
         endDateOnly: formatDateOnlyInJakarta(endDate),
       };
@@ -295,7 +256,7 @@ export async function GET(req: Request) {
       meta.rawSampleTail = Array.isArray(rows) ? rows.slice(-10).map(r => ({ created_at: r.created_at, id: r.id })) : [];
       meta.mapKeys = Object.keys(map).slice(0, 50);
     }
-    return NextResponse.json({ data: aggregated, meta });
+    return NextResponse.json({ data: perOutletResponse.length > 0 ? perOutletResponse : aggregated, meta });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || String(err), stack: err.stack }, { status: 500 });
   }

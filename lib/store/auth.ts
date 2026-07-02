@@ -8,6 +8,12 @@ export type AppUser = {
     full_name?: string | null;
     [key: string]: unknown;
   } | null;
+  app_metadata?: {
+    role?: string | null;
+    'x-hasura-default-role'?: string;
+    'x-hasura-role'?: string;
+    [key: string]: unknown;
+  } | null;
   [key: string]: unknown;
 } | null;
 

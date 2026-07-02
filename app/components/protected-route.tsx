@@ -3,6 +3,7 @@
 import { useAuth } from "@/app/providers/auth-provider";
 import { redirect } from "next/navigation";
 import { ReactNode } from "react";
+import { getRoleFromUser } from "@/lib/admin-access";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -20,7 +21,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     redirect("/login");
   }
 
-  if (allowedRoles && user.user_metadata?.role && !allowedRoles.includes(user.user_metadata.role)) {
+  const role = getRoleFromUser(user);
+
+  if (allowedRoles && role && !allowedRoles.includes(role)) {
     redirect("/unauthorized");
   }
 

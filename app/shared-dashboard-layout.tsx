@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth';
+import { getRoleFromUser } from '@/lib/admin-access';
 import { 
   LogOut, LayoutDashboard, TrendingDown, Archive,
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
@@ -129,12 +130,13 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
     }
   ];
 
-  // Compute displayed nav groups so we can add admin shortcut after auth state resolves.
+  // Compute displayed nav groups so we can add admin or investor shortcuts after auth state resolves.
   // The app stores role separately in the store too; check both places for safety.
   const displayedNavGroups = (() => {
-    const isAdminFromUser = user && ((user.user_metadata && user.user_metadata.role === 'admin') || (typeof (user as any)?.role === 'string' && (user as any).role === 'admin'));
-    const isAdmin = isAdminFromUser || role === 'admin';
-    // also check top-level `role` in auth store via `role` variable
+    const authRole = getRoleFromUser(user);
+    const isAdmin = authRole === 'admin' || role === 'admin';
+    const isInvestor = authRole === 'investor' || role === 'investor';
+
     if (isAdmin) {
       return [
         {
@@ -144,6 +146,26 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         ...navGroups,
       ];
     }
+
+    if (isInvestor) {
+      // Provide a simplified investor-focused navigation
+      return [
+        {
+          title: 'Beranda',
+          items: [ { href: '/investor', label: 'Investor Dashboard', icon: BarChart3 } ],
+        },
+        {
+          title: 'Investor',
+          items: [
+            { href: '/investor/outlets', label: 'Outlet Investasi', icon: Store },
+            { href: '/investor/performance', label: 'Kinerja Outlet', icon: BarChart3 },
+            { href: '/investor/revenue', label: 'Pendapatan', icon: DollarSign },
+            { href: '/investor/settings', label: 'Pengaturan', icon: Settings },
+          ],
+        },
+      ];
+    }
+
     return navGroups;
   })();
 
@@ -256,29 +278,35 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-4 md:space-y-6">
             {displayedNavGroups.map((group, idx) => {
-              // If group only has 1 item (e.g. Beranda), don't render collapsible UI.
-              if (group.items.length === 1) {
-                const item = group.items[0];
+              const isCompactGroup = group.items.length === 1 || group.title === 'Investor';
+
+              // Render compact groups directly without collapsible UI.
+              if (isCompactGroup) {
                 return (
                   <div key={idx}>
                     <div className="px-3 md:px-4 py-2 md:py-3">
                       <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">{group.title}</div>
-                      <Link
-                        href={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
-                          isActive(item.href)
-                            ? 'accent-gradient text-accent shadow-lg font-semibold'
-                            : 'text-white/70 hover:bg-white/10 hover:text-white'
-                        }`}
-                        title={item.label}
-                      >
-                        <item.icon size={18} className="shrink-0" />
-                        <span className="font-medium text-xs md:text-sm">{item.label}</span>
-                        {isActive(item.href) && (
-                          <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
-                        )}
-                      </Link>
+                      <div className="space-y-1">
+                        {group.items.map(({ href, label, icon: Icon }) => (
+                          <Link
+                            key={href}
+                            href={href}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
+                              isActive(href)
+                                ? 'accent-gradient text-accent shadow-lg font-semibold'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            }`}
+                            title={label}
+                          >
+                            <Icon size={18} className="shrink-0" />
+                            <span className="font-medium text-xs md:text-sm">{label}</span>
+                            {isActive(href) && (
+                              <div className="ml-auto w-2 h-2 bg-sidebar-foreground rounded-full animate-pulse" />
+                            )}
+                          </Link>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );
