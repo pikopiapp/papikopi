@@ -8,7 +8,6 @@ interface DataPoint {
 }
 
 function catmullRom2bezier(points: Array<[number, number]>) {
-  // Convert array of points to a smooth cubic bezier path (returns d string)
   if (!points.length) return '';
   if (points.length === 1) return `M ${points[0][0]} ${points[0][1]}`;
 
@@ -18,7 +17,6 @@ function catmullRom2bezier(points: Array<[number, number]>) {
     if (i === 0) {
       d.push(`M ${p[0].toFixed(2)} ${p[1].toFixed(2)}`);
     } else {
-      // Catmull-Rom to Bezier conversion using neighboring points
       const p0 = points[i - 2] || points[i - 1];
       const p1 = points[i - 1];
       const p2 = points[i];
@@ -36,86 +34,135 @@ function catmullRom2bezier(points: Array<[number, number]>) {
 }
 
 export default function SalesChartServer({ data, formatCurrency }: { data: DataPoint[]; formatCurrency: (n: number) => string }) {
-  const width = 800;
-  const height = 300;
-  const padding = { top: 24, right: 20, bottom: 44, left: 64 };
+  const width = 900;
+  const height = 340;
+  const padding = { top: 24, right: 24, bottom: 56, left: 78 };
 
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
+  const baselineY = padding.top + chartHeight;
 
-  const values = data.map(d => d.sales);
-  const max = Math.max(...values, 1);
+  const salesValues = data.map((d) => Number(d.sales || 0));
+  const profitValues = data.map((d) => Number(d.profit || 0));
+  const targetValues = data.map((d) => Number(d.target || 0));
+  const maxValue = Math.max(...salesValues, ...profitValues, ...targetValues, 1);
 
   const xStep = data.length > 1 ? chartWidth / (data.length - 1) : chartWidth;
 
-  const points: Array<[number, number]> = data.map((d, i) => {
+  const salesPoints: Array<[number, number]> = data.map((d, i) => {
     const x = padding.left + i * xStep;
-    const y = padding.top + chartHeight - (d.sales / max) * chartHeight;
+    const y = padding.top + chartHeight - (Number(d.sales || 0) / maxValue) * chartHeight;
     return [x, y];
   });
 
-  const path = catmullRom2bezier(points);
+  const profitPoints: Array<[number, number]> = data.map((d, i) => {
+    const x = padding.left + i * xStep;
+    const y = padding.top + chartHeight - (Number(d.profit || 0) / maxValue) * chartHeight;
+    return [x, y];
+  });
 
-  // Y axis ticks
-  const ticks = 4;
-  const tickValues = Array.from({ length: ticks + 1 }, (_, i) => Math.round((max * i) / ticks));
-
-  // Average target line (if targets present)
+  const salesPath = catmullRom2bezier(salesPoints);
+  const profitPath = catmullRom2bezier(profitPoints);
   const avgTarget = data.length ? data.reduce((s, d) => s + (d.target || 0), 0) / data.length : 0;
-  const targetY = padding.top + chartHeight - (avgTarget / max) * chartHeight;
+  const targetY = padding.top + chartHeight - (avgTarget / maxValue) * chartHeight;
+  const areaPath = salesPoints.length > 0 ? `${salesPath} L ${salesPoints[salesPoints.length - 1][0]} ${baselineY} L ${salesPoints[0][0]} ${baselineY} Z` : '';
+
+  const ticks = 5;
+  const tickValues = Array.from({ length: ticks + 1 }, (_, i) => Math.round((maxValue * (ticks - i)) / ticks));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="auto" role="img" aria-label="Sales trend">
-      <rect x={0} y={0} width={width} height={height} fill="transparent" />
+    <div className="rounded-2xl border border-slate-200 bg-linear-to-br from-slate-50 via-white to-slate-100 p-4 shadow-sm">
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="auto" role="img" aria-label="Sales trend">
+        <defs>
+          <linearGradient id="salesGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.04" />
+          </linearGradient>
+          <linearGradient id="profitGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.03" />
+          </linearGradient>
+          <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#06b6d4" floodOpacity="0.2" />
+          </filter>
+        </defs>
 
-      {/* grid + y-axis labels */}
-      <g>
-        {tickValues.map((tv, i) => {
-          const y = padding.top + chartHeight - (tv / max) * chartHeight;
-          return (
-            <g key={i}>
-              <line x1={padding.left} x2={padding.left + chartWidth} y1={y} y2={y} stroke="#eef2ff" strokeWidth={1} />
-              <text x={padding.left - 10} y={y + 4} fontSize={12} textAnchor="end" fill="#374151">{formatCurrency(tv)}</text>
-            </g>
-          );
-        })}
-      </g>
+        <rect x="0" y="0" width={width} height={height} rx="20" fill="transparent" />
 
-      {/* target line */}
-      {avgTarget > 0 && (
         <g>
-          <line x1={padding.left} x2={padding.left + chartWidth} y1={targetY} y2={targetY} stroke="#f97316" strokeDasharray="6 4" strokeWidth={1} />
-          <text x={padding.left + chartWidth - 4} y={targetY - 6} fontSize={11} textAnchor="end" fill="#92400e">Avg target</text>
+          {tickValues.map((tv, i) => {
+            const y = padding.top + ((maxValue - tv) / maxValue) * chartHeight;
+            return (
+              <g key={i}>
+                <line x1={padding.left} x2={padding.left + chartWidth} y1={y} y2={y} stroke="#e2e8f0" strokeWidth={1} />
+                <text x={padding.left - 10} y={y + 4} fontSize={11} textAnchor="end" fill="#64748b">{formatCurrency(tv)}</text>
+              </g>
+            );
+          })}
         </g>
-      )}
 
-      {/* smoothed sales path */}
-      <g>
-        <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        {/* subtle area fill */}
-        {points.length > 0 && (
-          <path d={`${path} L ${padding.left + chartWidth} ${padding.top + chartHeight} L ${padding.left} ${padding.top + chartHeight} Z`} fill="#bfdbfe" fillOpacity={0.12} />
+        {avgTarget > 0 && (
+          <g>
+            <line x1={padding.left} x2={padding.left + chartWidth} y1={targetY} y2={targetY} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={1.3} />
+            <text x={padding.left + chartWidth - 2} y={targetY - 8} fontSize={11} textAnchor="end" fill="#b45309">Target rata-rata</text>
+          </g>
         )}
 
-        {/* data points with accessible titles for hover */}
-        {points.map((p, i) => (
-          <g key={i}>
-            <circle cx={p[0]} cy={p[1]} r={4.5} fill="#1e40af" stroke="#fff" strokeWidth={1.5} />
-            <title>{`${data[i].month}: ${formatCurrency(data[i].sales)}`}</title>
-          </g>
-        ))}
-      </g>
+        <g>
+          <path d={areaPath} fill="url(#salesGradient)" />
+          <path d={salesPath} fill="none" stroke="#0ea5e9" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" filter="url(#softGlow)" />
+          {profitPoints.some((_, idx) => Number(data[idx].profit || 0) > 0) && (
+            <path d={profitPath} fill="none" stroke="#8b5cf6" strokeWidth={2.2} strokeDasharray="7 5" strokeLinejoin="round" strokeLinecap="round" />
+          )}
 
-      {/* x-axis labels */}
-      <g transform={`translate(${padding.left}, ${padding.top + chartHeight + 18})`}>
-        {data.map((d, i) => (
-          <text key={i} x={i * xStep} y={12} fontSize={12} textAnchor="middle" fill="#374151">{d.month}</text>
-        ))}
-      </g>
+          {salesPoints.map((p, i) => {
+            const saleValue = Number(data[i].sales || 0);
+            return (
+              <g key={`sales-${i}`}>
+                <circle cx={p[0]} cy={p[1]} r={5.5} fill="#ffffff" stroke="#0ea5e9" strokeWidth={2.2} />
+                <title>{`${data[i].month}: ${formatCurrency(saleValue)}`}</title>
+              </g>
+            );
+          })}
 
-      {/* y-axis label */}
-      <text x={12} y={padding.top + chartHeight / 2} fontSize={12} fill="#6b7280" transform={`rotate(-90 12,${padding.top + chartHeight / 2})`} textAnchor="middle">Sales (IDR)</text>
+          {profitPoints.map((p, i) => {
+            const profitValue = Number(data[i].profit || 0);
+            if (profitValue <= 0) return null;
+            return (
+              <g key={`profit-${i}`}>
+                <circle cx={p[0]} cy={p[1]} r={4.2} fill="#ffffff" stroke="#8b5cf6" strokeWidth={1.8} />
+                <title>{`${data[i].month}: Profit ${formatCurrency(profitValue)}`}</title>
+              </g>
+            );
+          })}
+        </g>
 
-    </svg>
+        <g transform={`translate(${padding.left}, ${padding.top + chartHeight + 20})`}>
+          {data.map((d, i) => {
+            const x = i * xStep;
+            return (
+              <text key={i} x={x} y={14} fontSize={12} textAnchor="middle" fill="#475569">{d.month}</text>
+            );
+          })}
+        </g>
+
+        <text x={12} y={padding.top + chartHeight / 2} fontSize={12} fill="#64748b" transform={`rotate(-90 12,${padding.top + chartHeight / 2})`} textAnchor="middle">Sales & Profit</text>
+      </svg>
+
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+          <span>Sales</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+          <span>Profit</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+          <span>Target rata-rata</span>
+        </div>
+      </div>
+    </div>
   );
 }
