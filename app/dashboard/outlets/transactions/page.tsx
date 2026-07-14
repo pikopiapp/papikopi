@@ -101,7 +101,7 @@ export default function TransactionsPage() {
       }
 
       const res = await fetch(
-        `/api/sales/by-outlet?since=${encodeURIComponent(selectedMonthRangeStart.toISOString())}&until=${encodeURIComponent(selectedDateRangeEnd.toISOString())}`
+        `/api/sales/by-outlet?since=${encodeURIComponent(selectedMonthRangeStart.toISOString())}&until=${encodeURIComponent(selectedDateRangeEnd.toISOString())}&include_items=1`
       );
       if (!res.ok) throw new Error('Failed to fetch sales');
 

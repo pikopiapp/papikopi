@@ -157,14 +157,23 @@ async function getSalesPerOutletDaily(startYmd: string, endYmd: string): Promise
   return { periods, data: out };
 }
 
-function isThenable(value: unknown): value is Promise<unknown> {
+type SearchParams = {
+  period?: string;
+  start?: string;
+  end?: string;
+  outlet?: string;
+};
+
+type MaybePromise<T> = T | Promise<T>;
+
+function isThenable<T>(value: MaybePromise<T>): value is Promise<T> {
   return typeof value === 'object' && value !== null && 'then' in value && typeof (value as { then?: unknown }).then === 'function';
 }
 
-export default async function SalesReport({ searchParams }: { searchParams?: { period?: string; start?: string; end?: string; outlet?: string } }) {
+export default async function SalesReport({ searchParams }: { searchParams?: MaybePromise<SearchParams | undefined> }) {
   // `searchParams` can be a Promise in Next.js App Router.
-  const params = isThenable(searchParams) ? await searchParams : searchParams || {};
-  const period = (params.period as PeriodType) || 'month';
+  const params = (isThenable(searchParams) ? await searchParams : searchParams) ?? {};
+  const period: PeriodType = ((params.period as PeriodType) || 'month') as PeriodType;
   let startDate = new Date();
   let endDate = new Date();
 
@@ -212,7 +221,7 @@ export default async function SalesReport({ searchParams }: { searchParams?: { p
 
   const isShortPeriod = period === 'wtd' || period === 'last7' || period === 'day' || period === 'week' || period === 'custom' || hasExplicitRange;
   // Use daily grouping for short periods and custom ranges (so "Terapkan" shows days)
-  const groupParam: 'day' | 'month' = (isShortPeriod || period === 'custom') ? 'day' : 'month';
+  const groupParam: 'day' | 'month' = isShortPeriod ? 'day' : 'month';
 
   // Use the existing app API route for aggregated sales to match other pages' data-fetch pattern.
   // Send `start`/`end` as local `yyyy-MM-dd` to match the dashboard date-picker behavior.

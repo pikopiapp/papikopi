@@ -54,10 +54,6 @@ export default function CashHandoverPage() {
 function CashHandoverPageContent() {
   const router = useRouter();
 
-  // Avoid useSearchParams during prerender to prevent Suspense boundary errors.
-  // If you need the date query param later, re-introduce it behind a <Suspense> boundary.
-  const dateParam: string | null = null;
-
   const pad = (n: number) => String(n).padStart(2, '0');
   const formatLocalKey = (d: Date | string | null | undefined) => {
     if (!d) return '';
@@ -65,8 +61,9 @@ function CashHandoverPageContent() {
     return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
   };
 
-  const selectedDateKey = formatLocalKey(dateParam || new Date());
-  const selectedDateStr = (dateParam ? new Date(dateParam) : new Date()).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalKey(new Date()));
+  const selectedDateKey = selectedDate || formatLocalKey(new Date());
+  const selectedDateStr = selectedDate ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const [sessions, setSessions] = useState<CashHandoverSession[]>([]);
   const [allSessions, setAllSessions] = useState<CashHandoverSession[]>([]);
   const [stats, setStats] = useState<CashHandoverStats>({
@@ -93,7 +90,15 @@ function CashHandoverPageContent() {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
 
-      const res = await fetch(`/api/cash-handovers?limit=${limit}&page=${page}`, { signal: controller.signal });
+      const params = new URLSearchParams({ limit: String(limit), page: String(page) });
+      if (selectedDate) {
+        const dayStart = `${selectedDate}T00:00:00`;
+        const dayEnd = `${selectedDate}T23:59:59`;
+        params.set('from_date', dayStart);
+        params.set('to_date', dayEnd);
+      }
+
+      const res = await fetch(`/api/cash-handovers?${params.toString()}`, { signal: controller.signal });
       clearTimeout(timeout);
 
       if (!res.ok) throw new Error('Failed to fetch cash handovers');
@@ -119,7 +124,7 @@ function CashHandoverPageContent() {
       setRefreshing(false);
       setLoading(false);
     }
-  }, [page, limit]);
+  }, [page, limit, selectedDate]);
 
   useEffect(() => {
     const t = setTimeout(() => void fetchSessions(), 0);
@@ -130,8 +135,8 @@ function CashHandoverPageContent() {
     // start from all sessions
     let filtered = [...allSessions];
 
-    // apply optional calendar-date filter (yyyy-MM-dd) to match daily-summary grouping
-    if (dateParam) {
+    // apply selected calendar-date filter (yyyy-MM-dd)
+    if (selectedDate) {
       filtered = filtered.filter(s => formatLocalKey(s.created_at) === selectedDateKey);
     }
 
@@ -152,16 +157,16 @@ function CashHandoverPageContent() {
 
     const t = setTimeout(() => setSessions(filtered), 0);
     return () => clearTimeout(t);
-  }, [statusFilter, allSessions, sortBy, baristaFilter, dateParam, selectedDateKey]);
+  }, [statusFilter, allSessions, sortBy, baristaFilter, selectedDate, selectedDateKey]);
 
   useEffect(() => {
-    // refetch when page or limit changes
+    // refetch when page, limit, or selected date changes
     const t = setTimeout(() => {
       setLoading(true);
       void fetchSessions();
     }, 0);
     return () => clearTimeout(t);
-  }, [page, limit]);
+  }, [page, limit, selectedDate]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -208,6 +213,21 @@ function CashHandoverPageContent() {
           </button>
         </div>
         <p className="text-gray-600">Kelola dan pantau sesi setoran di seluruh outlet</p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="flex flex-col">
+            <label className="text-sm text-gray-600 mb-1">Tanggal</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => {
+                setSelectedDate(e.target.value);
+                setPage(1);
+              }}
+              className="border rounded px-3 py-2 bg-white"
+            />
+          </div>
+          <div className="text-sm text-gray-500">Menampilkan data untuk: {selectedDateStr}</div>
+        </div>
       </div>
 
       {/* Statistics Cards */}
