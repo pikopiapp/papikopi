@@ -486,15 +486,6 @@ export default function ProductsPage() {
                     <tr key={product.id} className="border-b hover:bg-amber-50 transition">
                       <td className="px-6 py-4">
                         <div className="font-medium">{product.name}</div>
-                        {product.product_ingredients && product.product_ingredients.length > 0 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {product.product_ingredients.map((pi: any) => (
-                              <div key={pi.ingredient_id}>
-                                {pi.ingredient?.name}: {pi.quantity} {pi.ingredient?.unit}
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </td>
                       <td className="px-6 py-4 text-sm">{product.category?.name || '-'}</td>
                       <td className="px-6 py-4 font-medium">Rp {product.price.toLocaleString('id-ID')}</td>

@@ -8,21 +8,49 @@ const supabase = createClient(
 
 export async function GET() {
   try {
-    // Get all products with categories using single join query
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select(`
-        *,
-        categories!category_id(id, name)
-      `)
-      .order('name');
+    const [productsRes, categoriesRes, productIngredientsRes] = await Promise.all([
+      supabase.from('products').select('*').order('name'),
+      supabase.from('categories').select('id, name'),
+      supabase.from('product_ingredients').select('product_id, ingredient_id, quantity'),
+    ]);
 
-    if (productsError) throw productsError;
+    if (productsRes.error) throw productsRes.error;
+    if (categoriesRes.error) throw categoriesRes.error;
+    if (productIngredientsRes.error) throw productIngredientsRes.error;
 
-    // Transform to include category info
-    const productsWithCategory = (products || []).map((product: any) => ({
+    const products = productsRes.data || [];
+    const categories = categoriesRes.data || [];
+    const productIngredients = productIngredientsRes.data || [];
+
+    const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
+    const ingredientIds = Array.from(new Set(productIngredients.map((pi: any) => pi.ingredient_id)));
+
+    let ingredientMap = new Map<string, any>();
+    if (ingredientIds.length > 0) {
+      const { data: ingredients, error: ingredientsError } = await supabase
+        .from('ingredients')
+        .select('id, name, unit, cost')
+        .in('id', ingredientIds);
+      if (ingredientsError) throw ingredientsError;
+      ingredientMap = new Map((ingredients || []).map((ing: any) => [ing.id, ing]));
+    }
+
+    const productIngredientMap = new Map<string, any[]>();
+    (productIngredients || []).forEach((pi: any) => {
+      const list = productIngredientMap.get(pi.product_id) || [];
+      list.push({
+        product_id: pi.product_id,
+        ingredient_id: pi.ingredient_id,
+        quantity: pi.quantity,
+        ingredient: ingredientMap.get(pi.ingredient_id) || null,
+      });
+      productIngredientMap.set(pi.product_id, list);
+    });
+
+    const productsWithCategory = products.map((product: any) => ({
       ...product,
-      category: product.categories || { id: product.category_id, name: 'Unknown' },
+      category: categoryMap.get(product.category_id) || { id: product.category_id, name: 'Unknown' },
+      product_ingredients: productIngredientMap.get(product.id) || [],
     }));
 
     return NextResponse.json(productsWithCategory);
