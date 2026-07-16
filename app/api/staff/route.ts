@@ -38,9 +38,57 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    console.log('POST /api/staff body:', JSON.stringify(body));
-    const { name, email, role, outlet_id, phone } = body;
+    const contentType = request.headers.get('content-type') || '';
+
+    let name: string | undefined;
+    let email: string | undefined;
+    let role: string | undefined;
+    let outlet_id: string | undefined;
+    let phone: string | undefined;
+    let avatar_url: string | undefined;
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      name = form.get('name')?.toString();
+      email = form.get('email')?.toString();
+      role = form.get('role')?.toString();
+      outlet_id = form.get('outlet_id')?.toString();
+      phone = form.get('phone')?.toString();
+
+      const file = form.get('photo');
+      if (file && file instanceof File) {
+        const allowedMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+        if (!allowedMimeTypes.has(file.type)) {
+          return NextResponse.json({ error: 'Invalid image type' }, { status: 400 });
+        }
+
+        const safeName = file.name
+          .replace(/[^a-zA-Z0-9._-]/g, '-')
+          .toLowerCase()
+          .replace(/-+/g, '-');
+
+        const fileName = `${Date.now()}-${safeName || 'avatar'}`;
+        const path = `avatars/${fileName}`;
+        const arrayBuffer = await file.arrayBuffer();
+        const fileBytes = new Uint8Array(arrayBuffer);
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(path, fileBytes, { contentType: file.type, upsert: true });
+
+        if (uploadError) {
+          console.error('Avatar upload failed:', uploadError);
+          return NextResponse.json({ error: 'Failed to upload avatar' }, { status: 500 });
+        }
+
+        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path);
+        avatar_url = publicUrlData.publicUrl;
+      }
+    } else {
+      const body = await request.json();
+      console.log('POST /api/staff body:', JSON.stringify(body));
+      ({ name, email, role, outlet_id, phone } = body as any);
+    }
 
     const missing: string[] = [];
     if (!name) missing.push('name');
@@ -50,13 +98,14 @@ export async function POST(request: NextRequest) {
     if (missing.length > 0) {
       const msg = `Missing required fields: ${missing.join(', ')}`;
       console.error('Create staff validation failed:', msg);
-      return NextResponse.json({ error: msg, received: Object.keys(body || {}) }, { status: 400 });
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
 
     // Allow creating staff without an assigned outlet (unassigned staff)
     const userData: Record<string, unknown> = { name, email, role, is_active: true };
     if (outlet_id) userData.outlet_id = outlet_id;
     if (phone) userData.phone = phone;
+    if (avatar_url) userData.avatar_url = avatar_url;
 
     const { data, error } = await supabase
       .from('users')
@@ -74,14 +123,68 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { id, name, email, role, is_active } = body;
+    const contentType = request.headers.get('content-type') || '';
+
+    let id: string | undefined;
+    let name: string | undefined;
+    let email: string | undefined;
+    let role: string | undefined;
+    let is_active: boolean | undefined;
+    let avatar_url: string | undefined;
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      id = form.get('id')?.toString();
+      name = form.get('name')?.toString();
+      email = form.get('email')?.toString();
+      role = form.get('role')?.toString();
+      const activeVal = form.get('is_active');
+      if (activeVal != null) is_active = activeVal === 'true' || activeVal === '1';
+
+      const file = form.get('photo');
+      if (file && file instanceof File) {
+        const allowedMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+        if (!allowedMimeTypes.has(file.type)) {
+          return NextResponse.json({ error: 'Invalid image type' }, { status: 400 });
+        }
+
+        const safeName = file.name
+          .replace(/[^a-zA-Z0-9._-]/g, '-')
+          .toLowerCase()
+          .replace(/-+/g, '-');
+
+        const fileName = `${Date.now()}-${safeName || 'avatar'}`;
+        const path = `avatars/${fileName}`;
+        const arrayBuffer = await file.arrayBuffer();
+        const fileBytes = new Uint8Array(arrayBuffer);
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(path, fileBytes, { contentType: file.type, upsert: true });
+
+        if (uploadError) {
+          console.error('Avatar upload failed:', uploadError);
+          return NextResponse.json({ error: 'Failed to upload avatar' }, { status: 500 });
+        }
+
+        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path);
+        avatar_url = publicUrlData.publicUrl;
+      }
+    } else {
+      const body = await request.json();
+      ({ id, name, email, role, is_active } = body as any);
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'id required' }, { status: 400 });
     }
 
-    const updateData: Record<string, unknown> = { name, email, role, is_active };
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (role !== undefined) updateData.role = role;
+    if (is_active !== undefined) updateData.is_active = is_active;
+    if (avatar_url) updateData.avatar_url = avatar_url;
 
     const { data, error } = await supabase
       .from('users')
