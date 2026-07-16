@@ -383,12 +383,11 @@ const handleToggleStatus = async (member: StaffMember) => {
               const outletName = outlets.find(o => o.id === member.outlet_id)?.name;
               const avatarSrc = member.avatar_url || member.photo_url || member.profile_image_url || member.image_url || member.avatar;
               const initials = getInitials(member.name);
-              const roleLabel = getRoleLabel(member.role);
 
               return (
                 <div key={member.id} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg">
-                  <div className="flex flex-col overflow-hidden md:flex-row">
-                    <div className="relative h-80 w-full overflow-hidden bg-gray-100 md:h-auto md:w-72">
+                  <div className="relative">
+                    <div className="h-72 w-full overflow-hidden rounded-t-2xl bg-gray-100">
                       {avatarSrc ? (
                         <img
                           src={avatarSrc}
@@ -401,66 +400,67 @@ const handleToggleStatus = async (member: StaffMember) => {
                           }}
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-amber-100 text-5xl font-bold text-amber-800">{initials}</div>
+                        <div className="flex h-full w-full items-center justify-center bg-amber-100 text-4xl font-bold text-amber-800">{initials}</div>
                       )}
-                    </div>
 
-                    <div className="flex flex-1 flex-col justify-between p-6">
-                      <div className="space-y-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-700">{member.role}</span>
-                            <h3 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">{member.name}</h3>
-                            <p className="mt-2 text-base text-gray-500">{roleLabel}</p>
+                      <div className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-linear-to-t from-black/60 to-transparent px-4 py-3 text-white">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center gap-2 text-lg font-semibold">
+                            <span>{member.name}</span>
+                            <span className="inline-flex items-center justify-center rounded-full bg-white/20 px-2 py-0.5 text-sm">✓</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleEdit(member)}
-                              className="rounded-lg bg-gray-100 p-2 text-blue-600 shadow-sm transition hover:bg-gray-200"
-                              title="Edit"
-                            >
-                              <Edit2 size={18} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(member.id)}
-                              className="rounded-lg bg-gray-100 p-2 text-red-600 shadow-sm transition hover:bg-gray-200"
-                              title="Delete"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">{outletName || 'Unassigned'}</span>
-                          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {member.is_active ? 'Aktif' : 'Nonaktif'}
-                          </span>
+                          <div className="mt-1 text-sm text-white/90">{getRoleLabel(member.role)}</div>
                         </div>
                       </div>
 
-                      <div className="grid gap-3 text-sm text-gray-700 sm:grid-cols-2">
-                        <div className="rounded-2xl bg-gray-50 p-4">
-                          <div className="text-xs text-gray-500">Email</div>
-                          <div className="mt-1 font-medium text-gray-900">{member.email || '-'}</div>
-                        </div>
-                        <div className="rounded-2xl bg-gray-50 p-4">
-                          <div className="text-xs text-gray-500">Phone</div>
-                          <div className="mt-1 font-medium text-gray-900">{member.phone || '-'}</div>
-                        </div>
-                        <div className="rounded-2xl bg-gray-50 p-4">
-                          <div className="text-xs text-gray-500">Outlet</div>
-                          <div className="mt-1 font-medium text-gray-900">{outletName || 'Unassigned'}</div>
-                        </div>
-                        <div className="rounded-2xl bg-gray-50 p-4">
-                          <div className="text-xs text-gray-500">Status</div>
-                          <button
-                            onClick={() => handleToggleStatus(member)}
-                            className={`mt-1 rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-                          >
-                            {member.is_active ? '✓ Active' : '✕ Inactive'}
-                          </button>
-                        </div>
+                      <div className="absolute top-3 right-3 flex gap-2">
+                        <button
+                          onClick={() => handleEdit(member)}
+                          className="rounded-lg bg-white p-2 text-blue-600 shadow-sm transition hover:bg-blue-50"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(member.id)}
+                          className="rounded-lg bg-white p-2 text-red-600 shadow-sm transition hover:bg-red-50"
+                          title="Delete"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="px-5 -mt-8 mb-3 text-center">
+                    <span className="inline-flex items-center justify-center rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">{getRoleLabel(member.role)}</span>
+                  </div>
+
+                  <div className="space-y-3 px-5 pb-6 text-sm text-gray-700">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">Email</div>
+                      <div className="font-medium text-gray-800">{member.email || '-'}</div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">Phone</div>
+                      <div className="font-medium text-gray-800">{member.phone || '-'}</div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">Outlet</div>
+                      <div className="font-medium text-gray-800">{outletName || 'Unassigned'}</div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">Status</div>
+                      <div>
+                        <button
+                          onClick={() => handleToggleStatus(member)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                        >
+                          {member.is_active ? '✓ Active' : '✕ Inactive'}
+                        </button>
                       </div>
                     </div>
                   </div>
