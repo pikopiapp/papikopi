@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, Edit2, X, Eye } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, Edit2, X, Eye, Upload } from 'lucide-react';
 
 interface Category {
   id: string;
@@ -44,6 +44,7 @@ export default function ProductsPage() {
   const [error, setError] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -194,18 +195,21 @@ export default function ProductsPage() {
     }
   };
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: Category | Ingredient | Product) => {
     if (activeTab === 'categories') {
-      setFormData(prev => ({ ...prev, name: item.name }));
+      const categoryItem = item as Category;
+      setFormData(prev => ({ ...prev, name: categoryItem.name }));
     } else if (activeTab === 'ingredients') {
-      setFormData(prev => ({ ...prev, name: item.name, unit: item.unit, cost: item.cost.toString() }));
+      const ingredientItem = item as Ingredient;
+      setFormData(prev => ({ ...prev, name: ingredientItem.name, unit: ingredientItem.unit, cost: ingredientItem.cost.toString() }));
     } else if (activeTab === 'products') {
+      const productItem = item as Product;
       setFormData(prev => ({
         ...prev,
-        name: item.name,
-        category_id: item.category_id || '',
-        price: item.price.toString(),
-        selectedIngredients: (item.product_ingredients || []).map((pi: any) => ({
+        name: productItem.name,
+        category_id: productItem.category_id || '',
+        price: productItem.price.toString(),
+        selectedIngredients: (productItem.product_ingredients || []).map((pi: ProductIngredient) => ({
           ingredient_id: pi.ingredient_id,
           quantity: pi.quantity,
         })),
@@ -213,6 +217,32 @@ export default function ProductsPage() {
     }
     setEditingId(item.id);
     setShowForm(true);
+  };
+
+  const handleImageUpload = async (productId: string, file: File | null) => {
+    if (!file) return;
+
+    try {
+      setUploadingImageId(productId);
+      const formData = new FormData();
+      formData.append('productId', productId);
+      formData.append('file', file);
+
+      const res = await fetch('/api/products/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to upload image');
+
+      await fetchData();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload image');
+    } finally {
+      setUploadingImageId(null);
+    }
   };
 
   return (
@@ -398,7 +428,7 @@ export default function ProductsPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveIngredient(si.ingredient_id)}
-                                    className="text-red-500 hover:text-red-700 flex-shrink-0"
+                                    className="text-red-500 hover:text-red-700 shrink-0"
                                   >
                                     <Trash2 size={16} />
                                   </button>
@@ -439,110 +469,156 @@ export default function ProductsPage() {
             </div>
           )}
 
-          {/* Tables */}
+          {/* Lists */}
           {!loading && (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-100 border-b">
-                  <tr>
-                    {activeTab === 'products' && (
-                      <>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">Product</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">Category</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">Price</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">HPP</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">Margin</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                      </>
-                    )}
-                    {activeTab === 'categories' && (
-                      <>
+            <>
+              {activeTab === 'products' ? (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+                  {products.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-gray-500 md:col-span-2 xl:col-span-3">
+                      No products yet
+                    </div>
+                  ) : (
+                    products.map(product => (
+                      <div
+                        key={product.id}
+                        className="group relative h-96 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg"
+                      >
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                            className="absolute inset-0 h-full w-full object-cover object-center transition duration-300 group-hover:scale-105"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-amber-50 via-white to-orange-50 text-sm font-semibold uppercase tracking-[0.2em] text-gray-400">
+                            No Image
+                          </div>
+                        )}
+
+                        <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/80 via-black/30 to-transparent" />
+
+                        <div className="absolute right-3 top-3 z-20 flex gap-2">
+                          <button onClick={() => { setSelectedProduct(product); setShowModal(true); }} className="rounded-full bg-white/90 p-2 text-green-600 shadow-sm transition hover:bg-green-50" title="View">
+                            <Eye size={16} />
+                          </button>
+                          <button onClick={() => handleEdit(product)} className="rounded-full bg-white/90 p-2 text-blue-600 shadow-sm transition hover:bg-blue-50">
+                            <Edit2 size={16} />
+                          </button>
+                          <button onClick={() => handleDelete(product.id)} className="rounded-full bg-white/90 p-2 text-red-600 shadow-sm transition hover:bg-red-50">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        <div className="relative z-10 flex h-full flex-col justify-between p-4 text-white">
+                          <div className="flex items-start justify-end">
+                            <span className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm">
+                              {product.margin || '-'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-1 items-center justify-center">
+                            <div className="rounded-lg bg-white/60 px-3 py-2 text-center shadow-sm">
+                              <h3 className="text-base font-semibold leading-tight text-black">{product.name}</h3>
+                              <p className="mt-0.5 text-xs leading-tight text-black/80">{product.category?.name || 'Tanpa kategori'}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 rounded-2xl border border-white/20 bg-white/20 p-3 shadow-lg backdrop-blur-md">
+                            <div className="space-y-2 text-sm">
+                              <div className="flex items-center justify-between">
+                                <span className="text-white/75">Harga</span>
+                                <span className="font-semibold text-white">Rp {product.price.toLocaleString('id-ID')}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-white/75">HPP</span>
+                                <span className="font-semibold text-amber-300">Rp {typeof product.hpp === 'string' ? product.hpp : (product.hpp || 0)}</span>
+                              </div>
+                            </div>
+
+                            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/15 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-white/25">
+                              <Upload size={14} />
+                              {uploadingImageId === product.id ? 'Uploading...' : 'Upload image'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleImageUpload(product.id, e.target.files?.[0] || null)}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : activeTab === 'categories' ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b bg-gray-100">
+                      <tr>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Category Name</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                      </>
-                    )}
-                    {activeTab === 'ingredients' && (
-                      <>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categories.length === 0 && (
+                        <tr><td colSpan={2} className="px-6 py-4 text-center text-gray-500">No categories yet</td></tr>
+                      )}
+                      {categories.map(cat => (
+                        <tr key={cat.id} className="border-b hover:bg-gray-50">
+                          <td className="px-6 py-4">{cat.name}</td>
+                          <td className="px-6 py-4 flex gap-2">
+                            <button onClick={() => handleEdit(cat)} className="text-blue-600 hover:text-blue-800">
+                              <Edit2 size={18} />
+                            </button>
+                            <button onClick={() => handleDelete(cat.id)} className="text-red-600 hover:text-red-800">
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b bg-gray-100">
+                      <tr>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Ingredient</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Unit</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Cost</th>
                         <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeTab === 'products' && products.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-4 text-center text-gray-500">No products yet</td></tr>
-                  )}
-                  {activeTab === 'categories' && categories.length === 0 && (
-                    <tr><td colSpan={2} className="px-6 py-4 text-center text-gray-500">No categories yet</td></tr>
-                  )}
-                  {activeTab === 'ingredients' && ingredients.length === 0 && (
-                    <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500">No ingredients yet</td></tr>
-                  )}
-
-                  {activeTab === 'products' && products.map(product => (
-                    <tr key={product.id} className="border-b hover:bg-amber-50 transition">
-                      <td className="px-6 py-4">
-                        <div className="font-medium">{product.name}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm">{product.category?.name || '-'}</td>
-                      <td className="px-6 py-4 font-medium">Rp {product.price.toLocaleString('id-ID')}</td>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-amber-700">Rp {typeof product.hpp === 'string' ? product.hpp : (product.hpp || 0)}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-green-600 text-lg">{product.margin}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button onClick={() => { setSelectedProduct(product); setShowModal(true); }} className="text-green-600 hover:text-green-800 hover:bg-green-50 p-2 rounded transition" title="View">
-                            <Eye size={18} />
-                          </button>
-                          <button onClick={() => handleEdit(product)} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded transition">
-                            <Edit2 size={18} />
-                          </button>
-                          <button onClick={() => handleDelete(product.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded transition">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {activeTab === 'categories' && categories.map(cat => (
-                    <tr key={cat.id} className="border-b hover:bg-gray-50">
-                      <td className="px-6 py-4">{cat.name}</td>
-                      <td className="px-6 py-4 flex gap-2">
-                        <button onClick={() => handleEdit(cat)} className="text-blue-600 hover:text-blue-800">
-                          <Edit2 size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(cat.id)} className="text-red-600 hover:text-red-800">
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {activeTab === 'ingredients' && ingredients.map(ing => (
-                    <tr key={ing.id} className="border-b hover:bg-gray-50">
-                      <td className="px-6 py-4">{ing.name}</td>
-                      <td className="px-6 py-4">{ing.unit}</td>
-                      <td className="px-6 py-4">Rp {ing.cost.toLocaleString('id-ID')}</td>
-                      <td className="px-6 py-4 flex gap-2">
-                        <button onClick={() => handleEdit(ing)} className="text-blue-600 hover:text-blue-800">
-                          <Edit2 size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(ing.id)} className="text-red-600 hover:text-red-800">
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingredients.length === 0 && (
+                        <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500">No ingredients yet</td></tr>
+                      )}
+                      {ingredients.map(ing => (
+                        <tr key={ing.id} className="border-b hover:bg-gray-50">
+                          <td className="px-6 py-4">{ing.name}</td>
+                          <td className="px-6 py-4">{ing.unit}</td>
+                          <td className="px-6 py-4">Rp {ing.cost.toLocaleString('id-ID')}</td>
+                          <td className="px-6 py-4 flex gap-2">
+                            <button onClick={() => handleEdit(ing)} className="text-blue-600 hover:text-blue-800">
+                              <Edit2 size={18} />
+                            </button>
+                            <button onClick={() => handleDelete(ing.id)} className="text-red-600 hover:text-red-800">
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
