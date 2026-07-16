@@ -20,6 +20,7 @@ interface Barista {
   name: string;
   email: string;
   outlet_id?: string | null;
+  avatar_url?: string | null;
 }
 
 interface Product {
@@ -439,7 +440,7 @@ export default function OutletsPage() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-[#F59E0B]/30"
+                className="flex-1 bg-linear-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-[#F59E0B]/30"
               >
                 {editingId ? 'Simpan Perubahan' : 'Buat Outlet'}
               </button>
@@ -465,7 +466,7 @@ export default function OutletsPage() {
           setFormData({ name: '', type: 'e-trike', address: '' });
           setShowForm(!showForm);
         }}
-        className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg flex items-center gap-2 transition shadow-lg shadow-[#F59E0B]/30"
+        className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-4 py-2 rounded-lg flex items-center gap-2 transition shadow-lg shadow-[#F59E0B]/30"
       >
         <Plus size={20} />
         Tambah Outlet
@@ -480,10 +481,21 @@ export default function OutletsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {outlets.map(outlet => (
             <div key={outlet.id} className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
-              <div className="bg-gradient-to-r from-[#1F4E5F] via-[#2C6E7F] to-[#1F4E5F] p-4">
-                <div className="flex items-center justify-between">
-                  <div className="bg-white/20 p-2 rounded-lg">
-                    <Building2 size={24} className="text-white" />
+              <div className="bg-linear-to-r from-[#1F4E5F] via-[#2C6E7F] to-[#1F4E5F] p-4">
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <div className="flex min-w-0 flex-col gap-2 text-center">
+                    <div className="flex min-w-0 items-center justify-center gap-3">
+                      <h3 className="truncate text-xl font-bold leading-none text-white">{outlet.name}</h3>
+                      <span className="shrink-0 inline-flex h-8 items-center rounded-full bg-white/15 px-3 text-xs uppercase tracking-[0.18em] text-white/90 leading-none">
+                        {typeLabel(outlet.type)}
+                      </span>
+                    </div>
+                    {outlet.address && (
+                      <div className="mt-1 flex items-center justify-center gap-2 text-sm text-white/80">
+                        <MapPin size={16} className="text-amber-200 shrink-0" />
+                        <p className="line-clamp-2">{outlet.address}</p>
+                      </div>
+                    )}
                   </div>
                   {outlet.id === outletId && (
                     <span className="bg-white/20 text-white text-xs px-3 py-1 rounded-full font-medium backdrop-blur">
@@ -491,26 +503,15 @@ export default function OutletsPage() {
                     </span>
                   )}
                 </div>
-                <h3 className="text-xl font-bold text-white mt-3">{outlet.name}</h3>
-                <div className="flex items-center gap-2 text-white/80 text-sm mt-1">
-                  <Tag size={14} />
-                  <span className="capitalize">{typeLabel(outlet.type)}</span>
-                </div>
               </div>
 
               <div className="p-5 space-y-4">
-                {outlet.address && (
-                  <div className="flex gap-2 text-sm text-gray-600">
-                    <MapPin size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <p className="line-clamp-2">{outlet.address}</p>
-                  </div>
-                )}
 
                 <div className="bg-gray-50 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <Users size={16} className="text-amber-600" />
-                      <p className="font-semibold text-sm text-gray-700">Barista</p>
+                      <p className="font-semibold text-base text-gray-700">Barista</p>
                     </div>
                     {outletBaristasMap.get(outlet.id) && (
                       <button
@@ -523,22 +524,46 @@ export default function OutletsPage() {
                     )}
                   </div>
                     {outletBaristasMap.get(outlet.id) ? (
-                    <div className="bg-amber-100 text-amber-800 px-3 py-2 rounded-lg text-sm font-medium">
-                      {outletBaristasMap.get(outlet.id)?.name}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-400">Belum ada barista</p>
-                  )}
+                      (() => {
+                        const b = outletBaristasMap.get(outlet.id)!;
+                        const avatarSrc = (b as any).avatar_url || (b as any).photo_url || null;
+                        const initials = b.name
+                          .split(' ')
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map(part => part[0]?.toUpperCase() || '')
+                          .join('');
+
+                        return (
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full overflow-hidden bg-amber-100 flex items-center justify-center text-amber-800 font-semibold">
+                              {avatarSrc ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={avatarSrc} alt={b.name} className="h-full w-full object-cover" />
+                              ) : (
+                                <span className="text-sm">{initials}</span>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-800">{b.name}</div>
+                              <div className="text-xs text-gray-500">{b.email}</div>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <p className="text-xs text-gray-400">Belum ada barista</p>
+                    )}
                 </div>
 
                 <p className="text-xs text-gray-400">
-                  Created {new Date(outlet.created_at).toLocaleDateString('id-ID')}
+                  Bergabung sejak {new Date(outlet.created_at).toLocaleDateString('id-ID')}
                 </p>
 
                 <div className="grid grid-cols-2 gap-2 pt-2">
                   <button
                     onClick={() => router.push(`/dashboard/outlets/${outlet.id}`)}
-                    className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-3 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#F59E0B]/30"
+                    className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] hover:from-[#E67E22] hover:to-[#F59E0B] text-white px-3 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#F59E0B]/30"
                   >
                     <Info size={16} />
                     Detail

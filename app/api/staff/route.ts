@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('users')
-      .select('id, name, email, role, outlet_id, is_active');
+      .select('id, name, email, role, outlet_id, is_active, avatar_url');
 
     // If outlet_id is provided, filter by outlet
     if (outlet_id) {

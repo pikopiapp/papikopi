@@ -129,7 +129,7 @@ export default function OutletDetailPage() {
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header Card */}
-<div className="bg-gradient-to-r from-[#1F4E5F] via-[#2C6E7F] to-[#1F4E5F] rounded-3xl p-6 text-white shadow-xl">
+<div className="bg-linear-to-r from-[#1F4E5F] via-[#2C6E7F] to-[#1F4E5F] rounded-3xl p-6 text-white shadow-xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
@@ -139,8 +139,26 @@ export default function OutletDetailPage() {
               <ArrowLeft size={24} className="text-white" />
             </button>
             <div>
-              <h1 className="text-3xl font-bold">{details.outlet.name}</h1>
-              <p className="text-white/80 capitalize">{typeLabel(details.outlet.type)}</p>
+              <div className="flex items-center gap-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+                  <Building2 size={20} className="text-white" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-3xl font-bold">{details.outlet.name}</h1>
+                    <span className="rounded-full bg-white/15 px-3 py-1 text-xs uppercase tracking-[0.22em] text-white/90">
+                      {typeLabel(details.outlet.type)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex gap-2 text-sm text-white/80 max-w-2xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-map-pin text-amber-200 shrink-0 mt-0.5" aria-hidden="true">
+                      <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path>
+                      <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <p className="line-clamp-2">{details.outlet.address || 'Alamat belum ditambahkan'}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           {details.assigned_barista && (
@@ -157,22 +175,22 @@ export default function OutletDetailPage() {
 
       {/* Sales Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-<div className="bg-gradient-to-br from-[#1F4E5F] to-[#2C6E7F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
+<div className="bg-linear-to-br from-[#1F4E5F] to-[#2C6E7F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
           <DollarSign size={24} className="text-white/80 mb-2" />
           <p className="text-white/60 text-sm">Total Revenue</p>
           <p className="text-2xl font-bold">{details.sales_summary.total_revenue.toLocaleString('id-ID')}</p>
         </div>
-        <div className="bg-gradient-to-br from-[#2C6E7F] to-[#1F4E5F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-linear-to-br from-[#2C6E7F] to-[#1F4E5F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
           <Flame size={24} className="text-white/80 mb-2" />
           <p className="text-white/60 text-sm">Today&apos;s Revenue</p>
           <p className="text-2xl font-bold">{details.sales_summary.today_revenue.toLocaleString('id-ID')}</p>
         </div>
-        <div className="bg-gradient-to-br from-[#163944] to-[#1F4E5F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-linear-to-br from-[#163944] to-[#1F4E5F] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
           <TrendingUp size={24} className="text-white/80 mb-2" />
           <p className="text-white/60 text-sm">Total Profit</p>
           <p className="text-2xl font-bold">{details.sales_summary.total_profit.toLocaleString('id-ID')}</p>
         </div>
-        <div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
           <DollarSign size={24} className="text-white/80 mb-2" />
           <p className="text-white/60 text-sm">Total Bonus</p>
           <p className="text-2xl font-bold">{details.sales_summary.total_bonus.toLocaleString('id-ID')}</p>
@@ -205,7 +223,7 @@ export default function OutletDetailPage() {
       {/* Available Products */}
       {details.product_batches && details.product_batches.length > 0 && (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-<div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
+<div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Package size={20} />
               Available Products
@@ -240,7 +258,7 @@ export default function OutletDetailPage() {
       {/* Top Selling Products */}
       {details.product_sales && details.product_sales.length > 0 && (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-<div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
+<div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <TrendingUp size={20} />
               Top Selling Products
@@ -275,7 +293,7 @@ export default function OutletDetailPage() {
       {/* Payment Methods */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-<div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
+<div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <CreditCard size={20} />
               Cash
@@ -288,7 +306,7 @@ export default function OutletDetailPage() {
           </div>
         </div>
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
+          <div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <CreditCard size={20} />
               QRIS
@@ -305,7 +323,7 @@ export default function OutletDetailPage() {
       {/* Recent Transactions */}
       {details.recent_sales && details.recent_sales.length > 0 && (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-<div className="bg-gradient-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
+<div className="bg-linear-to-r from-[#F59E0B] to-[#FFB703] px-6 py-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Calendar size={20} />
               Recent Transactions
