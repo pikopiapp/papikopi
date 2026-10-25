@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:business-day": "npx tsc --noEmit lib/business-day.test.ts"
+    "test:business-day": "npx tsc --noEmit lib/business-day.test.ts",
+    "test:tspl": "npx tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --jsx react-jsx --outDir ./tmp/tspl-test lib/tspl-printer.ts lib/tspl-printer.test.ts && node ./tmp/tspl-test/tspl-printer.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
@@ -41,6 +42,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4.3.1",
+    "tsx": "^4.20.0",
     "typescript": "^5"
   }
 }

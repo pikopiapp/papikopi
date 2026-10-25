@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
       .eq('id', user.id)
       .maybeSingle();
 
+    if (userError) {
+      console.error('Failed to fetch user profile by auth ID:', userError.message);
+      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
+    }
+
     if (userData) {
       if (tokenRole && tokenRole !== userData.role && ['admin', 'investor'].includes(tokenRole)) {
         const { error: updateError } = await admin
@@ -47,6 +52,36 @@ export async function GET(request: NextRequest) {
         }
       }
       return NextResponse.json(userData);
+    }
+
+    if (user.email) {
+      const { data: emailProfile, error: emailProfileError } = await admin
+        .from('users')
+        .select('*')
+        .ilike('email', user.email)
+        .maybeSingle();
+
+      if (emailProfileError) {
+        console.error('Failed to fetch user profile by email:', emailProfileError.message);
+        return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
+      }
+
+      if (emailProfile) {
+        if (tokenRole && tokenRole !== emailProfile.role && ['admin', 'investor'].includes(tokenRole)) {
+          const { error: updateError } = await admin
+            .from('users')
+            .update({ role: tokenRole })
+            .eq('id', emailProfile.id);
+
+          if (updateError) {
+            console.warn('Failed to sync role from auth metadata:', updateError.message);
+          } else {
+            emailProfile.role = tokenRole;
+          }
+        }
+
+        return NextResponse.json(emailProfile);
+      }
     }
 
     // If profile doesn't exist, try to upsert by email (avoid duplicate key)

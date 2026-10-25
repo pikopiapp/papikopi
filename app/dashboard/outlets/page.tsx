@@ -13,6 +13,8 @@ interface Outlet {
   type: string;
   address: string | null;
   created_at: string;
+  cafe_id?: string | null;
+  cafes?: { id: string; name: string } | null;
 }
 
 interface Barista {

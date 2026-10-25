@@ -1,6 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
+type StaffPayload = {
+  id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  outlet_id?: string;
+  is_active?: boolean;
+};
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -13,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('users')
-      .select('id, name, email, role, outlet_id, is_active, avatar_url');
+      .select('id, name, email, role, outlet_id, cafe_id, is_active, avatar_url');
 
     // If outlet_id is provided, filter by outlet
     if (outlet_id) {
@@ -85,9 +95,9 @@ export async function POST(request: NextRequest) {
         avatar_url = publicUrlData.publicUrl;
       }
     } else {
-      const body = await request.json();
+      const body = await request.json() as StaffPayload;
       console.log('POST /api/staff body:', JSON.stringify(body));
-      ({ name, email, role, outlet_id, phone } = body as any);
+      ({ name, email, role, outlet_id, phone } = body);
     }
 
     const missing: string[] = [];
@@ -128,6 +138,7 @@ export async function PUT(request: NextRequest) {
     let id: string | undefined;
     let name: string | undefined;
     let email: string | undefined;
+    let phone: string | undefined;
     let role: string | undefined;
     let is_active: boolean | undefined;
     let avatar_url: string | undefined;
@@ -137,6 +148,7 @@ export async function PUT(request: NextRequest) {
       id = form.get('id')?.toString();
       name = form.get('name')?.toString();
       email = form.get('email')?.toString();
+      phone = form.get('phone')?.toString();
       role = form.get('role')?.toString();
       const activeVal = form.get('is_active');
       if (activeVal != null) is_active = activeVal === 'true' || activeVal === '1';
@@ -171,8 +183,8 @@ export async function PUT(request: NextRequest) {
         avatar_url = publicUrlData.publicUrl;
       }
     } else {
-      const body = await request.json();
-      ({ id, name, email, role, is_active } = body as any);
+      const body = await request.json() as StaffPayload;
+      ({ id, name, email, phone, role, is_active } = body);
     }
 
     if (!id) {
@@ -182,6 +194,7 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
+    if (phone !== undefined) updateData.phone = phone || null;
     if (role !== undefined) updateData.role = role;
     if (is_active !== undefined) updateData.is_active = is_active;
     if (avatar_url) updateData.avatar_url = avatar_url;

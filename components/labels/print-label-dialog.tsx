@@ -1,4 +1,6 @@
-import { useState } from 'react';
+'use client';
+
+import { useEffect, useState } from 'react';
 
 interface PrintLabelProps {
   productId: string;
@@ -20,10 +22,55 @@ export function PrintLabelDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [printQuantity, setPrintQuantity] = useState(quantity);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [printerConfigured, setPrinterConfigured] = useState<boolean | null>(null);
+  const [printerStatusError, setPrinterStatusError] = useState<string | null>(null);
 
-  const handlePrint = async () => {
+  useEffect(() => {
+    let active = true;
+
+    fetch('/api/labels/printer-status')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to read printer configuration');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (!active) return;
+        setPrinterConfigured(Boolean(data.configured));
+        if (data.configured === false) {
+          setPrinterStatusError('Printer belum dikonfigurasi. Set PRINTER_HOST atau NEXT_PUBLIC_PRINTER_HOST.');
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('Printer status fetch failed:', error);
+        setPrinterConfigured(false);
+        setPrinterStatusError('Gagal memeriksa status printer.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handlePrint = async (sendToPrinter = false) => {
     setIsLoading(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+
     try {
+      if (sendToPrinter) {
+        if (printerConfigured === false) {
+          setErrorMessage('Printer belum dikonfigurasi. Set PRINTER_HOST atau NEXT_PUBLIC_PRINTER_HOST di environment.');
+          return;
+        }
+
+        setStatusMessage('Mengirim label ke printer...');
+      }
+
       const response = await fetch('/api/labels/print', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,18 +80,35 @@ export function PrintLabelDialog({
           batch,
           production_date: productionDate,
           expiry_date: expiryDate,
-          quantity: printQuantity, // Send quantity
+          quantity: printQuantity,
+          send_to_printer: sendToPrinter,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to generate label');
+      if (!response.ok) {
+        const errorData = await response.json();
+        const message = errorData?.printer_message || errorData?.error || 'Failed to generate label';
+        setErrorMessage(message);
+        throw new Error(message);
+      }
+
+      if (sendToPrinter) {
+        const data = await response.json();
+        setStatusMessage(data.message || 'Labels sent to printer');
+        return;
+      }
 
       const html = await response.text();
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
+      setPreviewUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl);
+        }
+        return url;
+      });
+      setStatusMessage('Preview opened in a new tab. Use browser print only for local validation.');
 
-      // Open in new window for printing
       const printWindow = window.open(url, '_blank');
       if (printWindow) {
         printWindow.addEventListener('load', () => {
@@ -54,8 +118,9 @@ export function PrintLabelDialog({
         });
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Gagal membuat label';
       console.error('❌ Error printing label:', error);
-      alert('Gagal membuat label');
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
     }
@@ -75,15 +140,40 @@ export function PrintLabelDialog({
         />
       </div>
 
-      <button
-        onClick={handlePrint}
-        disabled={isLoading}
-        className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
-      >
-        🖨️ Print {printQuantity} {printQuantity === 1 ? 'Label' : 'Labels'}
-        {isLoading && <span className="animate-spin">⏳</span>}
-      </button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button
+          onClick={() => handlePrint(false)}
+          disabled={isLoading}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
+        >
+          🖨️ Preview {printQuantity} {printQuantity === 1 ? 'Label' : 'Labels'}
+          {isLoading && <span className="animate-spin">⏳</span>}
+        </button>
+        <button
+          onClick={() => handlePrint(true)}
+          disabled={isLoading}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 text-sm"
+        >
+          🚀 Send to Printer
+          {isLoading && <span className="animate-spin">⏳</span>}
+        </button>
+      </div>
 
+      {printerStatusError && (
+        <div className="text-sm text-orange-700 bg-orange-50 border border-orange-100 rounded p-2">
+          {printerStatusError}
+        </div>
+      )}
+      {statusMessage && (
+        <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded p-2">
+          {statusMessage}
+        </div>
+      )}
+      {errorMessage && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded p-2">
+          {errorMessage}
+        </div>
+      )}
       {previewUrl && (
         <div className="text-xs text-gray-600">
           ✓ Label preview dibuka di tab baru

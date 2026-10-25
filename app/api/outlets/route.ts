@@ -22,10 +22,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(data);
     }
 
-    // Otherwise, get all outlets
+    // Otherwise, get all outlets with cafe info
     const { data, error } = await supabase
       .from('outlets')
-      .select('*')
+      .select('*, cafes(id, name)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;

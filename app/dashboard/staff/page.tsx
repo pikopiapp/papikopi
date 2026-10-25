@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuthStore } from '@/lib/store/auth';
 import { Users, Plus, Edit2, Trash2, Check, X, AlertCircle, Coffee, Phone, Store, BadgeCheck } from 'lucide-react';
 
@@ -36,6 +36,8 @@ const [formData, setFormData] = useState({ name: '', email: '', phone: '', role:
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [pendingStatusIds, setPendingStatusIds] = useState<Set<string>>(() => new Set());
+  const formSectionRef = useRef<HTMLDivElement>(null);
 
   // Initialize outlet from localStorage or URL
   useEffect(() => {
@@ -87,6 +89,12 @@ useEffect(() => {
     }, 0);
     return () => clearTimeout(t);
   }, [fetchStaff, fetchOutlets]);
+
+useEffect(() => {
+  if (showForm) {
+    formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}, [showForm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,6 +153,8 @@ if (res.ok) {
         await fetchStaff();
         setFormData({ name: '', email: '', phone: '', role: 'barista' });
         setEditingId(null);
+        setPhotoFile(null);
+        setPhotoPreview(null);
         setShowForm(false);
         setSuccess(editingId ? 'Staff updated successfully!' : 'Staff added successfully!');
         setTimeout(() => setSuccess(null), 3000);
@@ -171,12 +181,18 @@ if (res.ok) {
 const handleEdit = (member: StaffMember) => {
     setEditingId(member.id);
     setFormData({ name: member.name, email: member.email, phone: member.phone || '', role: member.role });
+    setPhotoFile(null);
+    setPhotoPreview(member.avatar_url || member.photo_url || member.profile_image_url || member.image_url || member.avatar || null);
+    setError(null);
     setShowForm(true);
   };
 
 const handleToggleStatus = async (member: StaffMember) => {
+    const nextIsActive = !member.is_active;
+    setPendingStatusIds((current) => new Set(current).add(member.id));
     try {
       setError(null);
+      setSuccess(null);
       const res = await fetch('/api/staff', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -186,18 +202,30 @@ const handleToggleStatus = async (member: StaffMember) => {
           email: member.email,
           phone: member.phone,
           role: member.role,
-          is_active: !member.is_active,
+          is_active: nextIsActive,
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to update status');
-      
-      await fetchStaff();
-      setSuccess(`Staff ${member.is_active ? 'deactivated' : 'activated'} successfully!`);
+      if (!res.ok) throw new Error(`Failed to update status (HTTP ${res.status})`);
+
+      setStaff((current) =>
+        current.map((staffMember) =>
+          staffMember.id === member.id
+            ? { ...staffMember, is_active: nextIsActive }
+            : staffMember,
+        ),
+      );
+      setSuccess(`Status ${nextIsActive ? 'aktif' : 'nonaktif'} untuk ${member.name} berhasil diubah.`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
-      setError('Failed to update status');
+      setError(error instanceof Error ? error.message : 'Failed to update status');
       console.error(error);
+    } finally {
+      setPendingStatusIds((current) => {
+        const next = new Set(current);
+        next.delete(member.id);
+        return next;
+      });
     }
   };
 
@@ -248,6 +276,8 @@ const handleToggleStatus = async (member: StaffMember) => {
           onClick={() => {
             setEditingId(null);
             setFormData({ name: '', email: '', phone: '', role: 'barista' });
+            setPhotoFile(null);
+            setPhotoPreview(null);
             setError(null);
             setShowForm(!showForm);
           }}
@@ -275,7 +305,7 @@ const handleToggleStatus = async (member: StaffMember) => {
       )}
 
       {showForm && (
-        <div className="rounded-2xl border border-amber-100 bg-white p-6 shadow-sm">
+        <div ref={formSectionRef} className="scroll-mt-6 rounded-2xl border border-amber-100 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">{editingId ? 'Edit Staff Member' : 'Add New Staff Member'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -343,6 +373,8 @@ const handleToggleStatus = async (member: StaffMember) => {
                 onClick={() => {
                   setShowForm(false);
                   setEditingId(null);
+                  setPhotoFile(null);
+                  setPhotoPreview(null);
                 }}
                 className="flex items-center gap-2 rounded-lg bg-gray-200 px-6 py-2 text-gray-800 transition hover:bg-gray-300"
               >
@@ -452,16 +484,32 @@ const handleToggleStatus = async (member: StaffMember) => {
                       <div className="font-medium text-gray-800">{outletName || 'Unassigned'}</div>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-gray-500">Status</div>
+                    <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
                       <div>
-                        <button
-                          onClick={() => handleToggleStatus(member)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-                        >
-                          {member.is_active ? '✓ Active' : '✕ Inactive'}
-                        </button>
+                        <div className="text-xs text-gray-500">Status akun</div>
+                        <div className={`mt-1 text-sm font-semibold ${member.is_active ? 'text-green-700' : 'text-gray-500'}`}>
+                          {member.is_active ? 'Aktif' : 'Nonaktif'}
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={member.is_active}
+                        aria-label={`Ubah status ${member.name}`}
+                        disabled={pendingStatusIds.has(member.id)}
+                        onClick={() => handleToggleStatus(member)}
+                        className="inline-flex items-center gap-2 rounded-full py-1 text-sm font-medium text-gray-600 transition hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`relative h-6 w-11 rounded-full transition-colors ${member.is_active ? 'bg-green-600' : 'bg-gray-300'}`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${member.is_active ? 'translate-x-5' : 'translate-x-0'}`}
+                          />
+                        </span>
+                        <span>{pendingStatusIds.has(member.id) ? 'Menyimpan...' : 'Ubah'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>

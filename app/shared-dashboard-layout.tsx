@@ -11,7 +11,7 @@ import {
   Factory, ShoppingBag, Users2, Store, ClipboardList, Settings, MessageSquare,
   Package, RotateCw, Eye, Calendar, Zap, BarChart3,
   Target, DollarSign, Receipt, Users, Briefcase, Calculator, Menu, X, HardDrive
-  , ChevronDown, ChevronRight
+  , ChevronDown, ChevronRight, Coffee
 } from 'lucide-react';
 
 export default function GenericDashboardLayout({ children }: { children: ReactNode }) {
@@ -78,6 +78,13 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
       title: 'Beranda',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      ],
+    },
+
+    {
+      title: 'Cafe / Foodcourt',
+      items: [
+        { href: '/cafe', label: 'Cafe / Foodcourt', icon: Coffee },
       ],
     },
 
