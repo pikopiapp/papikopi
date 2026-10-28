@@ -177,6 +177,7 @@ const SESSION_REQUIRED_API_PREFIXES = [
   '/api/qrcode',
   '/api/batch-to-showcase',
   '/api/showcase/send-batch',
+  '/api/showcase/allocate',
 ];
 
 function matchesPrefix(pathname: string, prefixes: string[]) {
