@@ -27,9 +27,27 @@ export async function GET(request: Request) {
     const businessDayStartHour = Number(url.searchParams.get('business_day_start_hour') ?? 4);
     const useBusinessDay = businessDay === '1' || businessDay === 'true' || businessDay === 'yes';
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
+    const group = url.searchParams.get('group');
+
+    // Items are opt-in: list/KPI requests omit sale_items entirely; detail views ask for
+    // include_items=1 (all fields), while unit counters ask for include_items=units.
+    const includeItemsRaw = (url.searchParams.get('include_items') || '').toLowerCase();
+    const itemsMode: 'none' | 'units' | 'full' =
+      includeItemsRaw === '1' || includeItemsRaw === 'true' || includeItemsRaw === 'yes'
+        ? 'full'
+        : includeItemsRaw === 'units'
+          ? 'units'
+          : 'none';
+    const itemsSelect =
+      group === 'monthly' || itemsMode === 'none'
+        ? null
+        : itemsMode === 'full'
+          ? 'sale_items(*)'
+          : 'sale_items(quantity,hpp)';
 
     const buildQuery = () => {
-      let q = svc.from('sales').select('id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount');
+      const columns = 'id,outlet_id,total_amount,hpp_total,profit,created_at,barista_id,payment_method,bonus_amount';
+      let q = svc.from('sales').select(itemsSelect ? `${columns},${itemsSelect}` : columns);
       if (outlet_id) q = q.eq('outlet_id', outlet_id);
 
       if (since) {
@@ -68,33 +86,15 @@ export async function GET(request: Request) {
       }
     }
 
-    const saleIds = Array.from(new Set(allRows.map((r) => String(r.id || '')).filter(Boolean)));
-    const saleItemsBySaleId: Record<string, any[]> = {};
-    if (saleIds.length > 0) {
-      const batchSize = 500;
-      const allItems: any[] = [];
-      for (let i = 0; i < saleIds.length; i += batchSize) {
-        const batch = saleIds.slice(i, i + batchSize);
-        const { data: items, error: itemsError } = await svc.from('sale_items').select('*').in('sale_id', batch);
-        if (itemsError) return NextResponse.json({ error: itemsError.message }, { status: 500 });
-        if (Array.isArray(items)) allItems.push(...items);
-      }
-      allItems.forEach((item) => {
-        const saleId = String(item.sale_id || '');
-        if (!saleId) return;
-        if (!saleItemsBySaleId[saleId]) saleItemsBySaleId[saleId] = [];
-        saleItemsBySaleId[saleId].push(item);
-      });
-    }
+    const normalized = allRows.map((r) => {
+      const { sale_items: saleItems, ...rest } = r;
+      return {
+        ...rest,
+        ...(itemsSelect ? { sale_items: Array.isArray(saleItems) ? saleItems : [] } : {}),
+        barista_name: baristaMap[r.barista_id] || null,
+      };
+    });
 
-    const normalized = allRows.map((r) => ({
-      ...r,
-      sale_items: saleItemsBySaleId[String(r.id || '')] || [],
-      items: saleItemsBySaleId[String(r.id || '')] || [],
-      barista_name: baristaMap[r.barista_id] || null,
-    }));
-
-    const group = url.searchParams.get('group');
     const meta = {
       requested: { outlet_id, since, until, group, business_day: useBusinessDay, business_day_start_hour: businessDayStartHour },
       rowsFetched: allRows.length,

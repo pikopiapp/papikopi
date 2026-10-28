@@ -139,6 +139,7 @@ export default function DailySummaryReport() {
           until: e,
           business_day: '1',
           business_day_start_hour: '4',
+          include_items: 'units',
         });
         if (outlet) qItems.set('outlet_id', outlet);
         const resItems = await fetch(`/api/sales/by-outlet?${qItems.toString()}`);

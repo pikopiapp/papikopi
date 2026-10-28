@@ -198,6 +198,7 @@ function useKpis(rangeStart?: string, rangeEnd?: string, useBusinessDay = DASHBO
         until: fmt(end),
         business_day: useBusinessDay ? '1' : '0',
         business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+        include_items: 'units',
         debug: '1',
       });
       const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
@@ -335,6 +336,7 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           until: endIso,
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          include_items: 'units',
           debug: '1',
         });
         const todayParams = new URLSearchParams({
@@ -342,6 +344,7 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           until: todayIso,
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          include_items: 'units',
           debug: '1',
         });
         const summaryParams = new URLSearchParams({
