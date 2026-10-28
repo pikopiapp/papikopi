@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdminClient } from '@/lib/supabase-admin';
+import { findAuthUserByEmail } from '@/lib/auth-admin';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -82,9 +84,29 @@ export async function DELETE(
 ) {
   try {
     const { userId } = await params;
+    const admin = getSupabaseAdminClient();
 
-    // Delete user
-    const { error } = await supabase
+    const { data: profile, error: lookupError } = await admin
+      .from('users')
+      .select('id, email')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (lookupError) {
+      return Response.json(
+        { error: lookupError.message },
+        { status: 400 }
+      );
+    }
+
+    if (!profile) {
+      return Response.json(
+        { error: 'User tidak ditemukan' },
+        { status: 404 }
+      );
+    }
+
+    const { error } = await admin
       .from('users')
       .delete()
       .eq('id', userId);
@@ -96,7 +118,25 @@ export async function DELETE(
       );
     }
 
-    return Response.json({ message: 'User deleted successfully' });
+    // Without this the login keeps working and the profile is recreated on the next request.
+    let authDeleted = false;
+    if (profile.email) {
+      try {
+        const authUser = await findAuthUserByEmail(admin, profile.email);
+        if (authUser) {
+          const { error: authDeleteError } = await admin.auth.admin.deleteUser(authUser.id);
+          if (authDeleteError) {
+            console.error('Failed to delete auth user for removed profile:', authDeleteError.message);
+          } else {
+            authDeleted = true;
+          }
+        }
+      } catch (authError) {
+        console.error('Failed to look up auth user for removed profile:', authError);
+      }
+    }
+
+    return Response.json({ message: 'User deleted successfully', auth_deleted: authDeleted });
   } catch (error) {
     console.error('Error deleting user:', error);
     return Response.json(

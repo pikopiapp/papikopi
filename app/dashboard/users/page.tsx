@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
 
-type UserRole = 'superadmin' | 'admin' | 'manager' | 'barista' | 'investor';
+type UserRole = 'admin' | 'manager' | 'barista' | 'investor';
 
 interface User {
   id: string;
@@ -17,7 +17,6 @@ interface User {
 }
 
 const roleColors: Record<UserRole, string> = {
-  superadmin: 'bg-purple-100 text-purple-800',
   admin: 'bg-red-100 text-red-800',
   manager: 'bg-blue-100 text-blue-800',
   barista: 'bg-green-100 text-green-800',
@@ -25,7 +24,6 @@ const roleColors: Record<UserRole, string> = {
 };
 
 const roleLabels: Record<UserRole, string> = {
-  superadmin: 'Super Admin',
   admin: 'Admin',
   manager: 'Manager',
   barista: 'Barista',
@@ -183,7 +181,7 @@ export default function ManageUsersPage() {
         }
 
         await response.json();
-        setSuccess('User berhasil ditambahkan');
+        setSuccess('User dan akun login berhasil dibuat');
         await fetchUsers();
       }
 
@@ -264,7 +262,6 @@ export default function ManageUsersPage() {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">Semua Role</option>
-            <option value="superadmin">Super Admin</option>
             <option value="admin">Admin</option>
             <option value="manager">Manager</option>
             <option value="barista">Barista</option>
@@ -406,13 +403,19 @@ export default function ManageUsersPage() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Pilih Role</option>
-                  <option value="superadmin">Super Admin</option>
                   <option value="admin">Admin</option>
                   <option value="manager">Manager</option>
                   <option value="barista">Barista</option>
                   <option value="investor">Investor</option>
                 </select>
               </div>
+
+              {!editingUser && (
+                <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded p-3">
+                  Akun login (email + password default) dibuat otomatis dan langsung aktif.
+                  Minta user mengganti password setelah login pertama.
+                </p>
+              )}
 
               <div className="flex gap-3 mt-6 pt-4 border-t">
                 <button

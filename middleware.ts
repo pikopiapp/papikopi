@@ -200,14 +200,21 @@ function matchesPrefix(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-// Showcase writes move stock between the warehouse and the outlets, so a valid session is
-// not enough — investor accounts are read-only and must not allocate or reassign anything.
-const SHOWCASE_API_PREFIX = '/api/showcase';
+// Writes that move stock or create logins need more than a valid session: investors are
+// read-only, and only admin/manager may create, edit or delete accounts.
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const SHOWCASE_WRITE_ROLES = new Set(['admin', 'manager', 'barista']);
+const WRITE_ROLE_RULES: Array<{ prefix: string; roles: Set<string> }> = [
+  { prefix: '/api/showcase', roles: new Set(['admin', 'manager', 'barista']) },
+  { prefix: '/api/users', roles: new Set(['admin', 'manager']) },
+];
 
-function isShowcaseWrite(pathname: string, method: string) {
-  return matchesPrefix(pathname, [SHOWCASE_API_PREFIX]) && WRITE_METHODS.has(method.toUpperCase());
+function requiredWriteRoles(pathname: string, method: string): Set<string> | null {
+  if (!WRITE_METHODS.has(method.toUpperCase())) {
+    return null;
+  }
+
+  const rule = WRITE_ROLE_RULES.find((candidate) => matchesPrefix(pathname, [candidate.prefix]));
+  return rule ? rule.roles : null;
 }
 
 // Protect /admin, /dashboard, /investor pages and every /api route that is not
@@ -268,10 +275,11 @@ export async function middleware(req: NextRequest) {
       });
     }
 
-    if (isShowcaseWrite(normalizedPath, req.method)) {
+    const writeRoles = requiredWriteRoles(normalizedPath, req.method);
+    if (writeRoles) {
       const user = await getAuthenticatedUser(req);
       const role = await getAppUserRole(user);
-      if (!role || !SHOWCASE_WRITE_ROLES.has(role)) {
+      if (!role || !writeRoles.has(role)) {
         return new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
           status: 403,
           headers: { 'Content-Type': 'application/json' },

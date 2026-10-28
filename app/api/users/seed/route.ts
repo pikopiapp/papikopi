@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcrypt';
+import { DEFAULT_USER_PASSWORD } from '@/lib/auth-defaults';
 
 // For demo/seeding only - use anon key with RLS disabled temporarily
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -7,7 +8,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const DEFAULT_PASSWORD = 'PapiKopiOutlet!234';
+const DEFAULT_PASSWORD = DEFAULT_USER_PASSWORD;
 
 const usersData = [
   {

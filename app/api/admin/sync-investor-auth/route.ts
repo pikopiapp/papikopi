@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase-admin';
+import { DEFAULT_USER_PASSWORD } from '@/lib/auth-defaults';
 
-const DEFAULT_PASSWORD = 'PapiKopiOutlet!234';
+const DEFAULT_PASSWORD = DEFAULT_USER_PASSWORD;
 
 export async function POST() {
   try {
