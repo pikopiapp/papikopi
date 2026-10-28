@@ -6,11 +6,18 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export async function GET() {
-  return handleSeed();
+const ADMIN_SECRET = process.env.ADMIN_API_SECRET || process.env.ADMIN_SYNC_SECRET || '';
+
+function unauthorized() {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
 
-export async function POST() {
+// Seeds batch_allocations; secret-gated and POST-only (a GET used to run the seed).
+export async function POST(request: NextRequest) {
+  if (!ADMIN_SECRET || request.headers.get('x-admin-secret') !== ADMIN_SECRET) {
+    return unauthorized();
+  }
+
   return handleSeed();
 }
 
