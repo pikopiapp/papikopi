@@ -105,7 +105,7 @@ async function getRecentSales(startIso: string, endIso: string) {
 
   return sales.map((s) => ({
     ...s,
-    barista_name: (s.barista_id && baristaMap.get(s.barista_id)) || 'Tidak diketahui',
+    barista_name: (s.barista_id && baristaMap.get(s.barista_id)) || 'Barista lama',
   }));
 }
 
