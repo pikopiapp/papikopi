@@ -1,83 +1,37 @@
-'use client';
+import Link from 'next/link';
+import { Target, ArrowLeft, TrendingUp, Store } from 'lucide-react';
+import { supabaseServer } from '@/lib/supabaseServer';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Target, ArrowLeft, TrendingUp, Store, Package } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+export const dynamic = 'force-dynamic';
 
-interface OutletPerformance {
+interface PerformanceRow {
   outlet_id: string;
   outlet_name: string;
-  total_sales: number;
-  total_revenue: number;
-  total_profit: number;
-  transaction_count: number;
-  avg_transaction_value: number;
-  barista_count: number;
+  revenue: number | string;
+  profit: number | string;
+  orders: number | string;
+  barista_count: number | string;
 }
 
-export default function PerformancePage() {
-  const router = useRouter();
-  const [performances, setPerformances] = useState<OutletPerformance[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default async function PerformancePage() {
+  // Server-side on purpose: summing sales per outlet in the browser read at most 1,000 of
+  // the 35,704 sales rows, so every outlet's revenue and profit were understated.
+  const { data, error } = await supabaseServer.rpc('get_outlet_performance');
 
-  useEffect(() => {
-    fetchPerformanceData();
-  }, []);
-
-  const fetchPerformanceData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Get all outlets
-      const { data: outlets, error: outletsError } = await supabase
-        .from('outlets')
-        .select('id, name');
-
-      if (outletsError) throw outletsError;
-
-      // Fetch performance data for each outlet
-      const performancePromises = (outlets || []).map(async (outlet: any) => {
-        // Get sales data
-        const { data: sales } = await supabase
-          .from('sales')
-          .select('id, total_amount, profit')
-          .eq('outlet_id', outlet.id);
-
-        // Get barista count
-        const { data: baristas } = await supabase
-          .from('users')
-          .select('id')
-          .eq('outlet_id', outlet.id)
-          .eq('role', 'barista');
-
-        const totalRevenue = (sales || []).reduce((sum, s: any) => sum + Number(s.total_amount), 0);
-        const totalProfit = (sales || []).reduce((sum, s: any) => sum + Number(s.profit), 0);
-        const transactionCount = sales?.length || 0;
-
-        return {
-          outlet_id: outlet.id,
-          outlet_name: outlet.name,
-          total_sales: transactionCount,
-          total_revenue: totalRevenue,
-          total_profit: totalProfit,
-          transaction_count: transactionCount,
-          avg_transaction_value: transactionCount > 0 ? totalRevenue / transactionCount : 0,
-          barista_count: baristas?.length || 0
-        };
-      });
-
-      const results = await Promise.all(performancePromises);
-      setPerformances(results.sort((a, b) => b.total_revenue - a.total_revenue));
-    } catch (err) {
-      console.error('Failed to fetch performance data:', err);
-      setError('Failed to load performance data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const rows: PerformanceRow[] = Array.isArray(data) ? (data as PerformanceRow[]) : [];
+  const performances = rows.map((row) => {
+    const revenue = Number(row.revenue ?? 0);
+    const orders = Number(row.orders ?? 0);
+    return {
+      outlet_id: row.outlet_id,
+      outlet_name: row.outlet_name,
+      total_revenue: revenue,
+      total_profit: Number(row.profit ?? 0),
+      transaction_count: orders,
+      avg_transaction_value: orders > 0 ? revenue / orders : 0,
+      barista_count: Number(row.barista_count ?? 0),
+    };
+  });
 
   const totalAllRevenue = performances.reduce((sum, p) => sum + p.total_revenue, 0);
   const totalAllProfit = performances.reduce((sum, p) => sum + p.total_profit, 0);
@@ -86,13 +40,13 @@ export default function PerformancePage() {
   return (
     <div className="p-6 surface min-h-screen">
       <div className="mb-6">
-        <button
-          onClick={() => router.back()}
+        <Link
+          href="/dashboard/outlets"
           className="flex items-center text-indigo-600 hover:text-indigo-700 transition-colors"
         >
           <ArrowLeft size={20} className="mr-2" />
           Back
-        </button>
+        </Link>
       </div>
 
       <div className="mb-8">
@@ -103,25 +57,18 @@ export default function PerformancePage() {
         <p className="text-gray-600">Track sales performance and metrics across all outlets</p>
       </div>
 
-      {loading && (
-        <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
-          <div className="relative">
-            <Target size={64} className="text-indigo-600 opacity-20 animate-pulse mx-auto" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          </div>
-          <p className="text-gray-500 mt-6">Loading performance data...</p>
-        </div>
-      )}
-
       {error && (
         <div className="bg-red-50 border-2 border-red-200 rounded-2xl shadow-lg p-6">
-          <p className="text-red-800">{error}</p>
+          <p className="text-red-800 font-medium">Performance data could not be read</p>
+          <p className="text-red-700 text-sm mt-1">
+            Function <code>get_outlet_performance</code> is missing from the database. Run migration{' '}
+            <code>supabase/migrations/0013_reports_returns_and_outlet_performance.sql</code>.
+          </p>
+          <p className="text-red-700 text-xs mt-1">{error.message}</p>
         </div>
       )}
 
-      {!loading && !error && performances.length === 0 && (
+      {!error && performances.length === 0 && (
         <div className="surface-card rounded-2xl shadow-lg p-12 text-center">
           <Target size={64} className="mx-auto text-gray-300 mb-4" />
           <h3 className="text-xl font-semibold text-gray-600 mb-2">No Performance Data</h3>
@@ -129,7 +76,7 @@ export default function PerformancePage() {
         </div>
       )}
 
-      {!loading && !error && performances.length > 0 && (
+      {!error && performances.length > 0 && (
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

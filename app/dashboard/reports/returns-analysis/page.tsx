@@ -1,156 +1,116 @@
-'use client';
+import { AlertCircle } from 'lucide-react';
+import { supabaseServer } from '@/lib/supabaseServer';
+import { formatDateOnlyInJakarta, getDateBoundaryInJakarta } from '@/lib/helpers/business-day';
+import { isYmd } from '@/lib/reports/sales-agg';
+import ReturnsPeriodSelector from './ReturnsPeriodSelector.client';
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
+type PeriodKey = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
-interface ReturnReason {
-  reason: string;
-  count: number;
-  percentage: number;
-  impact: string;
-  totalValue: number;
+interface ReportParams {
+  period?: string;
+  start?: string;
+  end?: string;
 }
 
-type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
+interface ReasonRow {
+  reason: string;
+  return_count: number | string;
+}
 
-export default function ReturnsAnalysisReport() {
-  const [returnsData, setReturnsData] = useState<ReturnReason[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalReturns: 0,
-    returnRate: 0,
-    avgLoss: 0,
-  });
-  const [period, setPeriod] = useState<PeriodType>('mtd');
-  const [customStartDate, setCustomStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [customEndDate, setCustomEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+interface TotalsRow {
+  orders: number | string;
+}
 
-  // initial fetch moved below function declaration
+function normalizePeriod(value?: string): PeriodKey {
+  return value === 'ytd' || value === 'wtd' || value === 'custom' ? value : 'mtd';
+}
 
-  const getDateRange = () => {
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date;
+function mondayOf(ymd: string): string {
+  const date = new Date(`${ymd}T00:00:00Z`);
+  const dow = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+  return date.toISOString().slice(0, 10);
+}
 
-    switch (period) {
-      case 'ytd':
-        startDate = startOfYear(now);
-        endDate = now;
-        break;
-      case 'mtd':
-        startDate = startOfMonth(now);
-        endDate = now;
-        break;
-      case 'wtd':
-        startDate = startOfWeek(now);
-        endDate = now;
-        break;
-      case 'custom':
-        startDate = new Date(customStartDate);
-        endDate = new Date(customEndDate);
-        break;
-      default:
-        startDate = startOfMonth(now);
-        endDate = now;
-    }
-
-    return { startDate, endDate };
-  };
-
-  async function fetchReturnsData() {
-    try {
-      setLoading(true);
-      const { startDate, endDate } = getDateRange();
-      const startIso = new Date(`${format(startDate, 'yyyy-MM-dd')}T00:00:00+07:00`).toISOString();
-      const endIso = new Date(`${format(endDate, 'yyyy-MM-dd')}T23:59:59.999+07:00`).toISOString();
-
-      // Fetch returns data
-      const { data: returns, error: returnsError } = await supabase
-        .from('product_returns')
-        .select('id, return_reason, return_date')
-        .gte('return_date', startIso)
-        .lte('return_date', endIso);
-
-      if (returnsError) throw returnsError;
-
-      // Count orders for the same window. Selecting `sales` rows counted at most 1,000
-      // rows, which inflated the return rate for any month above that.
-      const { data: totals, error: totalsError } = await supabase.rpc('get_sales_totals', {
-        p_start: startIso,
-        p_end: endIso,
-        p_outlet: null,
-      });
-
-      if (totalsError) throw totalsError;
-      const totalOrders = Number((Array.isArray(totals) ? totals[0] : totals)?.orders ?? 0);
-
-      // Group returns by reason
-      const reasonMap: { [key: string]: number } = {};
-      const totalReturnValue = 0;
-
-      if (returns) {
-        for (const ret of returns) {
-          const reason = ret.return_reason || 'Unknown';
-          reasonMap[reason] = (reasonMap[reason] || 0) + 1;
-        }
-      }
-
-      // Determine impact based on count
-      const getImpact = (count: number): string => {
-        if (count >= 10) return 'High';
-        if (count >= 5) return 'Medium';
-        return 'Low';
-      };
-
-      // Convert to array and calculate percentages
-      const total = Object.values(reasonMap).reduce((a, b) => a + b, 0);
-      const chartArray: ReturnReason[] = Object.entries(reasonMap)
-        .map(([reason, count]) => ({
-          reason,
-          count,
-          percentage: total > 0 ? Math.round((count / total) * 100) : 0,
-          impact: getImpact(count),
-          totalValue: 0,
-        }))
-        .sort((a, b) => b.count - a.count);
-
-      setReturnsData(chartArray);
-
-      // Calculate stats
-      const returnRate = totalOrders > 0 ? ((total / totalOrders) * 100).toFixed(1) : '0';
-
-      setStats({
-        totalReturns: total,
-        returnRate: parseFloat(returnRate),
-        avgLoss: total > 0 ? Math.round(totalReturnValue / total) : 0,
-      });
-    } catch (error) {
-      console.error('Error fetching returns data:', error);
-    } finally {
-      setLoading(false);
-    }
+function resolveRange(period: PeriodKey, params: ReportParams) {
+  const today = formatDateOnlyInJakarta(new Date());
+  if (period === 'ytd') return { start: `${today.slice(0, 4)}-01-01`, end: today };
+  if (period === 'wtd') return { start: mondayOf(today), end: today };
+  if (period === 'custom') {
+    return {
+      start: isYmd(params.start) ? params.start : `${today.slice(0, 7)}-01`,
+      end: isYmd(params.end) ? params.end : today,
+    };
   }
+  return { start: `${today.slice(0, 7)}-01`, end: today };
+}
 
-  const getImpactColor = (impact: string) => {
-    switch(impact) {
-      case 'High': return 'text-red-600';
-      case 'Medium': return 'text-yellow-600';
-      case 'Low': return 'text-green-600';
-      default: return 'text-gray-600';
+function impactOf(count: number): string {
+  if (count >= 10) return 'High';
+  if (count >= 5) return 'Medium';
+  return 'Low';
+}
+
+function rangeLabel(startYmd: string, endYmd: string): string {
+  const fmt = (ymd: string) =>
+    new Date(`${ymd}T00:00:00+07:00`).toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  return `${fmt(startYmd)} — ${fmt(endYmd)}`;
+}
+
+export default async function ReturnsAnalysisReport({
+  searchParams,
+}: {
+  searchParams?: ReportParams | Promise<ReportParams>;
+}) {
+  const params: ReportParams =
+    searchParams instanceof Promise ? (await searchParams) || {} : (searchParams as ReportParams) || {};
+
+  const period = normalizePeriod(params.period);
+  const { start: startYmd, end: endYmd } = resolveRange(period, params);
+
+  const startIso = getDateBoundaryInJakarta(startYmd, false).toISOString();
+  const endIso = getDateBoundaryInJakarta(endYmd, true).toISOString();
+
+  // Server-side on purpose: reading product_returns from the browser capped the result at
+  // PostgREST's 1,000 rows (19,273 exist), so MTD showed 1,000 instead of the real count.
+  const [returnsRes, totalsRes] = await Promise.all([
+    supabaseServer.rpc('get_returns_by_reason', { p_start: startIso, p_end: endIso }),
+    supabaseServer.rpc('get_sales_totals', { p_start: startIso, p_end: endIso, p_outlet: null }),
+  ]);
+
+  const reasons: ReasonRow[] = Array.isArray(returnsRes.data) ? (returnsRes.data as ReasonRow[]) : [];
+  const totalReturns = reasons.reduce((sum, row) => sum + Number(row.return_count ?? 0), 0);
+  const totalsRow = (Array.isArray(totalsRes.data) ? totalsRes.data[0] : totalsRes.data) as TotalsRow | null;
+  const totalOrders = Number(totalsRow?.orders ?? 0);
+  const returnRate = totalOrders > 0 ? (totalReturns / totalOrders) * 100 : 0;
+
+  const rows = reasons
+    .map((row) => {
+      const count = Number(row.return_count ?? 0);
+      return {
+        reason: String(row.reason ?? 'Unknown'),
+        count,
+        percentage: totalReturns > 0 ? Math.round((count / totalReturns) * 100) : 0,
+        impact: impactOf(count),
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const impactColor = (impact: string) => {
+    switch (impact) {
+      case 'High':
+        return 'text-red-600';
+      case 'Medium':
+        return 'text-yellow-600';
+      case 'Low':
+        return 'text-green-600';
+      default:
+        return 'text-gray-600';
     }
-
-    useEffect(() => {
-      fetchReturnsData();
-    }, [period, customStartDate, customEndDate]);
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-    }).format(value);
   };
 
   return (
@@ -158,100 +118,61 @@ export default function ReturnsAnalysisReport() {
       <div className="surface-card rounded-lg shadow-md p-6">
         <h1 className="text-3xl font-bold text-[#1F4E5F] mb-2">Returns Analysis</h1>
         <p className="text-gray-600">Analisis return dan damage produk</p>
+        <p className="text-sm text-gray-500 mt-2">{rangeLabel(startYmd, endYmd)}</p>
       </div>
 
-      {/* Period Selector */}
-      <div className="surface-card rounded-lg shadow-md p-6">
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            onClick={() => setPeriod('ytd')}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              period === 'ytd'
-                ? 'bg-[#1F4E5F] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            YTD
-          </button>
-          <button
-            onClick={() => setPeriod('mtd')}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              period === 'mtd'
-                ? 'bg-[#1F4E5F] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            MTD
-          </button>
-          <button
-            onClick={() => setPeriod('wtd')}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              period === 'wtd'
-                ? 'bg-[#1F4E5F] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            WTD
-          </button>
-          <button
-            onClick={() => setPeriod('custom')}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              period === 'custom'
-                ? 'bg-[#1F4E5F] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-
-        {/* Custom Date Range */}
-        {period === 'custom' && (
-          <div className="flex gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Dari</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E5F]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Sampai</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E5F]"
-              />
-            </div>
+      {returnsRes.error && (
+        <div className="surface-card rounded-lg shadow-md p-6 border-l-4 border-red-500 flex gap-3 items-start">
+          <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-800 font-medium">Data return belum bisa dibaca</p>
+            <p className="text-red-700 text-sm">
+              Fungsi <code>get_returns_by_reason</code> belum ada di database. Jalankan migrasi{' '}
+              <code>supabase/migrations/0013_reports_returns_and_outlet_performance.sql</code>.
+            </p>
+            <p className="text-red-700 text-xs mt-1">{returnsRes.error.message}</p>
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="surface-card rounded-lg shadow-md p-6">
+        <ReturnsPeriodSelector period={period} start={startYmd} end={endYmd} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Total Returns</h3>
-          <p className="text-4xl font-bold text-red-600 mt-2">{stats.totalReturns}</p>
+          <p className="text-4xl font-bold text-red-600 mt-2">{totalReturns.toLocaleString('id-ID')}</p>
           <p className="text-sm text-gray-500 mt-1">{period.toUpperCase()}</p>
         </div>
         <div className="surface-card rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Return Rate</h3>
-          <p className="text-4xl font-bold text-orange-600 mt-2">{stats.returnRate.toFixed(1)}%</p>
+          <p className="text-4xl font-bold text-orange-600 mt-2">{returnRate.toFixed(1)}%</p>
           <p className="text-sm text-gray-500 mt-1">Of total transactions</p>
         </div>
         <div className="surface-card rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-700">Avg Loss</h3>
-          <p className="text-3xl font-bold text-red-500 mt-2">{formatCurrency(stats.avgLoss)}</p>
-          <p className="text-sm text-gray-500 mt-1">Value lost per return</p>
+          <h3 className="text-lg font-semibold text-gray-700">Orders in Period</h3>
+          <p className="text-4xl font-bold text-gray-800 mt-2">{totalOrders.toLocaleString('id-ID')}</p>
+          <p className="text-sm text-gray-500 mt-1">Pembagi return rate</p>
         </div>
       </div>
 
+      {totalsRes.error && (
+        <div className="surface-card rounded-lg shadow-md p-6 border-l-4 border-red-500 flex gap-3 items-start">
+          <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-800 font-medium">Jumlah transaksi belum bisa dibaca</p>
+            <p className="text-red-700 text-sm">
+              Fungsi <code>get_sales_totals</code> belum ada di database. Jalankan migrasi{' '}
+              <code>supabase/migrations/0008_sales_aggregation.sql</code>.
+            </p>
+            <p className="text-red-700 text-xs mt-1">{totalsRes.error.message}</p>
+          </div>
+        </div>
+      )}
+
       <div className="surface-card rounded-lg shadow-md overflow-hidden">
-        {loading ? (
-          <div className="p-6 text-center text-gray-500">Loading returns data...</div>
-        ) : returnsData.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="p-6 text-center text-gray-500">No returns data available</div>
         ) : (
           <table className="w-full">
@@ -264,24 +185,19 @@ export default function ReturnsAnalysisReport() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {returnsData.map((item, idx) => (
-                <tr key={idx} className="hover:bg-gray-50">
+              {rows.map((item) => (
+                <tr key={item.reason} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-semibold text-gray-900">{item.reason}</td>
-                  <td className="px-6 py-4 text-gray-700">{item.count} units</td>
+                  <td className="px-6 py-4 text-gray-700">{item.count.toLocaleString('id-ID')}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <div className="w-16 bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full"
-                          style={{ width: `${item.percentage}%` }}
-                        ></div>
+                        <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${item.percentage}%` }} />
                       </div>
                       <span className="text-sm text-gray-600">{item.percentage}%</span>
                     </div>
                   </td>
-                  <td className={`px-6 py-4 font-semibold ${getImpactColor(item.impact)}`}>
-                    {item.impact}
-                  </td>
+                  <td className={`px-6 py-4 font-semibold ${impactColor(item.impact)}`}>{item.impact}</td>
                 </tr>
               ))}
             </tbody>
