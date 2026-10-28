@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { format, subDays, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 
 interface DailySalesData {
   date: string;
+  label: string;
   sales: number;
   revenue: number;
   orders: number;
@@ -85,17 +86,36 @@ export default function DailySummaryReport() {
       const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
       const json = await res.json();
       if (json?.data) {
-        // convert date key to label (Mon/Tue)
-        const chartData = (json.data as RawDaily[]).map((r) => ({
-          date: format(new Date(r.date), 'EEE').substring(0, 3),
-          sales: r.revenue,
-          revenue: r.revenue,
-          orders: r.orders,
-          profit: r.profit,
-          hpp: r.hpp ?? 0,
-          bonus: r.bonus ?? 0,
-          meal: r.meal ?? 0,
-        }));
+        // The RPC returns one row per outlet per business day, so charting the raw rows
+        // drew one bar per outlet and every bar was labelled with the same weekday.
+        // Collapse to a single row per date before charting.
+        const byDate = new Map<string, RawDaily & { hpp: number; bonus: number; meal: number }>();
+        for (const row of json.data as RawDaily[]) {
+          const key = String(row.date);
+          const acc =
+            byDate.get(key) ?? { date: key, revenue: 0, orders: 0, profit: 0, hpp: 0, bonus: 0, meal: 0 };
+          acc.revenue += Number(row.revenue || 0);
+          acc.orders += Number(row.orders || 0);
+          acc.profit += Number(row.profit || 0);
+          acc.hpp += Number(row.hpp || 0);
+          acc.bonus += Number(row.bonus || 0);
+          acc.meal += Number(row.meal || 0);
+          byDate.set(key, acc);
+        }
+
+        const chartData = Array.from(byDate.values())
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .map((r) => ({
+            date: r.date,
+            label: format(new Date(`${r.date}T00:00:00+07:00`), 'dd MMM'),
+            sales: Math.round(r.revenue),
+            revenue: Math.round(r.revenue),
+            orders: r.orders,
+            profit: Math.round(r.profit),
+            hpp: Math.round(r.hpp),
+            bonus: Math.round(r.bonus),
+            meal: Math.round(r.meal),
+          }));
         setData(chartData);
       }
 
@@ -110,19 +130,23 @@ export default function DailySummaryReport() {
       const avgVal = curTotals.orders > 0 ? Math.round(curTotals.revenue / curTotals.orders) : 0;
       setRangeStats({ totalSales: curTotals.revenue, totalOrders: curTotals.orders, avgOrderValue: avgVal, profit: curTotals.profit });
 
-      // Calculate previous range (same length immediately before startDate)
-      const sDate = new Date(s);
-      const eDate = new Date(e);
-      const dayCount = Math.round((eDate.getTime() - startOfDay(sDate).getTime()) / (24 * 60 * 60 * 1000)) + 1;
-      const prevEnd = subDays(startOfDay(sDate), 1);
-      const prevStart = subDays(prevEnd, dayCount - 1);
+      // Previous window: the same number of days immediately before the selected range.
+      // Date-only arithmetic keeps it independent of the browser timezone, and the outlet
+      // filter must be carried over or a per-outlet view is compared against all outlets.
+      const dayMs = 24 * 60 * 60 * 1000;
+      const startMs = Date.parse(`${s}T00:00:00Z`);
+      const endMs = Date.parse(`${e}T00:00:00Z`);
+      const dayCount = Math.round((endMs - startMs) / dayMs) + 1;
+      const prevEnd = new Date(startMs - dayMs);
+      const prevStart = new Date(prevEnd.getTime() - (dayCount - 1) * dayMs);
       const prevQ = new URLSearchParams({
-        start: format(prevStart, 'yyyy-MM-dd'),
-        end: format(prevEnd, 'yyyy-MM-dd'),
+        start: prevStart.toISOString().slice(0, 10),
+        end: prevEnd.toISOString().slice(0, 10),
         business_day: '1',
         business_day_start_hour: '4',
         engine: 'sql',
       });
+      if (outlet) prevQ.set('outlet', outlet);
       try {
         const pres = await fetch(`/api/reports/daily-summary?${prevQ.toString()}`);
         const pjson = await pres.json();
@@ -351,7 +375,7 @@ export default function DailySummaryReport() {
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">7-Day Sales Trend</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Sales Trend</h2>
         <div style={{ width: '100%', overflowX: 'auto', position: 'relative' }}>
           {/* Tooltip */}
           {tooltip.visible && (
@@ -397,7 +421,7 @@ export default function DailySummaryReport() {
                           width={revenueW}
                           height={revenueH}
                           fill="#8884d8"
-                          onMouseEnter={(e) => showTooltip(e, [`Revenue: ${formatCurrency(d.revenue || 0)}`, `Orders: ${d.orders || 0}`])}
+                          onMouseEnter={(e) => showTooltip(e, [d.label, `Revenue: ${formatCurrency(d.revenue || 0)}`, `Orders: ${d.orders || 0}`])}
                           onMouseMove={moveTooltip}
                           onMouseLeave={hideTooltip}
                         />
@@ -461,7 +485,7 @@ export default function DailySummaryReport() {
                             </g>
                           );
                         })()}
-                        <text x={groupX + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${groupX + barW * 0.35},378)`}>{d.date}</text>
+                        <text x={groupX + barW * 0.35} y={378} fontSize={10} textAnchor="middle" transform={`rotate(-25 ${groupX + barW * 0.35},378)`}>{d.label}</text>
                       </g>
                     );
                   })}

@@ -45,7 +45,7 @@ export default async function ProfitLossReport({ searchParams }: { searchParams?
       endDate = today;
       break;
     case 'wtd':
-      startDate = startOfWeek(today);
+      startDate = startOfWeek(today, { weekStartsOn: 1 });
       endDate = today;
       break;
     // PeriodSelector emits day/week/month; without these the page silently fell back
