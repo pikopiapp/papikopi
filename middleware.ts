@@ -93,7 +93,47 @@ async function getAppUserRole(authUser: { id?: string | null; user_metadata?: Re
   return tokenRole;
 }
 
-// Protect /admin, /dashboard, /api/admin, and /investor routes.
+// Bearer header or the cookie the auth provider writes; used for the cheap API gate.
+function getRequestToken(req: NextRequest): string | null {
+  const authHeader = req.headers.get('authorization') || '';
+  if (authHeader.toLowerCase().startsWith('bearer')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) return bearer;
+  }
+  const cookieToken = req.cookies.get('sb-access-token')?.value || '';
+  return cookieToken || null;
+}
+
+const SESSION_TOKEN_TTL_MS = 60_000;
+const MAX_CACHED_TOKENS = 500;
+const validTokenCache = new Map<string, number>();
+
+// Validates the token against Supabase, cached briefly so a dashboard load
+// (several API calls sharing one token) costs a single round trip.
+async function isValidSessionToken(token: string): Promise<boolean> {
+  const now = Date.now();
+  const cachedUntil = validTokenCache.get(token);
+  if (cachedUntil && cachedUntil > now) return true;
+
+  if (!SUPABASE_URL || !SUPABASE_ANON) return false;
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON },
+    });
+    if (!resp.ok) {
+      validTokenCache.delete(token);
+      return false;
+    }
+    if (validTokenCache.size >= MAX_CACHED_TOKENS) validTokenCache.clear();
+    validTokenCache.set(token, now + SESSION_TOKEN_TTL_MS);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Protect /admin, /dashboard, /api/admin, /investor routes and /api/sales|reports.
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -101,6 +141,31 @@ export async function middleware(req: NextRequest) {
   const matchesAdminPage = pathname.startsWith('/admin');
   const matchesDashboard = pathname.startsWith('/dashboard');
   const matchesInvestorPage = pathname.startsWith('/investor');
+  // Sales and report endpoints expose financial data and were readable anonymously.
+  const matchesSensitiveApi = pathname.startsWith('/api/sales') || pathname.startsWith('/api/reports');
+
+  if (matchesSensitiveApi) {
+    if (isAdminSecretAuthorized(req, ADMIN_API_SECRET)) {
+      return NextResponse.next();
+    }
+
+    const token = getRequestToken(req);
+    if (!token) {
+      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!(await isValidSessionToken(token))) {
+      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return NextResponse.next();
+  }
 
   if (!matchesAdminApi && !matchesAdminPage && !matchesDashboard && !matchesInvestorPage) {
     return NextResponse.next();
@@ -198,5 +263,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*', '/dashboard/:path*', '/dashboard/investor/:path*', '/investor/:path*'],
+  matcher: [
+    '/admin/:path*',
+    '/api/admin/:path*',
+    '/api/sales/:path*',
+    '/api/reports/:path*',
+    '/dashboard/:path*',
+    '/dashboard/investor/:path*',
+    '/investor/:path*',
+  ],
 };
