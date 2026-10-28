@@ -55,11 +55,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check available quantity
-    const available = product.total_quantity - product.allocated_quantity;
+    // Guard against the real dispatched total, not showcase_products.allocated_quantity:
+    // that column is stale (single digits while actual dispatch is in the thousands), so
+    // checking it let every allocation through.
+    const { data: summary, error: summaryError } = await supabase
+      .from('showcase_inventory_summary')
+      .select('allocated_quantity')
+      .eq('id', showcase_product_id)
+      .single();
+
+    if (summaryError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to read inventory summary: ${summaryError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const dispatched = Number(summary?.allocated_quantity ?? 0);
+    const recordedIntake = Number(product.total_quantity ?? 0);
+    const available = recordedIntake - dispatched;
+
     if (available < quantity) {
       return NextResponse.json(
-        { success: false, error: `Insufficient quantity. Available: ${available}, Requested: ${quantity}` },
+        {
+          success: false,
+          error:
+            `Stok tercatat tidak cukup: batch masuk ${recordedIntake}, sudah disalurkan ${dispatched}. ` +
+            `Selisih ${available}. Perbaiki pencatatan batch masuk sebelum alokasi baru.`,
+          recorded_intake: recordedIntake,
+          dispatched,
+          available,
+        },
         { status: 400 }
       );
     }
@@ -86,41 +112,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const quantityDifference = quantity;
-    const newAllocationQuantity = quantity;
-
-    // Update showcase product allocated quantity (always add the requested quantity)
-    const newProductAllocated = product.allocated_quantity + quantityDifference;
-    console.log(`Updating product ${showcase_product_id}:`, {
-      currentAllocated: product.allocated_quantity,
-      addQuantity: quantityDifference,
-      newAllocated: newProductAllocated,
-    });
-
-    const { error: updateProductError, data: updateData } = await supabase
+    // Rebuild the summary column from the true dispatched total so it converges instead of
+    // drifting further. A blocked UPDATE returns zero rows without an error, so check the
+    // returned rows rather than only the error object.
+    const newProductAllocated = dispatched + quantity;
+    const { error: updateProductError, data: updateRows } = await supabase
       .from('showcase_products')
-      .update({
-        allocated_quantity: newProductAllocated,
-      })
+      .update({ allocated_quantity: newProductAllocated })
       .eq('id', showcase_product_id)
-      .select();
+      .select('id');
 
-    if (updateProductError) {
-      return NextResponse.json(
-        { success: false, error: `Failed to update product: ${updateProductError.message}` },
-        { status: 500 }
-      );
+    let summaryWarning: string | undefined;
+    if (updateProductError || !updateRows || updateRows.length === 0) {
+      summaryWarning =
+        'Alokasi tersimpan, tetapi kolom ringkasan allocated_quantity tidak diperbarui. ' +
+        'Angka akurat tetap tersedia dari view showcase_inventory_summary.';
+      console.warn('[showcase/allocate] summary column not updated', {
+        showcase_product_id,
+        reason: updateProductError?.message ?? 'no rows returned (RLS?)',
+      });
     }
 
     return NextResponse.json(
       {
         success: true,
         message: `${quantity} units of ${product.product_name} allocated to outlet`,
+        ...(summaryWarning ? { warning: summaryWarning } : {}),
         data: {
           showcase_product_id,
           outlet_id,
           quantity_added: quantity,
-          outlet_total_allocation: newAllocationQuantity,
+          outlet_total_allocation: quantity,
           product_total_allocated: newProductAllocated,
           remaining: available - quantity,
         },
