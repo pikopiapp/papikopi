@@ -10,6 +10,25 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export async function GET(request: NextRequest) {
   try {
+    // 'sql' reads the pre-aggregated view; default keeps the legacy full-download path.
+    const engine = (request.nextUrl.searchParams.get('engine') || '').toLowerCase();
+
+    if (engine === 'sql') {
+      const { data, error } = await supabase
+        .from('showcase_inventory_summary')
+        .select('id, product_id, product_name, total_quantity, allocated_quantity, remaining, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: `Failed to fetch inventory summary: ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(data ?? [], { status: 200 });
+    }
+
     // Get all showcase products
     const { data: showcaseProducts, error: productsError } = await supabase
       .from('showcase_products')

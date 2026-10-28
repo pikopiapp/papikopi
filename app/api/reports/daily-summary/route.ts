@@ -14,6 +14,9 @@ export async function GET(req: Request) {
     const useBusinessDay = businessDay === '1' || businessDay === 'true' || businessDay === 'yes';
     const debug = url.searchParams.get('debug');
     const outlet = url.searchParams.get('outlet');
+    // Aggregation engine: 'js' keeps the legacy row-fetch + in-memory path,
+    // 'sql' delegates to get_sales_daily_summary. Default stays 'js'.
+    const engine: 'js' | 'sql' = (url.searchParams.get('engine') || '').toLowerCase() === 'sql' ? 'sql' : 'js';
 
     // Validate dates; default to last 7 days if missing.
     // Interpret date-only params as whole days in Asia/Jakarta so the server and browser
@@ -54,6 +57,39 @@ export async function GET(req: Request) {
         },
         { status: 400 }
       );
+    }
+
+    if (engine === 'sql') {
+      const { data, error } = await supabase.rpc('get_sales_daily_summary', {
+        p_start: startDate.toISOString(),
+        p_end: endDate.toISOString(),
+        p_outlet: outlet || null,
+      });
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      const sqlRows = (data || []).map((r: any) => ({
+        date: r.business_date,
+        outlet_id: r.outlet_id,
+        revenue: Number(r.revenue ?? 0),
+        profit: Number(r.profit ?? 0),
+        orders: Number(r.orders ?? 0),
+        hpp: Number(r.hpp ?? 0),
+        bonus: Number(r.bonus ?? 0),
+        meal: Number(r.meal ?? 0),
+      }));
+
+      return NextResponse.json({
+        data: sqlRows,
+        meta: {
+          engine: 'sql',
+          rowsFetched: sqlRows.length,
+          startIso: startDate.toISOString(),
+          endIso: endDate.toISOString(),
+        },
+      });
     }
 
     // Build query using only columns that are guaranteed to exist in the current schema.
@@ -243,7 +279,7 @@ export async function GET(req: Request) {
         meal,
       };
     });
-    const meta: any = { rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
+    const meta: any = { engine: 'js', rowsFetched: rows ? rows.length : 0, startIso: startDate.toISOString(), endIso: endDate.toISOString() };
     if (debug) {
       meta.requested = { start, end, outlet };
       meta.resolved = {
