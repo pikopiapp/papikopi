@@ -5,7 +5,14 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export async function POST() {
+const ADMIN_SECRET = process.env.ADMIN_API_SECRET || process.env.ADMIN_SYNC_SECRET || '';
+
+// Destructive: deletes all showcase_products and showcase_allocations, then reseeds demo data.
+export async function POST(request: Request) {
+  if (!ADMIN_SECRET || request.headers.get('x-admin-secret') !== ADMIN_SECRET) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     console.log('🚀 Initializing showcase data...');
 

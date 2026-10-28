@@ -5,11 +5,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export async function GET() {
-  return handleSeed();
-}
+const ADMIN_SECRET = process.env.ADMIN_API_SECRET || process.env.ADMIN_SYNC_SECRET || '';
 
-export async function POST() {
+// Destructive: deletes every showcase_allocations row, then inserts random quantities.
+// Secret-gated and POST-only so a stray GET or crawler cannot wipe allocation history.
+export async function POST(request: Request) {
+  if (!ADMIN_SECRET || request.headers.get('x-admin-secret') !== ADMIN_SECRET) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   return handleSeed();
 }
 
