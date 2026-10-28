@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
     if (engine === 'sql') {
       const { data, error } = await supabase
         .from('showcase_inventory_summary')
-        .select('id, product_id, product_name, total_quantity, allocated_quantity, remaining, created_at')
+        // select all so the route keeps working before migration 0009 adds sold_quantity
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {

@@ -10,6 +10,8 @@ interface ShowcaseProduct {
   product_name: string;
   total_quantity: number;
   allocated_quantity: number;
+  sold_quantity?: number;
+  remaining?: number;
   allocations?: Allocation[];
   return_count?: number;
 }
@@ -282,26 +284,39 @@ export default function ShowcasePage() {
                 {/* Card Body */}
                 <div className="p-4">
                   {/* Stats */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
                     <div className="bg-blue-50 rounded p-3 text-center">
-                      <div className="text-4xl font-bold text-blue-600">{product.total_quantity}</div>
-                      <div className="text-sm text-gray-600 font-medium">Total</div>
+                      <div className="text-3xl font-bold text-blue-600">{product.total_quantity}</div>
+                      <div className="text-xs text-gray-600 font-medium">Batch Masuk</div>
                     </div>
                     <div className="bg-yellow-50 rounded p-3 text-center">
-                      <div className="text-4xl font-bold text-yellow-600">{product.allocated_quantity}</div>
-                      <div className="text-sm text-gray-600 font-medium">Allocated</div>
+                      <div className="text-3xl font-bold text-yellow-600">{product.allocated_quantity}</div>
+                      <div className="text-xs text-gray-600 font-medium">Disalurkan</div>
+                    </div>
+                    <div className="bg-purple-50 rounded p-3 text-center">
+                      <div className="text-3xl font-bold text-purple-600">{product.sold_quantity ?? 0}</div>
+                      <div className="text-xs text-gray-600 font-medium">Terjual</div>
                     </div>
                     <div className="bg-green-50 rounded p-3 text-center">
-                      <div className="text-4xl font-bold text-green-600">{available}</div>
-                      <div className="text-sm text-gray-600 font-medium">Available</div>
+                      <div className="text-3xl font-bold text-green-600">
+                        {product.remaining ?? product.allocated_quantity - (product.sold_quantity ?? 0)}
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">Di Outlet</div>
                     </div>
                     <Link href="/showcase/returns">
                       <div className="bg-red-50 rounded p-3 text-center cursor-pointer hover:bg-red-100 hover:shadow-md transition">
-                        <div className="text-4xl font-bold text-red-600">{returnCounts[product.product_id] || 0}</div>
-                        <div className="text-sm text-gray-600 font-medium">Retur</div>
+                        <div className="text-3xl font-bold text-red-600">{returnCounts[product.product_id] || 0}</div>
+                        <div className="text-xs text-gray-600 font-medium">Retur</div>
                       </div>
                     </Link>
                   </div>
+
+                  {product.total_quantity < product.allocated_quantity && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mb-3">
+                      Catatan batch masuk tidak lengkap: {product.total_quantity} tercatat masuk vs{' '}
+                      {product.allocated_quantity} disalurkan. Alokasi baru ditahan sampai data batch diperbaiki.
+                    </p>
+                  )}
 
                   {/* Buttons Group */}
                   <div className="space-y-2">
@@ -381,20 +396,24 @@ export default function ShowcasePage() {
                 <h2 className="text-2xl font-bold mb-4">📦 {selectedProduct.product_name}</h2>
 
                 {/* Stats */}
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="grid grid-cols-4 gap-3 mb-6">
                   <div className="bg-blue-50 rounded p-3 text-center">
                     <div className="text-xl font-bold text-blue-600">{selectedProduct.total_quantity}</div>
-                    <div className="text-xs text-gray-600">Total</div>
+                    <div className="text-xs text-gray-600">Batch Masuk</div>
                   </div>
                   <div className="bg-yellow-50 rounded p-3 text-center">
                     <div className="text-xl font-bold text-yellow-600">{selectedProduct.allocated_quantity}</div>
-                    <div className="text-xs text-gray-600">Allocated</div>
+                    <div className="text-xs text-gray-600">Disalurkan</div>
+                  </div>
+                  <div className="bg-purple-50 rounded p-3 text-center">
+                    <div className="text-xl font-bold text-purple-600">{selectedProduct.sold_quantity ?? 0}</div>
+                    <div className="text-xs text-gray-600">Terjual</div>
                   </div>
                   <div className="bg-green-50 rounded p-3 text-center">
                     <div className="text-xl font-bold text-green-600">
-                      {selectedProduct.total_quantity - selectedProduct.allocated_quantity}
+                      {selectedProduct.remaining ?? selectedProduct.allocated_quantity - (selectedProduct.sold_quantity ?? 0)}
                     </div>
-                    <div className="text-xs text-gray-600">Available</div>
+                    <div className="text-xs text-gray-600">Di Outlet</div>
                   </div>
                 </div>
 
@@ -445,12 +464,23 @@ export default function ShowcasePage() {
 
                 <div className="space-y-4">
                   {/* Available Info */}
-                  <div className="bg-green-50 p-3 rounded border border-green-200">
-                    <p className="text-sm text-green-800">
-                      <span className="font-semibold">Stok tersedia: </span>
-                      {selectedProduct.total_quantity - selectedProduct.allocated_quantity} pcs
-                    </p>
-                  </div>
+                  {selectedProduct.total_quantity - selectedProduct.allocated_quantity > 0 ? (
+                    <div className="bg-green-50 p-3 rounded border border-green-200">
+                      <p className="text-sm text-green-800">
+                        <span className="font-semibold">Sisa catatan batch: </span>
+                        {selectedProduct.total_quantity - selectedProduct.allocated_quantity} pcs
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 p-3 rounded border border-amber-200">
+                      <p className="text-sm text-amber-900">
+                        <span className="font-semibold">Alokasi ditahan: </span>
+                        batch masuk hanya tercatat {selectedProduct.total_quantity} pcs, sedangkan{' '}
+                        {selectedProduct.allocated_quantity} pcs sudah disalurkan. Perbaiki pencatatan batch
+                        masuk dulu agar stok showcase bisa dihitung.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Outlet Selection */}
                   <div>
@@ -477,7 +507,7 @@ export default function ShowcasePage() {
                     <input
                       type="number"
                       min="1"
-                      max={selectedProduct.total_quantity - selectedProduct.allocated_quantity}
+                      max={Math.max(0, selectedProduct.total_quantity - selectedProduct.allocated_quantity)}
                       value={formData.quantity}
                       onChange={(e) =>
                         setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })
