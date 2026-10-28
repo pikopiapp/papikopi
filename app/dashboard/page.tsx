@@ -120,7 +120,6 @@ function useRangeSummary(rangeStart?: string, rangeEnd?: string, useBusinessDay 
           end: fmt(end),
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-          debug: '1',
           engine: 'sql',
         });
         const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
@@ -192,58 +191,25 @@ function useKpis(rangeStart?: string, rangeEnd?: string, useBusinessDay = DASHBO
 
   React.useEffect(() => {
     let mounted = true;
+    // Totals per range come from get_sales_totals; downloading every sale plus its items
+    // just to sum revenue/orders/cups was the dashboard's heaviest request.
     const fetchSalesRange = async (start: Date, end: Date) => {
       const fmt = (d: Date) => formatDateOnlyInJakarta(d);
       const q = new URLSearchParams({
-        since: fmt(start),
-        until: fmt(end),
+        start: fmt(start),
+        end: fmt(end),
         business_day: useBusinessDay ? '1' : '0',
         business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-        include_items: 'units',
-        debug: '1',
       });
-      const res = await fetch(`/api/sales/by-outlet?${q.toString()}`);
+      const res = await fetch(`/api/reports/sales-totals?${q.toString()}`);
       if (!res.ok) throw new Error('Failed to load sales range');
       const json = await res.json();
-      if (json?.meta) {
-        try { console.debug('sales-by-outlet meta', json.meta); } catch (e) {}
-      }
-      const rawSales = (Array.isArray(json)
-        ? json as unknown[]
-        : (Array.isArray(json?.sales) ? json.sales as unknown[] : (Array.isArray(json?.data) ? json.data as unknown[] : []))) as Record<string, unknown>[];
-      const filteredSales = useBusinessDay
-        ? rawSales
-        : rawSales.filter((sale) => {
-          const t = new Date(String(sale['created_at'] || '')).getTime();
-          if (Number.isNaN(t)) return false;
-          const startTime = new Date(start);
-          startTime.setHours(0, 0, 0, 0);
-          const endTime = new Date(end);
-          endTime.setHours(23, 59, 59, 999);
-          return t >= startTime.getTime() && t <= endTime.getTime();
-        });
-
-      return filteredSales.reduce((acc: { revenue: number; orders: number; profit: number; units: number }, s) => {
-        const sale = s as Record<string, unknown>;
-
-        const revenue = Number(sale['total_amount'] || 0);
-        const profit = Number(sale['profit'] || 0);
-        const items = Array.isArray(sale['sale_items'])
-          ? sale['sale_items'] as Record<string, unknown>[]
-          : Array.isArray(sale['items'])
-            ? sale['items'] as Record<string, unknown>[]
-            : [];
-        const units = items.reduce((sum: number, it) => {
-          const qty = Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0;
-          return sum + qty;
-        }, 0);
-
-        acc.revenue += revenue;
-        acc.orders += 1;
-        acc.profit += profit;
-        acc.units += units;
-        return acc;
-      }, { revenue: 0, orders: 0, profit: 0, units: 0 });
+      return {
+        revenue: Number(json?.revenue ?? 0),
+        orders: Number(json?.orders ?? 0),
+        profit: Number(json?.profit ?? 0),
+        units: Number(json?.cups ?? 0),
+      };
     };
 
     const load = async () => {
@@ -332,28 +298,17 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
         const endIso = fmt(selectedEnd);
         const todayIso = fmt(todayBusinessDay);
 
-        const queryParams = new URLSearchParams({
-          since: startIso,
-          until: endIso,
+        const buildTotalsParams = (from: string, to: string) => new URLSearchParams({
+          start: from,
+          end: to,
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-          include_items: 'units',
-          debug: '1',
-        });
-        const todayParams = new URLSearchParams({
-          since: todayIso,
-          until: todayIso,
-          business_day: useBusinessDay ? '1' : '0',
-          business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-          include_items: 'units',
-          debug: '1',
         });
         const summaryParams = new URLSearchParams({
           start: startIso,
           end: endIso,
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-          debug: '1',
           engine: 'sql',
         });
         const todaySummaryParams = new URLSearchParams({
@@ -361,39 +316,27 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           end: todayIso,
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
-          debug: '1',
           engine: 'sql',
         });
 
-        const [monthSalesRes, todaySalesRes, monthSummaryRes, todaySummaryRes] = await Promise.all([
-          fetch(`/api/sales/by-outlet?${queryParams.toString()}`),
-          fetch(`/api/sales/by-outlet?${todayParams.toString()}`),
+        // Totals come from get_sales_totals (one row) instead of downloading every sale
+        // plus its items just to count cups.
+        const [monthTotalsRes, todayTotalsRes, monthSummaryRes, todaySummaryRes] = await Promise.all([
+          fetch(`/api/reports/sales-totals?${buildTotalsParams(startIso, endIso).toString()}`),
+          fetch(`/api/reports/sales-totals?${buildTotalsParams(todayIso, todayIso).toString()}`),
           fetch(`/api/reports/daily-summary?${summaryParams.toString()}`),
           fetch(`/api/reports/daily-summary?${todaySummaryParams.toString()}`),
         ]);
 
-        if (!monthSalesRes.ok || !todaySalesRes.ok || !monthSummaryRes.ok || !todaySummaryRes.ok) {
+        if (!monthTotalsRes.ok || !todayTotalsRes.ok || !monthSummaryRes.ok || !todaySummaryRes.ok) {
           throw new Error('Failed to load dashboard summary');
         }
 
-        const monthSalesJson = await monthSalesRes.json();
-        const todaySalesJson = await todaySalesRes.json();
+        const monthTotalsJson = await monthTotalsRes.json();
+        const todayTotalsJson = await todayTotalsRes.json();
         const monthSummaryJson = await monthSummaryRes.json();
         const todaySummaryJson = await todaySummaryRes.json();
 
-        if (monthSalesJson?.meta) {
-          try { console.debug('dashboard month sales meta', monthSalesJson.meta); } catch (e) {}
-        }
-        if (todaySalesJson?.meta) {
-          try { console.debug('dashboard today sales meta', todaySalesJson.meta); } catch (e) {}
-        }
-
-        const monthSales = Array.isArray(monthSalesJson)
-          ? (monthSalesJson as Record<string, unknown>[])
-          : (Array.isArray(monthSalesJson?.sales) ? (monthSalesJson.sales as Record<string, unknown>[]) : (Array.isArray(monthSalesJson?.data) ? (monthSalesJson.data as Record<string, unknown>[]) : []));
-        const todaySales = Array.isArray(todaySalesJson)
-          ? (todaySalesJson as Record<string, unknown>[])
-          : (Array.isArray(todaySalesJson?.sales) ? (todaySalesJson.sales as Record<string, unknown>[]) : (Array.isArray(todaySalesJson?.data) ? (todaySalesJson.data as Record<string, unknown>[]) : []));
         const monthSummaryData = Array.isArray(monthSummaryJson?.data)
           ? (monthSummaryJson.data as Array<Record<string, unknown>>)
           : [];
@@ -401,12 +344,32 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           ? (todaySummaryJson.data as Array<Record<string, unknown>>)
           : [];
 
+        // Row-level fallback is only fetched when the SQL summary returns nothing.
+        let monthSales: Record<string, unknown>[] = [];
+        let todaySales: Record<string, unknown>[] = [];
+        if (monthSummaryData.length === 0 || todaySummaryData.length === 0) {
+          const fallbackParams = (from: string, to: string) => new URLSearchParams({
+            since: from,
+            until: to,
+            business_day: useBusinessDay ? '1' : '0',
+            business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
+          });
+          const [monthFallbackRes, todayFallbackRes] = await Promise.all([
+            fetch(`/api/sales/by-outlet?${fallbackParams(startIso, endIso).toString()}`),
+            fetch(`/api/sales/by-outlet?${fallbackParams(todayIso, todayIso).toString()}`),
+          ]);
+          const pickRows = (json: any): Record<string, unknown>[] =>
+            Array.isArray(json) ? json : (Array.isArray(json?.sales) ? json.sales : (Array.isArray(json?.data) ? json.data : []));
+          monthSales = pickRows(await monthFallbackRes.json());
+          todaySales = pickRows(await todayFallbackRes.json());
+        }
+
         const monthlySalesTotal = monthSummaryData.length > 0
           ? monthSummaryData.reduce((sum, item) => sum + Number(item.revenue || 0), 0 as number)
-          : monthSales.reduce((sum, item) => {
+          : (Number(monthTotalsJson?.revenue ?? 0) || monthSales.reduce((sum, item) => {
               const row = item as Record<string, unknown>;
               return sum + Number(row.total_amount || 0);
-            }, 0 as number);
+            }, 0 as number));
 
         // compute monthly totals from the daily-summary aggregation when available
         const monthlyHppTotal = monthSummaryData.length > 0
@@ -472,14 +435,14 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           return sum + items.reduce((qtySum, it) => qtySum + (Number(it['quantity'] ?? it['units'] ?? it['cups'] ?? 0) || 0), 0);
         }, 0);
 
-        const monthCupsTotal = countCups(monthSales);
-        const todayCupsTotal = countCups(todaySales);
+        const monthCupsTotal = Number(monthTotalsJson?.cups ?? 0) || countCups(monthSales);
+        const todayCupsTotal = Number(todayTotalsJson?.cups ?? 0) || countCups(todaySales);
         const todaySalesTotal = todaySummaryData.length > 0
           ? todaySummaryData.reduce((sum, item) => sum + Number(item.revenue || 0), 0 as number)
-          : todaySales.reduce((sum, sale) => {
+          : (Number(todayTotalsJson?.revenue ?? 0) || todaySales.reduce((sum, sale) => {
               const row = sale as Record<string, unknown>;
               return sum + Number(row.total_amount || 0);
-            }, 0);
+            }, 0 as number));
 
         if (mounted) {
           setData({

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import type { AppUser } from '@/lib/store/auth';
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store/auth";
@@ -88,6 +88,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // The initial check and the auth-state listener both request the profile on mount,
+  // which fired /api/auth/user twice per page load. Share the result for a short window.
+  const PROFILE_TTL_MS = 60_000;
+  const profileCacheRef = useRef(new Map<string, { at: number; promise: Promise<any> }>());
+
+  const getProfile = useCallback((userId: string) => {
+    const cached = profileCacheRef.current.get(userId);
+    if (cached && Date.now() - cached.at < PROFILE_TTL_MS) {
+      return cached.promise;
+    }
+    const promise = fetchUserProfile(userId);
+    profileCacheRef.current.set(userId, { at: Date.now(), promise });
+    return promise;
+  }, [fetchUserProfile]);
+
   const syncSessionCookies = (accessToken: string | null | undefined, refreshToken: string | null | undefined) => {
     setAuthTokenCookies(accessToken, refreshToken);
   };
@@ -113,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(data.session.user as unknown as AppUser);
           
           // Try to fetch profile in background
-          const userData = await fetchUserProfile(data.session.user.id);
+          const userData = await getProfile(data.session.user.id);
           if (mounted) {
             if (userData?.role) {
               setRole(userData.role);
@@ -147,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user as unknown as AppUser);
           
           // Fetch profile in background
-          const userData = await fetchUserProfile(session.user.id);
+          const userData = await getProfile(session.user.id);
           if (mounted) {
             if (userData?.role) {
               setRole(userData.role);
@@ -188,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.user) {
         setUser(data.user as unknown as AppUser);
 
-        const profile = await fetchUserProfile(data.user.id);
+        const profile = await getProfile(data.user.id);
         if (profile) {
           setRole(profile.role || getRoleFromUser(data.user));
           setOutletId(profile.outlet_id ?? null);

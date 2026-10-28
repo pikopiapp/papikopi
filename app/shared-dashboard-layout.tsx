@@ -298,6 +298,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                           <Link
                             key={href}
                             href={href}
+                            prefetch={false}
                             onClick={() => setSidebarOpen(false)}
                             className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
                               isActive(href)
@@ -347,6 +348,7 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
                         <Link
                           key={href}
                           href={href}
+                          prefetch={false}
                           onClick={() => setSidebarOpen(false)}
                           className={`flex items-center gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all duration-200 justify-start ${
                             isActive(href)
