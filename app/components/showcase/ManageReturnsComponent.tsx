@@ -199,33 +199,9 @@ export function ManageReturnsComponent() {
         }
       });
       const data = response.data.data || [];
-      
-      // If no returns exist, seed test data
-      if (data.length === 0) {
-        try {
-          await axios.post('/api/showcase/returns/seed', {}, {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          });
-          // Fetch returns again after seeding
-          const seedResponse = await axios.get('/api/showcase/returns/pending', {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          });
-          const seedData = seedResponse.data.data || [];
-          const enrichedData = await enrichReturnsData(seedData);
-          setPendingReturns(enrichedData);
-        } catch (seedErr) {
-          console.log('Seed attempt - may already have data:', seedErr);
-          const enrichedData = await enrichReturnsData(data);
-          setPendingReturns(enrichedData);
-        }
-      } else {
-        const enrichedData = await enrichReturnsData(data);
-        setPendingReturns(enrichedData);
-      }
+
+      const enrichedData = await enrichReturnsData(data);
+      setPendingReturns(enrichedData);
     } catch (err: any) {
       if (err.response?.status === 401) {
         setError('Unauthorized. Please login to access this page.');

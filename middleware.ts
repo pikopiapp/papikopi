@@ -133,6 +133,24 @@ async function isValidSessionToken(token: string): Promise<boolean> {
   }
 }
 
+// Routes that delete or bulk-insert rows: no page in the app calls them, so they
+// are restricted to the admin secret or an admin session.
+const ADMIN_ONLY_API_PATHS = new Set([
+  '/api/test-endpoint',
+  '/api/products/reset',
+  '/api/products/seed',
+  '/api/outlets/seed',
+  '/api/outlets/stock/seed',
+  '/api/outlets/stock/init-showcase',
+  '/api/outlets/stock/seed-allocations',
+  '/api/outlets/stock/seed-batch-allocations',
+  '/api/ingredients/seed',
+  '/api/users/seed',
+  '/api/sales/seed',
+  '/api/showcase/returns/seed',
+  '/api/warehouse/batches/seed',
+]);
+
 // Protect /admin, /dashboard, /api/admin, /investor routes and /api/sales|reports.
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -143,6 +161,33 @@ export async function middleware(req: NextRequest) {
   const matchesInvestorPage = pathname.startsWith('/investor');
   // Sales and report endpoints expose financial data and were readable anonymously.
   const matchesSensitiveApi = pathname.startsWith('/api/sales') || pathname.startsWith('/api/reports');
+
+  const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  const matchesAdminOnlyApi = ADMIN_ONLY_API_PATHS.has(normalizedPath) || normalizedPath === '/api/debug' || normalizedPath.startsWith('/api/debug/');
+
+  if (matchesAdminOnlyApi) {
+    if (isAdminSecretAuthorized(req, ADMIN_API_SECRET)) {
+      return NextResponse.next();
+    }
+
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const role = await getAppUserRole(user);
+    if (role !== 'admin') {
+      return new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return NextResponse.next();
+  }
 
   if (matchesSensitiveApi) {
     if (isAdminSecretAuthorized(req, ADMIN_API_SECRET)) {
@@ -268,6 +313,19 @@ export const config = {
     '/api/admin/:path*',
     '/api/sales/:path*',
     '/api/reports/:path*',
+    '/api/debug/:path*',
+    '/api/test-endpoint',
+    '/api/products/reset',
+    '/api/products/seed',
+    '/api/outlets/seed',
+    '/api/outlets/stock/seed',
+    '/api/outlets/stock/init-showcase',
+    '/api/outlets/stock/seed-allocations',
+    '/api/outlets/stock/seed-batch-allocations',
+    '/api/ingredients/seed',
+    '/api/users/seed',
+    '/api/showcase/returns/seed',
+    '/api/warehouse/batches/seed',
     '/dashboard/:path*',
     '/dashboard/investor/:path*',
     '/investor/:path*',

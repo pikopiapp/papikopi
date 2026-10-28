@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import { getSupabaseAdminClient } from '@/lib/supabase-admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
@@ -18,14 +17,6 @@ export async function GET(req: NextRequest) {
 
     const user = authData.user;
     const { data: profile, error: profileError } = await supabase.from('users').select('*').eq('id', user.id).maybeSingle();
-
-    // Optional admin action: set role via query param
-    const setRole = req.nextUrl.searchParams.get('setRole');
-    if (setRole) {
-      const admin = getSupabaseAdminClient();
-      const upd = await admin.from('users').update({ role: setRole }).eq('email', user.email).select().maybeSingle();
-      return NextResponse.json({ user, profile: upd.data || profile, updated: upd.error ? false : true, updateError: upd.error?.message || null });
-    }
 
     return NextResponse.json({ user, profile, profileError: profileError?.message || null });
   } catch (e: any) {
