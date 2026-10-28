@@ -193,6 +193,7 @@ const SESSION_REQUIRED_API_PREFIXES = [
   '/api/qrcode',
   '/api/batch-to-showcase',
   '/api/showcase',
+  '/api/outlets/stock',
 ];
 
 function matchesPrefix(pathname: string, prefixes: string[]) {
