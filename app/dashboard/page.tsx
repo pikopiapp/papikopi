@@ -121,6 +121,7 @@ function useRangeSummary(rangeStart?: string, rangeEnd?: string, useBusinessDay 
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
           debug: '1',
+          engine: 'sql',
         });
         const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
         if (!res.ok) throw new Error('Failed to load daily summary');
@@ -353,6 +354,7 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
           debug: '1',
+          engine: 'sql',
         });
         const todaySummaryParams = new URLSearchParams({
           start: todayIso,
@@ -360,6 +362,7 @@ function useDashboardSummary(rangeStart?: string, rangeEnd?: string, useBusiness
           business_day: useBusinessDay ? '1' : '0',
           business_day_start_hour: String(BUSINESS_DAY_START_HOUR),
           debug: '1',
+          engine: 'sql',
         });
 
         const [monthSalesRes, todaySalesRes, monthSummaryRes, todaySummaryRes] = await Promise.all([

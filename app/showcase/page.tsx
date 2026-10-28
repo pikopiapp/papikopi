@@ -59,7 +59,7 @@ export default function ShowcasePage() {
   async function fetchProducts() {
     try {
       setLoading(true);
-      const res = await fetch('/api/showcase/inventory');
+      const res = await fetch('/api/showcase/inventory?engine=sql');
       if (!res.ok) throw new Error('Failed to fetch products');
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);

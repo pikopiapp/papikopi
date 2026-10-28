@@ -80,6 +80,7 @@ export default function DailySummaryReport() {
       if (outlet) q.set('outlet', outlet);
       q.set('business_day', '1');
       q.set('business_day_start_hour', '4');
+      q.set('engine', 'sql');
 
       const res = await fetch(`/api/reports/daily-summary?${q.toString()}`);
       const json = await res.json();
@@ -120,6 +121,7 @@ export default function DailySummaryReport() {
         end: format(prevEnd, 'yyyy-MM-dd'),
         business_day: '1',
         business_day_start_hour: '4',
+        engine: 'sql',
       });
       try {
         const pres = await fetch(`/api/reports/daily-summary?${prevQ.toString()}`);
