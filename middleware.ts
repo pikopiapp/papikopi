@@ -151,7 +151,40 @@ const ADMIN_ONLY_API_PATHS = new Set([
   '/api/warehouse/batches/seed',
 ]);
 
-// Protect /admin, /dashboard, /api/admin, /investor routes and /api/sales|reports.
+// Data endpoints that only authenticated dashboard pages call. Public pages
+// (/showcase, /showcase-inventory, /cafe, /login) must stay outside this list.
+const SESSION_REQUIRED_API_PREFIXES = [
+  '/api/sales',
+  '/api/reports',
+  '/api/users',
+  '/api/investors',
+  '/api/expenses',
+  '/api/cash-handovers',
+  '/api/barista-bonus',
+  '/api/analytics',
+  '/api/dashboard',
+  '/api/purchase-history',
+  '/api/inventory-purchases',
+  '/api/inventory',
+  '/api/warehouse',
+  '/api/ingredients',
+  '/api/products',
+  '/api/categories',
+  '/api/holidays',
+  '/api/system',
+  '/api/messaging',
+  '/api/labels',
+  '/api/qrcode',
+  '/api/batch-to-showcase',
+  '/api/showcase/send-batch',
+];
+
+function matchesPrefix(pathname: string, prefixes: string[]) {
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+// Protect /admin, /dashboard, /investor pages and every /api route that is not
+// used by a public page.
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -159,11 +192,10 @@ export async function middleware(req: NextRequest) {
   const matchesAdminPage = pathname.startsWith('/admin');
   const matchesDashboard = pathname.startsWith('/dashboard');
   const matchesInvestorPage = pathname.startsWith('/investor');
-  // Sales and report endpoints expose financial data and were readable anonymously.
-  const matchesSensitiveApi = pathname.startsWith('/api/sales') || pathname.startsWith('/api/reports');
-
   const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
   const matchesAdminOnlyApi = ADMIN_ONLY_API_PATHS.has(normalizedPath) || normalizedPath === '/api/debug' || normalizedPath.startsWith('/api/debug/');
+  // Financial, stock, PII and payroll endpoints: no public page reads them.
+  const matchesSensitiveApi = matchesPrefix(normalizedPath, SESSION_REQUIRED_API_PREFIXES);
 
   if (matchesAdminOnlyApi) {
     if (isAdminSecretAuthorized(req, ADMIN_API_SECRET)) {
@@ -310,22 +342,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     '/admin/:path*',
-    '/api/admin/:path*',
-    '/api/sales/:path*',
-    '/api/reports/:path*',
-    '/api/debug/:path*',
-    '/api/test-endpoint',
-    '/api/products/reset',
-    '/api/products/seed',
-    '/api/outlets/seed',
-    '/api/outlets/stock/seed',
-    '/api/outlets/stock/init-showcase',
-    '/api/outlets/stock/seed-allocations',
-    '/api/outlets/stock/seed-batch-allocations',
-    '/api/ingredients/seed',
-    '/api/users/seed',
-    '/api/showcase/returns/seed',
-    '/api/warehouse/batches/seed',
+    '/api/:path*',
     '/dashboard/:path*',
     '/dashboard/investor/:path*',
     '/investor/:path*',
