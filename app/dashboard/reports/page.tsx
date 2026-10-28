@@ -1,97 +1,137 @@
-'use client';
-
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Download, Filter } from 'lucide-react';
-import { BonusCalculator, BonusSummary } from '@/app/components/BonusCalculator';
-import { supabase } from '@/lib/supabase';
-import { format, subDays, startOfDay } from 'date-fns';
+import { BonusCalculator } from '@/app/components/BonusCalculator';
+import { supabaseServer } from '@/lib/supabaseServer';
+import { fetchSalesAgg, fetchSalesAggFallback, isYmd, resolveReportRange } from '@/lib/reports/sales-agg';
+import { formatDateOnlyInJakarta, formatTimestampFromUTC } from '@/lib/helpers/business-day';
+import PeriodSelector from './components/PeriodSelector.client';
 
-interface SalesData {
-  date: string;
-  barista_name: string;
-  total_amount: number;
-  profit: number;
-  payment_method: string;
+const RECENT_LIMIT = 50;
+
+interface ReportParams {
+  period?: string;
+  start?: string;
+  end?: string;
+  tab?: string;
 }
 
-export default function ReportsPage() {
-  const [reportType, setReportType] = useState('daily');
-  const [activeTab, setActiveTab] = useState('sales');
-  const [loading, setLoading] = useState(false);
-  const [salesData, setSalesData] = useState<SalesData[]>([]);
-  const [stats, setStats] = useState({
-    totalSales: 0,
-    totalProfit: 0,
-    totalTransactions: 0,
+interface SaleRow {
+  id: string;
+  created_at: string | null;
+  total_amount: number | string | null;
+  profit: number | string | null;
+  payment_method: string | null;
+  barista_id: string | null;
+}
+
+interface Summary {
+  revenue: number;
+  profit: number;
+  orders: number;
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatRangeLabel(startYmd: string, endYmd: string): string {
+  const fmt = (ymd: string) =>
+    new Date(`${ymd}T00:00:00+07:00`).toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  return `${fmt(startYmd)} — ${fmt(endYmd)}`;
+}
+
+async function getSummary(startIso: string, endIso: string): Promise<Summary> {
+  const { data, error } = await supabaseServer.rpc('get_sales_totals', {
+    p_start: startIso,
+    p_end: endIso,
+    p_outlet: null,
   });
 
-  // initial fetch will be triggered after functions are declared
-
-  async function fetchSalesData() {
-    try {
-      setLoading(true);
-      
-      const sevenDaysAgo = subDays(new Date(), 6);
-      const startDate = startOfDay(sevenDaysAgo).toISOString();
-
-      const { data, error } = await supabase
-        .from('sales')
-        .select(`
-          id, 
-          total_amount, 
-          profit, 
-          payment_method, 
-          created_at,
-          barista_id
-        `)
-        .gte('created_at', startDate)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Get barista names
-      if (data) {
-        const baristaIds = [...new Set(data.map(s => s.barista_id))];
-        const { data: baristaData } = await supabase
-          .from('users')
-          .select('id, full_name')
-          .in('id', baristaIds);
-
-        const baristaMap = new Map(baristaData?.map(b => [b.id, b.full_name]) || []);
-
-        const formattedData: SalesData[] = data.map(sale => ({
-          date: format(new Date(sale.created_at), 'dd/MM/yyyy HH:mm'),
-          barista_name: baristaMap.get(sale.barista_id) || 'Unknown',
-          total_amount: Number(sale.total_amount),
-          profit: Number(sale.profit),
-          payment_method: sale.payment_method,
-        }));
-
-        setSalesData(formattedData);
-
-        const totalSales = data.reduce((sum, s) => sum + Number(s.total_amount), 0);
-        const totalProfit = data.reduce((sum, s) => sum + Number(s.profit), 0);
-
-        setStats({
-          totalSales,
-          totalProfit,
-          totalTransactions: data.length,
-        });
-      }
-    } catch (err) {
-      console.error('Error fetching sales data:', err);
-    } finally {
-      setLoading(false);
-    }
+  const row = !error && Array.isArray(data) ? data[0] : null;
+  if (row) {
+    return {
+      revenue: Number(row.revenue ?? 0),
+      profit: Number(row.profit ?? 0),
+      orders: Number(row.orders ?? 0),
+    };
   }
 
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
+  try {
+    const rows =
+      (await fetchSalesAgg(startIso, endIso, 'day')) ??
+      (await fetchSalesAggFallback(startIso, endIso, 'day'));
+    return rows.reduce<Summary>(
+      (acc, r) => ({
+        revenue: acc.revenue + r.sales,
+        profit: acc.profit + r.profit,
+        orders: acc.orders + r.orders,
+      }),
+      { revenue: 0, profit: 0, orders: 0 }
+    );
+  } catch (err) {
+    console.error('Reports summary failed', err);
+    return { revenue: 0, profit: 0, orders: 0 };
+  }
+}
+
+async function getRecentSales(startIso: string, endIso: string) {
+  const { data, error } = await supabaseServer
+    .from('sales')
+    .select('id, created_at, total_amount, profit, payment_method, barista_id')
+    .gte('created_at', startIso)
+    .lte('created_at', endIso)
+    .order('created_at', { ascending: false })
+    .limit(RECENT_LIMIT);
+
+  if (error || !Array.isArray(data)) return [] as (SaleRow & { barista_name: string })[];
+
+  const sales = data as SaleRow[];
+  const baristaIds = [...new Set(sales.map((s) => s.barista_id).filter((id): id is string => Boolean(id)))];
+
+  let baristaMap = new Map<string, string>();
+  if (baristaIds.length > 0) {
+    const { data: baristas } = await supabaseServer.from('users').select('id, name').in('id', baristaIds);
+    baristaMap = new Map((baristas ?? []).map((b: { id: string; name: string | null }) => [b.id, b.name || 'Tanpa Nama']));
+  }
+
+  return sales.map((s) => ({
+    ...s,
+    barista_name: (s.barista_id && baristaMap.get(s.barista_id)) || 'Tidak diketahui',
+  }));
+}
+
+export default async function ReportsPage({ searchParams }: { searchParams?: ReportParams | Promise<ReportParams> }) {
+  const isPromise = searchParams instanceof Promise;
+  const params: ReportParams = (isPromise ? (await searchParams) || {} : (searchParams as ReportParams) || {});
+  const activeTab = params.tab === 'bonus' ? 'bonus' : 'sales';
+
+  const todayYmd = formatDateOnlyInJakarta(new Date());
+  const startYmd = isYmd(params.start) ? params.start : `${todayYmd.slice(0, 7)}-01`;
+  const endYmd = isYmd(params.end) ? params.end : todayYmd;
+  const range = resolveReportRange(startYmd, endYmd);
+
+  // Server-side on purpose: the previous client query never ran, and the anon client is
+  // capped at 1,000 rows per request, so a busy week silently under-reported.
+  const summary: Summary = range ? await getSummary(range.startIso, range.endIso) : { revenue: 0, profit: 0, orders: 0 };
+  const recentSales = range && activeTab === 'sales' ? await getRecentSales(range.startIso, range.endIso) : [];
+
+  const tabHref = (tab: 'sales' | 'bonus') => {
+    const q = new URLSearchParams();
+    if (params.period) q.set('period', params.period);
+    if (isYmd(params.start)) q.set('start', params.start);
+    if (isYmd(params.end)) q.set('end', params.end);
+    if (tab === 'bonus') q.set('tab', 'bonus');
+    const qs = q.toString();
+    return qs ? `/dashboard/reports?${qs}` : '/dashboard/reports';
   };
 
   return (
@@ -107,8 +147,8 @@ export default function ReportsPage() {
       {/* Tab Navigation */}
       <div className="surface-card rounded-lg shadow-md border-b">
         <div className="flex gap-0">
-          <button
-            onClick={() => setActiveTab('sales')}
+          <Link
+            href={tabHref('sales')}
             className={`px-6 py-4 font-semibold border-b-2 transition ${
               activeTab === 'sales'
                 ? 'border-amber-600 text-amber-600'
@@ -116,9 +156,9 @@ export default function ReportsPage() {
             }`}
           >
             Laporan Penjualan
-          </button>
-          <button
-            onClick={() => setActiveTab('bonus')}
+          </Link>
+          <Link
+            href={tabHref('bonus')}
             className={`px-6 py-4 font-semibold border-b-2 transition ${
               activeTab === 'bonus'
                 ? 'border-green-600 text-green-600'
@@ -126,70 +166,53 @@ export default function ReportsPage() {
             }`}
           >
             📊 Kalkulator Bonus
-          </button>
+          </Link>
         </div>
       </div>
 
       {/* SALES TAB */}
       {activeTab === 'sales' && (
         <>
-          {/* Report Type Selection */}
+          {/* Period Selection */}
           <div className="surface-card p-6 rounded-lg shadow-md">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Filter size={20} />
-              Tipe Laporan
+              Periode Laporan
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {[
-                { id: 'daily', label: 'Laporan Harian' },
-                { id: 'weekly', label: 'Laporan Mingguan' },
-                { id: 'monthly', label: 'Laporan Bulanan' },
-                { id: 'custom', label: 'Rentang Kustom' }
-              ].map(option => (
-                <button
-                  key={option.id}
-                  onClick={() => setReportType(option.id)}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    reportType === option.id
-                      ? 'border-amber-600 bg-amber-50'
-                      : 'border-gray-200 hover:border-amber-200'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <p className="text-sm text-gray-700 mb-2">{formatRangeLabel(startYmd, endYmd)}</p>
+            <PeriodSelector initialPeriod={params.period || 'month'} initialStart={startYmd} initialEnd={endYmd} />
           </div>
 
           {/* Report Content */}
           <div className="surface-card p-6 rounded-lg shadow-md">
             <h3 className="text-lg font-semibold mb-4">Ringkasan Penjualan</h3>
-            {loading ? (
-              <p className="text-gray-600">Loading data...</p>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="border rounded-lg p-4 bg-green-50">
-                    <p className="text-gray-600 text-sm">Total Penjualan</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalSales)}</p>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-blue-50">
-                    <p className="text-gray-600 text-sm">Total Keuntungan</p>
-                    <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.totalProfit)}</p>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-purple-50">
-                    <p className="text-gray-600 text-sm">Transaksi</p>
-                    <p className="text-2xl font-bold text-purple-600">{stats.totalTransactions}</p>
-                  </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="border rounded-lg p-4 bg-green-50">
+                  <p className="text-gray-600 text-sm">Total Penjualan</p>
+                  <p className="text-2xl font-bold text-green-600">{formatCurrency(summary.revenue)}</p>
+                </div>
+                <div className="border rounded-lg p-4 bg-blue-50">
+                  <p className="text-gray-600 text-sm">Total Keuntungan</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(summary.profit)}</p>
+                </div>
+                <div className="border rounded-lg p-4 bg-purple-50">
+                  <p className="text-gray-600 text-sm">Transaksi</p>
+                  <p className="text-2xl font-bold text-purple-600">{summary.orders.toLocaleString('id-ID')}</p>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Sales Detail Table */}
           <div className="surface-card rounded-lg shadow-md overflow-hidden">
             <div className="p-6 border-b">
-              <h3 className="text-lg font-semibold">Penjualan Detail ({salesData.length})</h3>
+              <h3 className="text-lg font-semibold">Penjualan Detail ({recentSales.length})</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {recentSales.length >= RECENT_LIMIT
+                  ? `${RECENT_LIMIT} transaksi terbaru pada periode ini. Ringkasan di atas mencakup seluruh periode.`
+                  : 'Seluruh transaksi pada periode ini.'}
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -203,20 +226,34 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {salesData.length > 0 ? (
-                    salesData.map((sale, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm">{sale.date}</td>
-                        <td className="px-6 py-4 text-sm">{sale.barista_name}</td>
-                        <td className="px-6 py-4 text-sm text-right font-medium">{formatCurrency(sale.total_amount)}</td>
-                        <td className="px-6 py-4 text-sm text-right font-medium text-green-600">{formatCurrency(sale.profit)}</td>
+                  {recentSales.length > 0 ? (
+                    recentSales.map((sale) => (
+                      <tr key={sale.id} className="border-b hover:bg-gray-50">
                         <td className="px-6 py-4 text-sm">
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            sale.payment_method === 'cash' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {sale.payment_method.toUpperCase()}
+                          {formatTimestampFromUTC(sale.created_at ?? '', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="px-6 py-4 text-sm">{sale.barista_name}</td>
+                        <td className="px-6 py-4 text-sm text-right font-medium">
+                          {formatCurrency(Number(sale.total_amount ?? 0))}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-right font-medium text-green-600">
+                          {formatCurrency(Number(sale.profit ?? 0))}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                              (sale.payment_method || '').toLowerCase() === 'cash'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {(sale.payment_method || '-').toUpperCase()}
                           </span>
                         </td>
                       </tr>
@@ -243,7 +280,7 @@ export default function ReportsPage() {
             <p className="text-gray-600 mb-6">
               Hitung bonus penjualan berdasarkan metode berjenjang (progressive). Semakin besar omset, semakin banyak layer bonus yang didapat.
             </p>
-            
+
             {/* Tier Structure Reference */}
             <div className="mb-8 p-4 bg-green-50 rounded-lg border border-green-200">
               <h3 className="font-semibold text-lg mb-3">📋 Struktur Tier Bonus</h3>
@@ -279,5 +316,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-
-
