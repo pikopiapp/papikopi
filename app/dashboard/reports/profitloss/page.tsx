@@ -1,6 +1,11 @@
-import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
-import { supabaseServer } from '@/lib/supabaseServer';
-import { getBusinessDayDate, getBusinessDayRange, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
+import { format, endOfMonth, endOfWeek, startOfYear, startOfMonth, startOfWeek, subDays } from 'date-fns';
+import {
+  fetchSalesAgg,
+  fetchSalesAggFallback,
+  isYmd,
+  resolveReportRange,
+} from '@/lib/reports/sales-agg';
+import { formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 import PeriodSelector from '../components/PeriodSelector.client';
 import ProfitLossChartServer from '../components/Charts/ProfitLossChart.server';
 
@@ -11,48 +16,7 @@ interface ProfitLossData {
   profit: number;
 }
 
-type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
-
-async function getProfitLossAggregated(startIso: string, endIso: string, group: 'day' | 'month') {
-  try {
-    const startDate = parseDateOnlyAsJakarta(startIso);
-    const endDate = parseDateOnlyAsJakarta(endIso);
-    const startRange = getBusinessDayRange(startDate, 4);
-    const endRange = getBusinessDayRange(endDate, 4);
-    const queryStartIso = startRange.start.toISOString();
-    const queryEndIso = endRange.end.toISOString();
-
-    const res = await supabaseServer
-      .from('sales')
-      .select('created_at, total_amount, hpp_total, profit')
-      .gte('created_at', queryStartIso)
-      .lte('created_at', queryEndIso)
-      .order('created_at', { ascending: true });
-
-    if (res.error) return [];
-    const rows = res.data || [];
-    const map: Record<string, { revenue: number; cost: number; profit: number; count: number }> = {};
-
-    for (const r of rows) {
-      const businessDay = getBusinessDayDate(r.created_at, 4);
-      const key = group === 'day'
-        ? formatDateOnlyInJakarta(businessDay)
-        : `${businessDay.getFullYear()}-${String(businessDay.getMonth() + 1).padStart(2, '0')}`;
-      if (!map[key]) map[key] = { revenue: 0, cost: 0, profit: 0, count: 0 };
-      map[key].revenue += Number(r.total_amount || 0);
-      map[key].cost += Number(r.hpp_total || 0);
-      map[key].profit += Number(r.profit || 0);
-      map[key].count += 1;
-    }
-
-    const out = Object.entries(map).map(([period, v]) => ({ period, revenue: v.revenue, cost: v.cost, profit: v.profit, count: v.count }));
-    out.sort((a, b) => (a.period > b.period ? 1 : -1));
-    return out;
-  } catch (err) {
-    console.error('server aggregation error', err);
-    return [];
-  }
-}
+type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom' | 'day' | 'week' | 'month' | 'last7';
 
 function formatCurrency(amount: number | string): string {
   return new Intl.NumberFormat('id-ID', {
@@ -68,41 +32,60 @@ export default async function ProfitLossReport({ searchParams }: { searchParams?
   const params = maybe && typeof maybe.then === 'function' ? (await maybe) || {} : (searchParams || {});
   const period = (params.period as PeriodType) || 'wtd';
 
-  let startDate = new Date();
-  let endDate = new Date();
+  const today = new Date();
+  let startDate = today;
+  let endDate = today;
   switch (period) {
     case 'ytd':
-      startDate = startOfYear(new Date());
-      endDate = new Date();
+      startDate = startOfYear(today);
+      endDate = today;
       break;
     case 'mtd':
-      startDate = startOfMonth(new Date());
-      endDate = new Date();
+      startDate = startOfMonth(today);
+      endDate = today;
       break;
     case 'wtd':
-      startDate = startOfWeek(new Date());
-      endDate = new Date();
+      startDate = startOfWeek(today);
+      endDate = today;
       break;
+    // PeriodSelector emits day/week/month; without these the page silently fell back
+    // to "today only" whenever the picker was used.
+    case 'week':
+      startDate = startOfWeek(today, { weekStartsOn: 1 });
+      endDate = endOfWeek(today, { weekStartsOn: 1 });
+      break;
+    case 'month':
+      startDate = startOfMonth(today);
+      endDate = endOfMonth(today);
+      break;
+    case 'last7':
+      startDate = subDays(today, 6);
+      endDate = today;
+      break;
+    case 'day':
     case 'custom':
-      if (params.start) startDate = new Date(params.start);
-      if (params.end) endDate = new Date(params.end);
       break;
   }
 
-  const isShortPeriod = period === 'wtd';
-  const groupParam: 'day' | 'month' = isShortPeriod ? 'day' : 'month';
+  const startYmd = period === 'custom' && isYmd(params.start) ? params.start! : formatDateOnlyInJakarta(startDate);
+  const endYmd = period === 'custom' && isYmd(params.end) ? params.end! : formatDateOnlyInJakarta(endDate);
 
-  let raw: any[] = [];
-  try {
-    const apiRes = await fetch(`/api/reports/profitloss?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&group=${groupParam}`, { cache: 'no-store' });
-    if (apiRes.ok) {
-      const body = await apiRes.json();
-      raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
-    } else {
-      raw = await getProfitLossAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
+  // Daily bars read better for anything up to two months; monthly buckets beyond that.
+  const spanDays = Math.round((new Date(`${endYmd}T00:00:00Z`).getTime() - new Date(`${startYmd}T00:00:00Z`).getTime()) / 86400000) + 1;
+  const groupParam: 'day' | 'month' = spanDays <= 62 ? 'day' : 'month';
+
+  // Server components cannot fetch their own relative /api route, and the API route's
+  // fallback selected a `meal_amount` column that does not exist on `sales`.
+  let raw: { period: string; revenue: number; hpp: number; profit: number }[] = [];
+  const range = resolveReportRange(startYmd, endYmd);
+  if (range) {
+    try {
+      const agg = await fetchSalesAgg(range.startIso, range.endIso, groupParam);
+      const rows = agg ?? (await fetchSalesAggFallback(range.startIso, range.endIso, groupParam));
+      raw = rows.map((r) => ({ period: r.period, revenue: r.sales, hpp: r.hpp, profit: r.profit }));
+    } catch (err) {
+      console.error('P&L aggregation error', err);
     }
-  } catch (e) {
-    raw = await getProfitLossAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
   }
 
   const chartArray: ProfitLossData[] = [];
@@ -113,25 +96,24 @@ export default async function ProfitLossReport({ searchParams }: { searchParams?
   for (const row of raw) {
     const periodKey = row.period;
     let label = periodKey;
-    if (!isShortPeriod) {
-      const monthNum = parseInt(periodKey.split('-')[1]);
+    if (groupParam === 'month') {
+      const monthNum = parseInt(periodKey.split('-')[1], 10);
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       label = monthNames[monthNum - 1] || periodKey;
     } else {
-      const d = parseDateOnlyAsJakarta(periodKey);
-      label = format(d, 'MMM dd');
+      label = format(new Date(`${periodKey}T00:00:00+07:00`), 'MMM dd');
     }
 
     chartArray.push({
       month: label,
-      revenue: Number(row.revenue || 0),
-      cost: Number(row.cost || 0),
-      profit: Number(row.profit || 0),
+      revenue: Math.round(row.revenue),
+      cost: Math.round(row.hpp),
+      profit: Math.round(row.profit),
     });
 
-    totalRevenue += Number(row.revenue || 0);
-    totalCost += Number(row.cost || 0);
-    totalProfit += Number(row.profit || 0);
+    totalRevenue += row.revenue;
+    totalCost += row.hpp;
+    totalProfit += row.profit;
   }
 
   const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0';
@@ -147,7 +129,16 @@ export default async function ProfitLossReport({ searchParams }: { searchParams?
 
       <div className="surface-card rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold mb-4">Pilih Periode</h2>
-        <p className="text-sm text-gray-700">{period === 'ytd' ? 'Year to Date' : period === 'mtd' ? 'Month to Date' : period === 'wtd' ? 'Week to Date' : 'Custom Range'}</p>
+        <p className="text-sm text-gray-700">
+          {period === 'ytd' ? 'Year to Date'
+            : period === 'mtd' ? 'Month to Date'
+            : period === 'wtd' ? 'Week to Date'
+            : period === 'day' ? 'Hari'
+            : period === 'week' ? 'Minggu'
+            : period === 'month' ? 'Bulan'
+            : period === 'last7' ? '7 Hari Terakhir'
+            : 'Custom Range'}
+        </p>
         {period === 'custom' && (params.start || params.end) ? (
           <p className="text-sm text-gray-500">{params.start || ''} — {params.end || ''}</p>
         ) : null}

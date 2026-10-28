@@ -1,5 +1,7 @@
-import { format, startOfYear, startOfMonth, startOfWeek } from 'date-fns';
-import { supabaseServer } from '@/lib/supabaseServer';
+import { endOfMonth, endOfWeek, startOfYear, startOfMonth, startOfWeek, subDays } from 'date-fns';
+import { resolveReportRange, isYmd } from '@/lib/reports/sales-agg';
+import { loadProductPerformance } from '@/lib/reports/product-performance';
+import { formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 import PeriodSelector from '../components/PeriodSelector.client';
 import ProductPerformanceChartServer from '../components/Charts/ProductPerformanceChart.server';
 
@@ -9,48 +11,7 @@ interface ProductData {
   revenue: number;
 }
 
-type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
-
-async function getProductAggregated(startIso: string, endIso: string) {
-  try {
-    const rpc = await supabaseServer.rpc('reports_product_performance', { start_ts: startIso, end_ts: endIso, limit_count: 10 });
-    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data;
-
-    const res = await supabaseServer
-      .from('sale_items')
-      .select(`
-        quantity,
-        price,
-        products(id, name),
-        sales(created_at)
-      `)
-      .gte('sales.created_at', startIso)
-      .lte('sales.created_at', endIso);
-
-    if (res.error) return [];
-    const items = res.data || [];
-    const map: Record<string, { sold: number; revenue: number }> = {};
-    for (const it of items) {
-      const prod = Array.isArray(it.products) ? it.products[0] : it.products;
-      const name = prod?.name || 'Unknown';
-      const qty = Number(it.quantity || 0);
-      const rev = Number(it.price || 0) * qty;
-      if (!map[name]) map[name] = { sold: 0, revenue: 0 };
-      map[name].sold += qty;
-      map[name].revenue += rev;
-    }
-
-    const out = Object.entries(map)
-      .map(([product, v]) => ({ product, sold: v.sold, revenue: v.revenue }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
-
-    return out;
-  } catch (err) {
-    console.error('server aggregation error', err);
-    return [];
-  }
-}
+type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom' | 'day' | 'week' | 'month' | 'last7';
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('id-ID', {
@@ -66,43 +27,58 @@ export default async function ProductPerformanceReport({ searchParams }: { searc
   const params = maybe && typeof maybe.then === 'function' ? (await maybe) || {} : (searchParams || {});
   const period = (params.period as PeriodType) || 'wtd';
 
-  let startDate = new Date();
-  let endDate = new Date();
+  const today = new Date();
+  let startDate = today;
+  let endDate = today;
   switch (period) {
     case 'ytd':
-      startDate = startOfYear(new Date());
-      endDate = new Date();
+      startDate = startOfYear(today);
+      endDate = today;
       break;
     case 'mtd':
-      startDate = startOfMonth(new Date());
-      endDate = new Date();
+      startDate = startOfMonth(today);
+      endDate = today;
       break;
     case 'wtd':
-      startDate = startOfWeek(new Date());
-      endDate = new Date();
+      startDate = startOfWeek(today);
+      endDate = today;
       break;
+    // PeriodSelector emits day/week/month; without these the page silently fell back
+    // to "today only" whenever the picker was used.
+    case 'week':
+      startDate = startOfWeek(today, { weekStartsOn: 1 });
+      endDate = endOfWeek(today, { weekStartsOn: 1 });
+      break;
+    case 'month':
+      startDate = startOfMonth(today);
+      endDate = endOfMonth(today);
+      break;
+    case 'last7':
+      startDate = subDays(today, 6);
+      endDate = today;
+      break;
+    case 'day':
     case 'custom':
-      if (params.start) startDate = new Date(params.start);
-      if (params.end) endDate = new Date(params.end);
       break;
   }
 
-  let raw: any[] = [];
-  let apiUrl = '';
-  try {
-    apiUrl = `/api/reports/product-performance?start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}`;
-    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
-    if (apiRes.ok) {
-      const body = await apiRes.json();
-      raw = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
-    } else {
-      raw = await getProductAggregated(startDate.toISOString(), endDate.toISOString());
+  const startYmd = period === 'custom' && isYmd(params.start) ? params.start! : formatDateOnlyInJakarta(startDate);
+  const endYmd = period === 'custom' && isYmd(params.end) ? params.end! : formatDateOnlyInJakarta(endDate);
+
+  // Aggregate server-side; a relative fetch to our own API throws inside a server
+  // component, and the old fallback filtered on an embedded column (no effect) then
+  // aggregated the first 1,000 sale_items of all time.
+  let raw: { product: string; sold: number; revenue: number }[] = [];
+  const range = resolveReportRange(startYmd, endYmd);
+  if (range) {
+    try {
+      raw = await loadProductPerformance(range.startIso, range.endIso);
+    } catch (err) {
+      console.error('Product aggregation error', err);
     }
-  } catch (e) {
-    raw = await getProductAggregated(startDate.toISOString(), endDate.toISOString());
   }
 
-  const chartArray: ProductData[] = raw.map((r: any) => ({ product: r.product, sold: Number(r.sold || 0), revenue: Number(r.revenue || 0) }));
+  const chartArray: ProductData[] = raw.map((r) => ({ product: r.product, sold: Number(r.sold || 0), revenue: Number(r.revenue || 0) }));
 
   const totalSold = chartArray.reduce((sum, p) => sum + p.sold, 0);
   const totalRevenue = chartArray.reduce((sum, p) => sum + p.revenue, 0);
@@ -123,12 +99,6 @@ export default async function ProductPerformanceReport({ searchParams }: { searc
         <div className="mt-2">
           <PeriodSelector initialPeriod={period} initialStart={params.start} initialEnd={params.end} />
         </div>
-        <div className="mt-3 text-sm text-gray-500">
-          <div>Debug: start = {startDate.toISOString()}</div>
-          <div>Debug: end = {endDate.toISOString()}</div>
-          <div>Debug: api = {apiUrl}</div>
-          <div>Debug: rows = {raw.length}</div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -140,12 +110,12 @@ export default async function ProductPerformanceReport({ searchParams }: { searc
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Avg Revenue/Item</h3>
           <p className="text-2xl font-bold text-green-600 mt-2">{formatCurrency(stats.avgRevenue)}</p>
-          <p className="text-sm text-gray-500 mt-1">Per unit sold</p>
+          <p className="text-sm text-gray-500 mt-1">Per unit sold (Top 10)</p>
         </div>
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-700">Total Sold</h3>
           <p className="text-2xl font-bold text-orange-600 mt-2">{stats.totalSold}</p>
-          <p className="text-sm text-gray-500 mt-1">Total units</p>
+          <p className="text-sm text-gray-500 mt-1">Units in Top 10 products</p>
         </div>
       </div>
 

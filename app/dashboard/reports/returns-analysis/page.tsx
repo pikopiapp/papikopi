@@ -14,11 +14,6 @@ interface ReturnReason {
 
 type PeriodType = 'ytd' | 'mtd' | 'wtd' | 'custom';
 
-interface SalesData {
-  total_amount: number;
-  id: string;
-}
-
 export default function ReturnsAnalysisReport() {
   const [returnsData, setReturnsData] = useState<ReturnReason[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,24 +62,28 @@ export default function ReturnsAnalysisReport() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
+      const startIso = new Date(`${format(startDate, 'yyyy-MM-dd')}T00:00:00+07:00`).toISOString();
+      const endIso = new Date(`${format(endDate, 'yyyy-MM-dd')}T23:59:59.999+07:00`).toISOString();
 
       // Fetch returns data
       const { data: returns, error: returnsError } = await supabase
         .from('product_returns')
         .select('id, return_reason, return_date')
-        .gte('return_date', startDate.toISOString())
-        .lte('return_date', endDate.toISOString());
+        .gte('return_date', startIso)
+        .lte('return_date', endIso);
 
       if (returnsError) throw returnsError;
 
-      // Fetch all sales to calculate return rate
-      const { data: sales, error: salesError } = await supabase
-        .from('sales')
-        .select('id, total_amount')
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString());
+      // Count orders for the same window. Selecting `sales` rows counted at most 1,000
+      // rows, which inflated the return rate for any month above that.
+      const { data: totals, error: totalsError } = await supabase.rpc('get_sales_totals', {
+        p_start: startIso,
+        p_end: endIso,
+        p_outlet: null,
+      });
 
-      if (salesError) throw salesError;
+      if (totalsError) throw totalsError;
+      const totalOrders = Number((Array.isArray(totals) ? totals[0] : totals)?.orders ?? 0);
 
       // Group returns by reason
       const reasonMap: { [key: string]: number } = {};
@@ -119,8 +118,7 @@ export default function ReturnsAnalysisReport() {
       setReturnsData(chartArray);
 
       // Calculate stats
-      const totalSales = (sales || []).reduce((sum, s) => sum + (s.total_amount || 0), 0);
-      const returnRate = totalSales > 0 ? ((total / (sales?.length || 1)) * 100).toFixed(1) : '0';
+      const returnRate = totalOrders > 0 ? ((total / totalOrders) * 100).toFixed(1) : '0';
 
       setStats({
         totalReturns: total,

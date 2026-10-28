@@ -71,7 +71,9 @@ export default function OutletComparisonReport() {
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
-      const q = new URLSearchParams({ start: startDate.toISOString(), end: endDate.toISOString() });
+      // Send date-only values so the API resolves whole Asia/Jakarta days; an ISO
+      // timestamp from a UTC-midnight Date dropped the first 7 hours of the range.
+      const q = new URLSearchParams({ start: format(startDate, 'yyyy-MM-dd'), end: format(endDate, 'yyyy-MM-dd') });
       const resp = await fetch(`/api/reports/outlet-comparison?${q.toString()}`);
       const json = await resp.json();
       const stats: OutletStats[] = json?.data || [];

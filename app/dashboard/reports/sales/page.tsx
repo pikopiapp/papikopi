@@ -1,5 +1,6 @@
 import { format, startOfYear, startOfMonth, startOfWeek, subDays } from 'date-fns';
 import { supabaseServer } from '@/lib/supabaseServer';
+import { fetchSalesAgg, fetchSalesAggFallback, resolveReportRange } from '@/lib/reports/sales-agg';
 import SalesChartServer from '../components/Charts/SalesChart.server';
 import PeriodSelector from '../components/PeriodSelector.client';
 import ApplyOutletClient from '../components/ApplyOutlet.client';
@@ -29,42 +30,12 @@ function formatCurrency(amount: number | string): string {
   }).format(Number(amount));
 }
 
-async function getSalesAggregated(startIso: string, endIso: string, group: 'day' | 'month') {
+async function getSalesAggregated(startYmd: string, endYmd: string, group: 'day' | 'month', outlet?: string | null) {
+  const range = resolveReportRange(startYmd, endYmd);
+  if (!range) return [];
   try {
-    const rpc = await supabaseServer.rpc('reports_sales_agg', { start_ts: startIso, end_ts: endIso, grp: group });
-    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data;
-
-    const res = await supabaseServer
-      .from('sales')
-      .select('created_at, total_amount, profit')
-      .gte('created_at', startIso)
-      .lte('created_at', endIso)
-      .order('created_at', { ascending: true });
-
-    if (res.error) return [];
-    const rows = res.data || [];
-    const map: Record<string, { sales: number; profit: number; count: number }> = {};
-    for (const r of rows) {
-      // Normalize created_at to UTC if missing TZ, then group by Asia/Jakarta local day
-      let created = String(r.created_at || '');
-      const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
-      if (!hasTZ) {
-        created = created.replace(' ', 'T');
-        if (!created.endsWith('Z')) created = created + 'Z';
-      }
-      const dt = new Date(created);
-      const key = group === 'day'
-        ? dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
-        : `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
-      if (!map[key]) map[key] = { sales: 0, profit: 0, count: 0 };
-      map[key].sales += Number(r.total_amount || 0);
-      map[key].profit += Number(r.profit || 0);
-      map[key].count += 1;
-    }
-
-    const out = Object.entries(map).map(([period, v]) => ({ period, sales: v.sales, profit: v.profit, count: v.count }));
-    out.sort((a, b) => (a.period > b.period ? 1 : -1));
-    return out;
+    const agg = await fetchSalesAgg(range.startIso, range.endIso, group, outlet || null);
+    return agg ?? (await fetchSalesAggFallback(range.startIso, range.endIso, group, outlet || null));
   } catch (err) {
     console.error('server aggregation error', err);
     return [];
@@ -99,36 +70,29 @@ function formatDateRangeLabel(start: Date, end: Date) {
 }
 
 async function getSalesPerOutletDaily(startYmd: string, endYmd: string): Promise<{ periods: string[]; data: PerOutletRow[] }> {
-  const startIso = new Date(`${startYmd}T00:00:00+07:00`).toISOString();
-  const endIso = new Date(`${endYmd}T23:59:59.999+07:00`).toISOString();
+  const range = resolveReportRange(startYmd, endYmd);
+  if (!range) return { periods: [], data: [] };
 
-  const res = await supabaseServer
-    .from('sales')
-    .select('created_at, total_amount, profit, outlet_id')
-    .gte('created_at', startIso)
-    .lte('created_at', endIso)
-    .order('created_at', { ascending: true });
-
-  if (res.error) return { periods: [], data: [] };
-  const rows = res.data || [];
+  // One aggregated round trip instead of downloading every sale row (which PostgREST
+  // silently truncates at 1,000 rows).
+  const { data, error } = await supabaseServer.rpc('get_sales_daily_summary', {
+    p_start: range.startIso,
+    p_end: range.endIso,
+    p_outlet: null,
+  });
+  if (error || !Array.isArray(data)) return { periods: [], data: [] };
 
   const periods = buildPeriodRange(startYmd, endYmd);
-  const map: Record<string, { name?: string; series: Record<string, number>; profit: Record<string, number>; count: Record<string, number> }> = {};
+  const map: Record<string, { series: Record<string, number>; profit: Record<string, number>; count: Record<string, number> }> = {};
 
-  for (const r of rows) {
-    let created = String(r.created_at || '');
-    const hasTZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(created);
-    if (!hasTZ) {
-      created = created.replace(' ', 'T');
-      if (!created.endsWith('Z')) created = created + 'Z';
-    }
-    const dt = new Date(created);
-    const key = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  for (const r of data as any[]) {
     const oid = r.outlet_id ? String(r.outlet_id) : 'unknown';
+    const key = String(r.business_date ?? '').slice(0, 10);
+    if (!key) continue;
     if (!map[oid]) map[oid] = { series: {}, profit: {}, count: {} };
-    map[oid].series[key] = (map[oid].series[key] || 0) + Number(r.total_amount || 0);
-    map[oid].profit[key] = (map[oid].profit[key] || 0) + Number(r.profit || 0);
-    map[oid].count[key] = (map[oid].count[key] || 0) + 1;
+    map[oid].series[key] = (map[oid].series[key] || 0) + Number(r.revenue ?? 0);
+    map[oid].profit[key] = (map[oid].profit[key] || 0) + Number(r.profit ?? 0);
+    map[oid].count[key] = (map[oid].count[key] || 0) + Number(r.orders ?? 0);
   }
 
   // Resolve outlet names
@@ -223,25 +187,12 @@ export default async function SalesReport({ searchParams }: { searchParams?: May
   // Use daily grouping for short periods and custom ranges (so "Terapkan" shows days)
   const groupParam: 'day' | 'month' = isShortPeriod ? 'day' : 'month';
 
-  // Use the existing app API route for aggregated sales to match other pages' data-fetch pattern.
-  // Send `start`/`end` as local `yyyy-MM-dd` to match the dashboard date-picker behavior.
-  let raw: AggregatedSalesRow[] = [];
+  // Aggregate straight from the database. Calling our own /api route from a server
+  // component needs an absolute URL and fails; the old relative fetch always threw and
+  // silently dropped the page onto an unpaginated (1,000-row capped) query.
   const startYmd = format(startDate, 'yyyy-MM-dd');
   const endYmd = format(endDate, 'yyyy-MM-dd');
-  const outletParam = params.outlet ? `&outlet=${encodeURIComponent(params.outlet)}` : '';
-  const apiUrl = `/api/reports/sales?start=${encodeURIComponent(startYmd)}&end=${encodeURIComponent(endYmd)}&group=${groupParam}${outletParam}`;
-  try {
-    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
-    if (apiRes.ok) {
-      const body = await apiRes.json();
-      raw = Array.isArray(body?.data) ? (body.data as AggregatedSalesRow[]) : Array.isArray(body) ? (body as AggregatedSalesRow[]) : [];
-    } else {
-      raw = await getSalesAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
-    }
-  } catch {
-    // fallback to direct DB aggregation if API fetch fails
-    raw = await getSalesAggregated(startDate.toISOString(), endDate.toISOString(), groupParam);
-  }
+  const raw: AggregatedSalesRow[] = await getSalesAggregated(startYmd, endYmd, groupParam, params.outlet);
   const chartArray: MonthlySalesData[] = [];
   let totalYTD = 0;
   let totalProfit = 0;
@@ -350,17 +301,6 @@ export default async function SalesReport({ searchParams }: { searchParams?: May
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <p>Belum ada data penjualan untuk periode terpilih</p>
-                <div className="mt-4 text-left text-xs text-gray-500">
-                  <p><strong>Debug:</strong></p>
-                  <p>start: {startDate.toISOString()}</p>
-                  <p>end: {endDate.toISOString()}</p>
-                  <p>group: {groupParam}</p>
-                  <p>apiUrl: {apiUrl}</p>
-                  <details className="mt-2 text-xs text-gray-400">
-                    <summary>Raw rows ({raw.length})</summary>
-                    <pre className="whitespace-pre-wrap wrap-break-word max-h-48 overflow-auto">{JSON.stringify(raw, null, 2)}</pre>
-                  </details>
-                </div>
               </div>
             )}
           </div>

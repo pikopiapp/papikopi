@@ -134,29 +134,24 @@ export default function DailySummaryReport() {
         setPrevRangeStats({ totalSales: 0, totalOrders: 0 });
       }
 
-      // Count units (cups) in this range by scanning /api/sales/by-outlet with the same business-day boundaries
+      // Count units (cups) with a single aggregate call. Scanning /api/sales/by-outlet
+      // downloaded every sale plus its items and timed out on month-long ranges.
       try {
-        const qItems = new URLSearchParams({
-          since: s,
-          until: e,
-          business_day: '1',
-          business_day_start_hour: '4',
-          include_items: 'units',
+        // Business day D runs from 04:00 WIB to 03:59:59 WIB the next day.
+        const unitsStart = new Date(`${s}T04:00:00+07:00`);
+        const unitsEndExclusive = new Date(`${e}T04:00:00+07:00`);
+        unitsEndExclusive.setUTCDate(unitsEndExclusive.getUTCDate() + 1);
+        const unitsEnd = new Date(unitsEndExclusive.getTime() - 1);
+
+        const { data: totals, error: totalsError } = await supabase.rpc('get_sales_totals', {
+          p_start: unitsStart.toISOString(),
+          p_end: unitsEnd.toISOString(),
+          p_outlet: outlet || null,
         });
-        if (outlet) qItems.set('outlet_id', outlet);
-        const resItems = await fetch(`/api/sales/by-outlet?${qItems.toString()}`);
-        const itemsJson = await resItems.json();
-        const rawSales = Array.isArray(itemsJson) ? itemsJson : (Array.isArray(itemsJson?.sales) ? itemsJson.sales : []);
-        const units = rawSales.reduce((sum: number, srow: any) => {
-          const items = Array.isArray(srow.sale_items)
-            ? srow.sale_items
-            : Array.isArray(srow.items)
-              ? srow.items
-              : [];
-          const saleUnits = items.reduce((ss: number, it: any) => ss + (Number(it.quantity || it.units || it.cups || 0) || 0), 0);
-          return sum + saleUnits;
-        }, 0);
-        setRangeStats((r) => ({ ...r, units } as any));
+        if (!totalsError) {
+          const row = Array.isArray(totals) ? totals[0] : totals;
+          setRangeStats((r) => ({ ...r, units: Number(row?.cups ?? 0) } as any));
+        }
       } catch (err) {
         console.error('units fetch error', err);
       }
