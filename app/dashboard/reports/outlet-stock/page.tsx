@@ -107,7 +107,11 @@ export default async function OutletStockReport({
     }
     entry.cells.set(row.stock_date, Number(row.remaining_cum ?? 0));
   }
+  // The daily RPC lists every outlet; the summary only lists outlets with activity.
+  // Keep both tables on the same outlet set.
+  const activeOutletIds = summaryRes.error ? null : new Set(sorted.map((row) => row.outlet_id));
   const dailyMatrix = [...byOutlet.entries()]
+    .filter(([outlet_id]) => !activeOutletIds || activeOutletIds.has(outlet_id))
     .map(([outlet_id, entry]) => ({ outlet_id, name: entry.name, cells: entry.cells }))
     .sort((a, b) => outletNumber(a.name) - outletNumber(b.name));
 
