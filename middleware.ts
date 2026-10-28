@@ -200,6 +200,16 @@ function matchesPrefix(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+// Showcase writes move stock between the warehouse and the outlets, so a valid session is
+// not enough — investor accounts are read-only and must not allocate or reassign anything.
+const SHOWCASE_API_PREFIX = '/api/showcase';
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const SHOWCASE_WRITE_ROLES = new Set(['admin', 'manager', 'barista']);
+
+function isShowcaseWrite(pathname: string, method: string) {
+  return matchesPrefix(pathname, [SHOWCASE_API_PREFIX]) && WRITE_METHODS.has(method.toUpperCase());
+}
+
 // Protect /admin, /dashboard, /investor pages and every /api route that is not
 // used by a public page.
 export async function middleware(req: NextRequest) {
@@ -256,6 +266,17 @@ export async function middleware(req: NextRequest) {
         status: 401,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    if (isShowcaseWrite(normalizedPath, req.method)) {
+      const user = await getAuthenticatedUser(req);
+      const role = await getAppUserRole(user);
+      if (!role || !SHOWCASE_WRITE_ROLES.has(role)) {
+        return new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     return NextResponse.next();
