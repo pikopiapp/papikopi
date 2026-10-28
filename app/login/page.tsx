@@ -25,7 +25,7 @@ function LoginForm() {
     try {
       const loginResult = await login(email, password);
       const authUser = loginResult?.user as AppUser | null;
-      const role = loginResult?.profile?.role || getRoleFromUser(authUser) || authUser?.role || authUser?.user_metadata?.role || authUser?.app_metadata?.role || null;
+      const role = loginResult?.profile?.role || getRoleFromUser(authUser) || null;
 
       // If a redirect query param was provided, only follow it when the
       // user's role matches the destination. Default to role-based root.

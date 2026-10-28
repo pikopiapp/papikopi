@@ -45,6 +45,9 @@ export async function POST() {
         email_confirm: true,
         user_metadata: {
           name: user.name || user.email,
+        },
+        // app_metadata is the only metadata the app trusts for roles.
+        app_metadata: {
           role: 'investor',
         },
       });

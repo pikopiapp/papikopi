@@ -1,4 +1,4 @@
-import { getRoleFromUser, isAdminSecretAuthorized } from './admin-access';
+import { getRoleFromUser, isAdminSecretAuthorized, normalizeAppRole } from './admin-access';
 import { middleware } from '../middleware';
 
 function test(name: string, fn: () => void) {
@@ -34,12 +34,19 @@ test('rejects a missing or mismatched admin secret header', () => {
   assertTrue(!isAdminSecretAuthorized(badRequest, 'super-secret'));
 });
 
-test('extracts investor role from metadata', () => {
-  const user = {
-    user_metadata: { role: 'investor' },
-    app_metadata: { role: 'authenticated' },
-  };
+test('ignores user_metadata, which the user can write themselves', () => {
+  const user = { user_metadata: { role: 'admin' }, app_metadata: {} };
+  assertEquals(getRoleFromUser(user), null);
+});
+
+test('reads the role from app_metadata', () => {
+  const user = { user_metadata: { role: 'barista' }, app_metadata: { role: 'investor' } };
   assertEquals(getRoleFromUser(user), 'investor');
+});
+
+test('treats postgres role values as no app role', () => {
+  assertEquals(normalizeAppRole('authenticated'), null);
+  assertEquals(normalizeAppRole('admin'), 'admin');
 });
 
 test('middleware allows the protected admin sync route when the admin secret is present', async () => {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getRoleFromUser, isAdminSecretAuthorized } from './lib/admin-access';
+import { getRoleFromUser, isAdminSecretAuthorized, normalizeAppRole } from './lib/admin-access';
 import { getSupabaseAdminClient } from './lib/supabase-admin';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -64,33 +64,49 @@ async function getAuthenticatedUser(req: NextRequest) {
   }
 }
 
-async function getAppUserRole(authUser: { id?: string | null; user_metadata?: Record<string, any>; app_metadata?: Record<string, any> } | null | undefined) {
-  const tokenRole = getRoleFromUser(authUser);
-
+// The users table is the only role source the caller cannot write. Most staff
+// profiles are keyed by a different id than the auth user, so fall back to the
+// email match before giving up; app_metadata is the last trusted resort.
+async function getAppUserRole(authUser: { id?: string | null; email?: string | null; app_metadata?: Record<string, any> } | null | undefined) {
   if (!authUser?.id) {
-    return tokenRole;
+    return null;
   }
 
   try {
     const admin = getSupabaseAdminClient();
+
     const { data, error } = await admin.from('users').select('role').eq('id', authUser.id).maybeSingle();
-    if (!error && data?.role) {
-      // eslint-disable-next-line no-console
-      console.log('[middleware] app user role mapped', { authUserId: authUser.id, role: data.role });
-      return data.role;
+    const byId = normalizeAppRole(data?.role);
+    if (byId) {
+      return byId;
     }
     if (error) {
       // eslint-disable-next-line no-console
-      console.warn('[middleware] app user role lookup failed', error.message);
+      console.warn('[middleware] app user role lookup by id failed', error.message);
+    }
+
+    if (authUser.email) {
+      const { data: byEmail, error: emailError } = await admin
+        .from('users')
+        .select('role')
+        .ilike('email', authUser.email)
+        .limit(1)
+        .maybeSingle();
+      const emailRole = normalizeAppRole(byEmail?.role);
+      if (emailRole) {
+        return emailRole;
+      }
+      if (emailError) {
+        // eslint-disable-next-line no-console
+        console.warn('[middleware] app user role lookup by email failed', emailError.message);
+      }
     }
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[middleware] app user role lookup error', e);
   }
 
-  // eslint-disable-next-line no-console
-  console.log('[middleware] fallback role from token metadata', { authUserId: authUser.id, tokenRole });
-  return tokenRole;
+  return getRoleFromUser(authUser);
 }
 
 // Bearer header or the cookie the auth provider writes; used for the cheap API gate.
@@ -176,8 +192,7 @@ const SESSION_REQUIRED_API_PREFIXES = [
   '/api/labels',
   '/api/qrcode',
   '/api/batch-to-showcase',
-  '/api/showcase/send-batch',
-  '/api/showcase/allocate',
+  '/api/showcase',
 ];
 
 function matchesPrefix(pathname: string, prefixes: string[]) {

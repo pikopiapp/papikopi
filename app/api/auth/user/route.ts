@@ -1,8 +1,15 @@
 import { supabase } from '@/lib/supabase';
-import { getRoleFromUser } from '@/lib/admin-access';
+import { getRoleFromUser, normalizeAppRole } from '@/lib/admin-access';
 import { getSupabaseAdminClient } from '@/lib/supabase-admin';
 import type { Database } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
+
+// Stored roles can be junk ("authenticated" from an old sync); the client only
+// understands the four app roles, so anything else is reported as no role.
+function normalizeProfileRole<T extends { role?: string | null }>(profile: T | null) {
+  if (!profile) return profile;
+  return { ...profile, role: normalizeAppRole(profile.role) };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,19 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (userData) {
-      if (tokenRole && tokenRole !== userData.role && ['admin', 'investor'].includes(tokenRole)) {
-        const { error: updateError } = await admin
-          .from('users')
-          .update({ role: tokenRole })
-          .eq('id', user.id);
-
-        if (updateError) {
-          console.warn('Failed to sync role from auth metadata:', updateError.message);
-        } else {
-          userData.role = tokenRole;
-        }
-      }
-      return NextResponse.json(userData);
+      return NextResponse.json(normalizeProfileRole(userData));
     }
 
     if (user.email) {
@@ -67,20 +62,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (emailProfile) {
-        if (tokenRole && tokenRole !== emailProfile.role && ['admin', 'investor'].includes(tokenRole)) {
-          const { error: updateError } = await admin
-            .from('users')
-            .update({ role: tokenRole })
-            .eq('id', emailProfile.id);
-
-          if (updateError) {
-            console.warn('Failed to sync role from auth metadata:', updateError.message);
-          } else {
-            emailProfile.role = tokenRole;
-          }
-        }
-
-        return NextResponse.json(emailProfile);
+        return NextResponse.json(normalizeProfileRole(emailProfile));
       }
     }
 
@@ -108,30 +90,10 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ error: 'Failed to create profile' }, { status: 500 });
         }
 
-        return NextResponse.json(updateResp.data);
+        return NextResponse.json(normalizeProfileRole(updateResp.data));
       }
 
-      // If auth metadata marks this user as investor, ensure profile role matches
-      if (defaultRole === 'investor') {
-        try {
-          const setRole = await admin
-            .from('users')
-            .update({ role: 'investor' })
-            .eq('email', user.email)
-            .select()
-            .maybeSingle();
-
-          if (setRole.error) {
-            console.warn('Failed to set investor role on profile:', setRole.error.message);
-          } else if (setRole.data) {
-            return NextResponse.json(setRole.data);
-          }
-        } catch (e: any) {
-          console.warn('Error setting investor role:', e?.message || e);
-        }
-      }
-
-      return NextResponse.json(upsertResp.data);
+      return NextResponse.json(normalizeProfileRole(upsertResp.data));
     } catch (e: any) {
       console.error('Unexpected error creating profile:', e?.message || e);
       return NextResponse.json({ error: 'Failed to create profile' }, { status: 500 });

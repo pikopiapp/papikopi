@@ -276,8 +276,8 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
           <div className="px-6 py-4 border-b border-white/10">
             <div className="surface-muted rounded-xl p-3">
                   <p className="text-sm font-medium text-gray-900 dark:text-white hidden lg:block">{user.user_metadata?.full_name ?? user.email}</p>
-                  <p className="text-xs text-gray-600 dark:text-white/60 capitalize hidden lg:block">{user.user_metadata?.role ?? ''}</p>
-                  <p className="text-xs text-gray-600 dark:text-white/60 lg:hidden">{user.user_metadata?.role ?? ''}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 capitalize hidden lg:block">{role ?? ''}</p>
+                  <p className="text-xs text-gray-600 dark:text-white/60 lg:hidden">{role ?? ''}</p>
                 </div>
           </div>
         )}
