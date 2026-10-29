@@ -29,37 +29,15 @@ export function BatchPrintMenu({ batch }: BatchPrintMenuProps) {
     setShowPrintDialog(true);
   };
 
-  const handlePrintQR = async () => {
-    // Open QR preview in new window
-    const qrData = JSON.stringify({
-      product_id: batch.product_id,
-      batch: batch.batch,
-      production_date: batch.production_date,
-      product: batch.product_name,
-    });
-
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`;
-    window.open(url, '_blank');
-  };
-
   return (
     <div className="flex gap-1 md:gap-2">
-      {/* Print Label Button */}
+      {/* Label already contains the batch QR code; this is the only print entry point. */}
       <button
         onClick={handlePrintLabel}
         className="flex items-center gap-1 px-2 md:px-3 py-1 text-xs md:text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition whitespace-nowrap"
-        title="Cetak label thermal untuk batch ini"
+        title="Cetak label + QR code untuk batch ini"
       >
-        🖨️ <span className="hidden md:inline">Label</span>
-      </button>
-
-      {/* Print QR Button */}
-      <button
-        onClick={handlePrintQR}
-        className="flex items-center gap-1 px-2 md:px-3 py-1 text-xs md:text-sm bg-green-500 hover:bg-green-600 text-white rounded transition whitespace-nowrap"
-        title="Preview & print QR code"
-      >
-        📱 <span className="hidden md:inline">QR</span>
+        🖨️ <span className="hidden md:inline">Label / QR</span>
       </button>
 
       {/* Print Dialog */}
