@@ -46,7 +46,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const effectiveQuantity = Math.max(1, Number(quantity) || 1);
+    const effectiveQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+    if (effectiveQuantity > 2000) {
+      return NextResponse.json(
+        { error: 'Jumlah label terlalu banyak (maksimal 2000 per cetak)' },
+        { status: 400 }
+      );
+    }
 
     if (send_to_printer) {
       const printerHost = getPrinterHost();
@@ -126,7 +132,7 @@ export async function POST(request: NextRequest) {
           <div class="instagram">@papikopi_bdg</div>
         </div>
         <div class="right-column">
-          <img src="${qrImage}" alt="QR Code" class="qr-code">
+          <div class="qr-code"></div>
         </div>`;
 
     let sheetsHTML = '';
@@ -227,7 +233,10 @@ export async function POST(request: NextRequest) {
           .qr-code {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            background-image: url("${qrImage}");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
           }
           @media print {
             .label {

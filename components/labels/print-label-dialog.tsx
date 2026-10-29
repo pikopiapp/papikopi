@@ -9,6 +9,7 @@ interface PrintLabelProps {
   productionDate: string;
   expiryDate?: string;
   quantity?: number; // Number of labels to print (default: 1)
+  onClose?: () => void;
 }
 
 export function PrintLabelDialog({
@@ -18,10 +19,14 @@ export function PrintLabelDialog({
   productionDate,
   expiryDate,
   quantity = 1,
+  onClose,
 }: PrintLabelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [printQuantity, setPrintQuantity] = useState(quantity);
+  // Free-text so the field can be cleared while typing; defaults to one label even when the
+  // batch holds hundreds, so a stray click cannot send a full roll to the printer.
+  const [quantityText, setQuantityText] = useState('1');
+  const printQuantity = Math.max(1, Math.min(2000, parseInt(quantityText, 10) || 1));
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [printerConfigured, setPrinterConfigured] = useState<boolean | null>(null);
@@ -127,17 +132,80 @@ export function PrintLabelDialog({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium">Jumlah Label:</label>
-        <input
-          type="number"
-          min="1"
-          max="999"
-          value={printQuantity}
-          onChange={(e) => setPrintQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-          className="w-16 px-2 py-1 border rounded text-sm"
-        />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-base font-semibold">Cetak Label / QR</h3>
+            <p className="text-xs text-gray-500">
+              {productName} · {batch}
+            </p>
+          </div>
+          {onClose && (
+            <button onClick={onClose} aria-label="Tutup" className="text-gray-500 hover:text-gray-700">
+              ✕
+            </button>
+          )}
+        </div>
+        <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
+        <label className="text-sm font-medium" htmlFor="label-quantity">Jumlah label</label>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Kurangi"
+            onClick={() => setQuantityText(String(Math.max(1, printQuantity - 1)))}
+            className="h-8 w-8 rounded border text-lg leading-none hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            id="label-quantity"
+            type="text"
+            inputMode="numeric"
+            value={quantityText}
+            onChange={(e) => setQuantityText(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onBlur={() => setQuantityText(String(printQuantity))}
+            className="h-8 w-20 rounded border px-2 text-center text-sm"
+          />
+          <button
+            type="button"
+            aria-label="Tambah"
+            onClick={() => setQuantityText(String(Math.min(2000, printQuantity + 1)))}
+            className="h-8 w-8 rounded border text-lg leading-none hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-xs text-gray-500">batch tercatat {quantity} unit</span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {[10, 25, 50, 100].map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setQuantityText(String(preset))}
+              className={`px-2 py-1 text-xs rounded border ${
+                printQuantity === preset ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
+              {preset}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setQuantityText(String(Math.max(1, quantity)))}
+            className={`px-2 py-1 text-xs rounded border ${
+              printQuantity === Math.max(1, quantity) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-50'
+            }`}
+          >
+            Semua ({quantity})
+          </button>
+        </div>
+        {printQuantity > quantity && (
+          <p className="text-xs text-orange-700">
+            Jumlah label melebihi stok batch ({quantity}); label tetap bisa dicetak sesuai permintaan.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -184,6 +252,8 @@ export function PrintLabelDialog({
           ✓ Label preview dibuka di tab baru
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

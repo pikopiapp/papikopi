@@ -49,6 +49,7 @@ export function BatchPrintMenu({ batch }: BatchPrintMenuProps) {
           productionDate={batch.production_date}
           expiryDate={batch.expiry_date}
           quantity={batch.quantity}
+          onClose={() => setShowPrintDialog(false)}
         />
       )}
     </div>
