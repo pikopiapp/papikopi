@@ -1,7 +1,22 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getDateBoundaryInJakarta, parseDateOnlyAsJakarta, getBusinessDayRange, formatAsJakartaLocalIso } from '@/lib/helpers/business-day';
+import {
+  getDateBoundaryInJakarta,
+  parseDateOnlyAsJakarta,
+  parseTimestampAsJakarta,
+  getBusinessDayRange,
+  formatAsUtcNaiveIso,
+} from '@/lib/helpers/business-day';
 import { fetchAllPaginatedRows } from '../../../../lib/supabase-pagination';
+
+// Date-only values mean "that Jakarta day"; full timestamps are taken literally so a
+// business-day window (04:00 → 03:59 next day) is not flattened back to calendar days.
+function parseRangeBoundary(value: string, endOfDay: boolean): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return getDateBoundaryInJakarta(value, endOfDay);
+  }
+  return parseTimestampAsJakarta(value);
+}
 
 function normalizeNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -53,18 +68,18 @@ export async function GET(request: Request) {
       if (since) {
         const parsed = useBusinessDay
           ? getBusinessDayRange(parseDateOnlyAsJakarta(since as string), businessDayStartHour).start
-          : getDateBoundaryInJakarta(since as string, false);
-        q = q.gte('created_at', formatAsJakartaLocalIso(parsed));
+          : parseRangeBoundary(since as string, false);
+        q = q.gte('created_at', formatAsUtcNaiveIso(parsed));
       }
       if (until) {
         const parsed = useBusinessDay
           ? getBusinessDayRange(parseDateOnlyAsJakarta(until as string), businessDayStartHour).end
-          : getDateBoundaryInJakarta(until as string, true);
-        q = q.lte('created_at', formatAsJakartaLocalIso(parsed));
+          : parseRangeBoundary(until as string, true);
+        q = q.lte('created_at', formatAsUtcNaiveIso(parsed));
       }
 
       q = q.gte('total_amount', 0);
-      q = q.lte('created_at', formatAsJakartaLocalIso(new Date())).order('created_at', { ascending: true });
+      q = q.lte('created_at', formatAsUtcNaiveIso(new Date())).order('created_at', { ascending: true });
       return q;
     };
 
@@ -86,11 +101,33 @@ export async function GET(request: Request) {
       }
     }
 
+    // sale_items only stores product_id; without this the "Produk" column renders blank.
+    let productNameMap: Record<string, string> = {};
+    if (itemsMode === 'full') {
+      const productIds = Array.from(new Set(
+        allRows.flatMap((r) =>
+          (Array.isArray(r.sale_items) ? r.sale_items : []).map((it: any) => it.product_id).filter(Boolean)
+        )
+      ));
+      if (productIds.length > 0) {
+        const { data: productRows, error: productError } = await svc.from('products').select('id,name').in('id', productIds);
+        if (!productError && Array.isArray(productRows)) {
+          productRows.forEach((p: any) => { productNameMap[p.id] = p.name; });
+        }
+      }
+    }
+
     const normalized = allRows.map((r) => {
       const { sale_items: saleItems, ...rest } = r;
+      const items = Array.isArray(saleItems)
+        ? saleItems.map((it: any) => ({
+            ...it,
+            product_name: productNameMap[it.product_id] || 'Produk tidak dikenali',
+          }))
+        : [];
       return {
         ...rest,
-        ...(itemsSelect ? { sale_items: Array.isArray(saleItems) ? saleItems : [] } : {}),
+        ...(itemsSelect ? { sale_items: items } : {}),
         barista_name: baristaMap[r.barista_id] || null,
       };
     });

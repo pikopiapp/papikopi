@@ -2,15 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, ArrowLeft, Edit, Eraser } from 'lucide-react';
-import { parseTimestampAsJakarta, formatTimestampInJakarta, formatTimestampFromUTC, getBusinessDayRangeLocalIso } from '@/lib/helpers/business-day';
+import {
+  getBusinessDayRange,
+  getBusinessDayRangeLocalIso,
+  formatDateOnlyInJakarta,
+  parseTimestampAsJakarta,
+  parseTimestampAssumeUTC,
+  formatTimestampFromUTC,
+} from '@/lib/helpers/business-day';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { getBusinessDayRange, getBusinessDayDate, formatBusinessDay } from '@/lib/helpers/business-day';
 
 interface SalesItem {
   id: string;
   product_id: string;
-  product_name: string;
+  product_name?: string;
   quantity: number;
   price: number;
   hpp: number;
@@ -57,6 +63,8 @@ export default function TransactionDetailPage() {
   const [editingItems, setEditingItems] = useState<Array<{ id?: string; product_id: string; quantity: number }>>([]);
   const [editingDeleteIds, setEditingDeleteIds] = useState<string[]>([]);
   const [editingPayment, setEditingPayment] = useState<string>('CASH');
+  const [editingDate, setEditingDate] = useState<string>('');
+  const [editingTime, setEditingTime] = useState<string>('');
   const [baristas, setBaristas] = useState<any[]>([]);
   const [selectedBarista, setSelectedBarista] = useState<string | null>(null);
 
@@ -155,6 +163,7 @@ export default function TransactionDetailPage() {
   // Calculate totals
   const totalSales = sales.reduce((sum, s) => sum + s.total_amount, 0);
   const totalUnits = sales.reduce((sum, s) => sum + getSaleItems(s).reduce((u, it) => u + (it.quantity || 0), 0), 0);
+  const productNameById = new Map(products.map((p: any) => [String(p.id), p.name as string]));
 
   // Running transaction index for table numbering (one number per transaction)
   let transactionIndex = 0;
@@ -175,15 +184,41 @@ export default function TransactionDetailPage() {
       return copy;
     });
   };
+
+  const openEditModal = (sale: Sale) => {
+    setCreateMode(false);
+    setEditingSale(sale);
+    setEditingPayment(sale.payment_method || 'CASH');
+    setEditingItems(getSaleItems(sale).map(it => ({ id: it.id, product_id: it.product_id, quantity: Number(it.quantity) || 0 })));
+    setEditingDeleteIds([]);
+    // created_at holds UTC wall time; show it as the Jakarta date/time the barista sees.
+    const instant = parseTimestampAssumeUTC(sale.created_at);
+    setEditingDate(formatDateOnlyInJakarta(instant));
+    setEditingTime(
+      instant.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false })
+    );
+    setModalOpen(true);
+  };
+
   const handleSaveEdit = async () => {
     if (!editingSale) return;
     try {
       setLoading(true);
       const add_items = editingItems.filter(it => !it.id).map(it => ({ product_id: it.product_id, quantity: it.quantity }));
       const update_items = editingItems.filter(it => it.id).map(it => ({ id: it.id, product_id: it.product_id, quantity: it.quantity }));
-      const payload = { sale_id: editingSale.id, payment_method: editingPayment, add_items, update_items, delete_item_ids: editingDeleteIds };
+      const payload = {
+        sale_id: editingSale.id,
+        payment_method: editingPayment,
+        add_items,
+        update_items,
+        delete_item_ids: editingDeleteIds,
+        ...(editingDate && editingTime ? { created_at: `${editingDate}T${editingTime}` } : {}),
+      };
       const res = await fetch('/api/sales/edit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error || 'Failed to save');
+      }
       // refresh sales
       await fetchSales();
       setModalOpen(false);
@@ -390,6 +425,29 @@ export default function TransactionDetailPage() {
                 </select>
               </div>
 
+              {editingSale && !createMode && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-700">Tanggal</label>
+                    <input
+                      type="date"
+                      value={editingDate}
+                      onChange={(e) => setEditingDate(e.target.value)}
+                      className="mt-1 block w-full border rounded p-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-700">Jam</label>
+                    <input
+                      type="time"
+                      value={editingTime}
+                      onChange={(e) => setEditingTime(e.target.value)}
+                      className="mt-1 block w-full border rounded p-2"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <p className="font-semibold">Items</p>
                 <div className="space-y-2 mt-2">
@@ -498,14 +556,7 @@ export default function TransactionDetailPage() {
                                     {!compact && (
                                       <button
                                         className="text-sm text-blue-600 hover:underline"
-                                        onClick={() => {
-                                          // open modal for this sale
-                                          setEditingSale(sale);
-                                          setEditingPayment(sale.payment_method || 'CASH');
-                                          const its = getSaleItems(sale).map(it => ({ id: it.id, product_id: it.product_id, quantity: Number(it.quantity) || 0 }));
-                                          setEditingItems(its);
-                                          setModalOpen(true);
-                                        }}
+                                        onClick={() => openEditModal(sale)}
                                       >
                                         Edit
                                       </button>
@@ -517,7 +568,7 @@ export default function TransactionDetailPage() {
                             {item.quantity}
                           </td>
                           <td className={`${cellClass} text-gray-800`}>
-                            {item.product_name}
+                            {item.product_name || productNameById.get(String(item.product_id)) || 'Produk tidak dikenali'}
                           </td>
                           <td className={`${cellClass} text-right text-gray-800`}>
                             {formatRupiah(item.price)}
@@ -541,12 +592,7 @@ export default function TransactionDetailPage() {
                             {!compact && (
                               <button
                                 className="text-sm text-blue-600 hover:underline"
-                                onClick={() => {
-                                  setEditingSale(sale);
-                                  setEditingPayment(sale.payment_method || 'CASH');
-                                  setEditingItems([]);
-                                  setModalOpen(true);
-                                }}
+                                onClick={() => openEditModal(sale)}
                               >
                                 Edit
                               </button>

@@ -210,6 +210,41 @@ export function getBusinessDayRangeLocalIso(
 }
 
 /**
+ * `sales.created_at` is a timestamp without time zone holding UTC wall time.
+ * Formatting a Jakarta-local ISO string makes Postgres drop the offset, which shifts
+ * every filter by seven hours; this returns the naive UTC value the column expects.
+ */
+export function formatAsUtcNaiveIso(value: Date | string): string {
+  const date = value instanceof Date ? value : parseTimestampAsJakarta(value);
+  return date.toISOString().slice(0, 19);
+}
+
+/**
+ * Convert a Jakarta wall-clock input ("2026-10-28T14:30", as produced by
+ * <input type="date"> + <input type="time">) into the naive UTC string stored in
+ * `sales.created_at`. Returns null when the value is not a real date/time.
+ */
+export function jakartaInputToNaiveUtc(value: string): string | null {
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s] = match.map(Number);
+  const utcMs = Date.UTC(y, mo - 1, d, h, mi, s || 0) - 7 * 60 * 60 * 1000;
+  const utc = new Date(utcMs);
+  // Reject overflowed dates such as 2026-13-45, which Date.UTC silently rolls over.
+  const roundTrip = new Date(Date.UTC(y, mo - 1, d, h, mi, s || 0));
+  if (
+    roundTrip.getUTCFullYear() !== y ||
+    roundTrip.getUTCMonth() !== mo - 1 ||
+    roundTrip.getUTCDate() !== d ||
+    roundTrip.getUTCHours() !== h ||
+    roundTrip.getUTCMinutes() !== mi
+  ) {
+    return null;
+  }
+  return utc.toISOString().slice(0, 19);
+}
+
+/**
  * Format business day for display
  * @param businessDay - Date object representing business day
  * @returns Formatted string: "10 May 2026"

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { jakartaInputToNaiveUtc } from '@/lib/helpers/business-day';
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,9 +14,22 @@ const svc = createClient(SUPA_URL, SUPA_SERVICE_KEY, { auth: { persistSession: f
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { sale_id, payment_method, add_items = [], update_items = [], delete_item_ids = [] } = body;
+    const { sale_id, payment_method, add_items = [], update_items = [], delete_item_ids = [], created_at } = body;
 
     if (!sale_id) return NextResponse.json({ error: 'sale_id required' }, { status: 400 });
+
+    // The page sends the picked date/time as Jakarta wall clock ("YYYY-MM-DDTHH:mm");
+    // sales.created_at stores the naive UTC equivalent.
+    let createdAtUtc: string | null = null;
+    if (created_at !== undefined && created_at !== null && created_at !== '') {
+      createdAtUtc = jakartaInputToNaiveUtc(String(created_at));
+      if (!createdAtUtc) {
+        return NextResponse.json({ error: 'Tanggal/jam transaksi tidak valid' }, { status: 400 });
+      }
+      if (new Date(`${createdAtUtc}Z`).getTime() > Date.now()) {
+        return NextResponse.json({ error: 'Tanggal/jam transaksi tidak boleh di masa depan' }, { status: 400 });
+      }
+    }
 
     // Normalize arrays
     const addItems: any[] = Array.isArray(add_items) ? add_items : [];
@@ -83,8 +97,12 @@ export async function POST(request: Request) {
 
     const saleUpdate: any = { total_amount, hpp_total, profit };
     if (payment_method) saleUpdate.payment_method = payment_method;
+    if (createdAtUtc) saleUpdate.created_at = createdAtUtc;
 
-    await svc.from('sales').update(saleUpdate).eq('id', sale_id);
+    const { error: updateError } = await svc.from('sales').update(saleUpdate).eq('id', sale_id);
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
 
     // Return updated sale with items
     const { data: saleRows } = await svc.from('sales').select('*').eq('id', sale_id).single();
