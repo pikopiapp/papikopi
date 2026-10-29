@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
           <div class="instagram">@papikopi_bdg</div>
         </div>
         <div class="right-column">
-          <div class="qr-code"></div>
+          <img src="${qrImage}" alt="QR" class="qr-code">
         </div>`;
 
     let sheetsHTML = '';
@@ -167,6 +167,17 @@ export async function POST(request: NextRequest) {
           }
           body {
             font-family: 'Arial', sans-serif;
+          }
+          .print-help {
+            width: 108mm;
+            padding: 2mm 1.3mm;
+            font: 11px/1.5 Arial, sans-serif;
+            color: #444;
+            background: #fffbe6;
+            border-bottom: 1px solid #e5d9a8;
+          }
+          .print-help b {
+            color: #111;
           }
           .sheet {
             position: relative;
@@ -233,12 +244,13 @@ export async function POST(request: NextRequest) {
           .qr-code {
             width: 100%;
             height: 100%;
-            background-image: url("${qrImage}");
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: center;
+            object-fit: contain;
+            display: block;
           }
           @media print {
+            .print-help {
+              display: none;
+            }
             .label {
               outline: none;
             }
@@ -246,6 +258,11 @@ export async function POST(request: NextRequest) {
         </style>
       </head>
       <body>
+        <div class="print-help">
+          Di dialog print: buka <b>More settings</b> &rarr; Paper size <b>108 &times; 20 mm</b>,
+          Margins <b>None</b>, Scale <b>100%</b>, Orientation <b>Landscape</b>.
+          Matikan <b>Headers and footers</b>. Kalau QR tidak muncul, jangan pakai background graphics.
+        </div>
         ${sheetsHTML}
       </body>
       </html>

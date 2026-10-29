@@ -112,7 +112,7 @@ export function PrintLabelDialog({
         }
         return url;
       });
-      setStatusMessage('Tab label dibuka. Pilih printer XP-460B, kertas 108 × 20 mm, margin None.');
+      setStatusMessage('Tab label dibuka. Di dialog print: More settings → Paper size 108 × 20 mm, Margins None, Scale 100%, Landscape.');
 
       const printWindow = window.open(url, '_blank');
       if (printWindow) {
