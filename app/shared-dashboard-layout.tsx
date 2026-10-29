@@ -394,7 +394,17 @@ export default function GenericDashboardLayout({ children }: { children: ReactNo
               <span className="hidden lg:inline">{allNavItems.find(item => isActive(item.href))?.label || 'Dashboard'}</span>
             </h2>
             <p className="text-xs lg:text-sm text-gray-500 mt-1 hidden lg:block">
-              {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {/* Rendered after mount: the server runs in UTC while browsers are in WIB,
+                  so formatting during SSR produced a different day and broke hydration. */}
+              {isMounted
+                ? new Date().toLocaleDateString('id-ID', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    timeZone: 'Asia/Jakarta',
+                  })
+                : ''}
             </p>
           </div>
           <div className="flex items-center gap-2 lg:gap-4">

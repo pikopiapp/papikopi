@@ -1,21 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabaseServer";
 import { calculateBonusFromJson } from '@/lib/bonus-calculator';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      outlet_id,
-      barista_id,
-      total_amount,
-      payment_method,
-      items,
-      operational_cost: operationalCostFromBody,
-      meal_amount: mealAmountFromBody,
-    } = body;
+    const { outlet_id, barista_id, total_amount, payment_method, items } = body;
 
-    if (!outlet_id || !barista_id || !total_amount || !payment_method || !items) {
+    const totalAmount = Number(total_amount);
+    const normalizedItems = (Array.isArray(items) ? items : [])
+      .map((item: any) => ({
+        product_id: item?.product_id,
+        quantity: Number(item?.quantity) || 0,
+        price: Number(item?.price) || 0,
+        hpp: Number(item?.hpp) || 0,
+      }))
+      .filter((item) => item.product_id && item.quantity > 0);
+
+    if (
+      !outlet_id ||
+      !barista_id ||
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !payment_method ||
+      normalizedItems.length === 0
+    ) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -24,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Calculate HPP and profit
     let hppTotal = 0;
-    for (const item of items) {
+    for (const item of normalizedItems) {
       hppTotal += item.hpp * item.quantity;
     }
 
@@ -39,30 +49,26 @@ export async function POST(request: NextRequest) {
     let bonusAmount = 0;
     let bonusPercentage = 0;
     if (bonusTiers && Array.isArray(bonusTiers) && bonusTiers.length > 0) {
-      const bonusResult = calculateBonusFromJson(total_amount, bonusTiers as any[]);
+      const bonusResult = calculateBonusFromJson(totalAmount, bonusTiers as any[]);
       bonusAmount = Math.round(bonusResult.totalBonus || 0);
       bonusPercentage = Math.round((bonusResult.effectivePercentage || 0) * 10) / 10;
     }
 
-    // Operational and meal costs: prefer explicit values from request, fallback to 0
-    const operationalCost = Number(operationalCostFromBody ?? 0);
-    const mealAmount = Number(mealAmountFromBody ?? 0);
+    // `sales` has no meal/operational cost columns; only the daily summary RPC derives
+    // a meal allowance, so profit here is revenue minus HPP minus bonus.
+    const profit = totalAmount - hppTotal - bonusAmount;
 
-    // Calculate profit
-    const profit = total_amount - hppTotal - bonusAmount - operationalCost - mealAmount;
-
-    // Create sale
-    const { data: saleData, error: saleError } = await supabase
+    // Service role: the session is already enforced by middleware, and anon cannot write these
+    // tables under RLS. Unknown columns (meal_amount/operational_cost) used to fail the insert.
+    const { data: saleData, error: saleError } = await supabaseServer
       .from("sales")
       .insert({
         outlet_id,
         barista_id,
-        total_amount,
+        total_amount: totalAmount,
         payment_method,
         hpp_total: hppTotal,
         bonus_amount: bonusAmount,
-        operational_cost: operationalCost,
-        meal_amount: mealAmount,
         profit,
       })
       .select()
@@ -72,7 +78,7 @@ export async function POST(request: NextRequest) {
     const saleId = saleData.id;
 
     // Insert sale_items in batch so we can rollback if needed
-    const saleItemsToInsert = items.map((item: any) => ({
+    const saleItemsToInsert = normalizedItems.map((item) => ({
       sale_id: saleId,
       product_id: item.product_id,
       quantity: item.quantity,
@@ -80,20 +86,20 @@ export async function POST(request: NextRequest) {
       hpp: item.hpp,
     }));
 
-    const { error: saleItemsError } = await supabase
+    const { error: saleItemsError } = await supabaseServer
       .from("sale_items")
       .insert(saleItemsToInsert);
 
     if (saleItemsError) {
-      await supabase.from("sales").delete().eq("id", saleId);
+      await supabaseServer.from("sales").delete().eq("id", saleId);
       throw saleItemsError;
     }
 
     // Decrease product batch quantity for this outlet and restore on failure
     const updatedBatches: Array<{ id: string; quantity: number; status: string }> = [];
     try {
-      for (const item of items) {
-        const { data: batches, error: batchesError } = await supabase
+      for (const item of normalizedItems) {
+        const { data: batches, error: batchesError } = await supabaseServer
           .from("product_batches")
           .select("id, quantity, status")
           .eq("outlet_id", outlet_id)
@@ -111,7 +117,7 @@ export async function POST(request: NextRequest) {
             const deductAmount = Math.min(batch.quantity, remainingToDeduct);
             const newQty = batch.quantity - deductAmount;
 
-            const { error: batchUpdateError } = await supabase
+            const { error: batchUpdateError } = await supabaseServer
               .from("product_batches")
               .update({
                 quantity: newQty,
@@ -129,21 +135,21 @@ export async function POST(request: NextRequest) {
     } catch (batchError) {
       console.error("Rollback product batch error:", batchError);
       for (const batch of updatedBatches) {
-        await supabase
+        await supabaseServer
           .from("product_batches")
           .update({ quantity: batch.quantity, status: batch.status })
           .eq("id", batch.id);
       }
-      await supabase.from("sale_items").delete().eq("sale_id", saleId);
-      await supabase.from("sales").delete().eq("id", saleId);
+      await supabaseServer.from("sale_items").delete().eq("sale_id", saleId);
+      await supabaseServer.from("sales").delete().eq("id", saleId);
       throw batchError;
     }
 
     // Trigger notification
-    await supabase.from("notifications").insert({
+    await supabaseServer.from("notifications").insert({
       user_id: barista_id,
       title: "Transaksi Berhasil",
-      message: `Transaksi sebesar Rp ${total_amount.toLocaleString("id-ID")} berhasil diproses.`,
+      message: `Transaksi sebesar Rp ${totalAmount.toLocaleString("id-ID")} berhasil diproses.`,
       type: "success",
     });
 

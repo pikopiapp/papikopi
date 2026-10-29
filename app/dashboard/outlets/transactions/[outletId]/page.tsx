@@ -226,7 +226,10 @@ export default function TransactionDetailPage() {
       };
 
       const res = await fetch('/api/sales', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) throw new Error('Failed to create sale');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ? `Gagal membuat transaksi: ${detail.error}` : 'Gagal membuat transaksi');
+      }
 
       await fetchSales();
       setModalOpen(false);

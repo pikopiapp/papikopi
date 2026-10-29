@@ -205,6 +205,7 @@ function matchesPrefix(pathname: string, prefixes: string[]) {
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const WRITE_ROLE_RULES: Array<{ prefix: string; roles: Set<string> }> = [
   { prefix: '/api/showcase', roles: new Set(['admin', 'manager', 'barista']) },
+  { prefix: '/api/sales', roles: new Set(['admin', 'manager', 'barista']) },
   { prefix: '/api/users', roles: new Set(['admin', 'manager']) },
 ];
 
