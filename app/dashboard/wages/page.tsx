@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { calculateDailyWage } from '@/lib/bonus-calculator';
 import { isHoliday, getHolidayDescription } from '@/lib/holiday-detector';
-import { getBusinessDayDate, getBusinessDayRangeLocalIso, parseTimestampAsJakarta, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
+import { getBusinessDayDate, getBusinessDayRange, formatAsUtcNaiveIso, parseTimestampAssumeUTC, parseDateOnlyAsJakarta, formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 // Use DB-backed holidays via /api/holidays
 
 interface WagePayment {
@@ -87,7 +87,12 @@ export default function WagesPage() {
   const [selectedBarista, setSelectedBarista] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(() => formatDateOnlyInJakarta(getBusinessDayDate(new Date(), 4)));
   const selectedBusinessDay = parseDateOnlyAsJakarta(selectedDate);
-  const { since: businessDaySince, until: businessDayUntil } = getBusinessDayRangeLocalIso(selectedBusinessDay, 4);
+  // sales.created_at is a timestamp without time zone holding UTC wall time, so the range
+  // must be sent as naive UTC; Jakarta-formatted bounds shifted the window seven hours and
+  // dropped early-morning sales (e.g. 08:26 WIB) from the day's wage card.
+  const businessDayRange = getBusinessDayRange(selectedBusinessDay, 4);
+  const businessDaySince = formatAsUtcNaiveIso(businessDayRange.start);
+  const businessDayUntil = formatAsUtcNaiveIso(businessDayRange.end);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +200,7 @@ export default function WagesPage() {
 
       // Format sales data into payment structure
       const formattedPayments = ((salesData || []) as any[]).map((sale) => {
-        const createdAtJakarta = parseTimestampAsJakarta(String(sale.created_at || ''));
+        const createdAtJakarta = parseTimestampAssumeUTC(String(sale.created_at || ''));
         const businessDay = getBusinessDayDate(createdAtJakarta, 4);
         const createdAtNormalized = createdAtJakarta.toISOString().split('.')[0] + 'Z';
         const { isHolidayDate, holidayName } = getHolidayInfoForDate(businessDay);
@@ -203,7 +208,8 @@ export default function WagesPage() {
         return {
           id: sale.id,
           barista_id: sale.barista_id,
-          barista_name: baristaMap[sale.barista_id] || 'Unknown',
+          // Some historical sales point at barista ids that no longer exist as profiles.
+          barista_name: baristaMap[sale.barista_id] || 'Barista lama',
           outlet_id: sale.outlet_id,
           outlet_name: outletMap[sale.outlet_id] || 'Unknown',
           total_omset: sale.total_amount || 0,
