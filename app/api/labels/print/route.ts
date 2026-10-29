@@ -7,6 +7,14 @@ import {
   sendToNetworkPrinter,
 } from '../../../../lib/tspl-printer';
 
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * POST /api/labels/print
  * Generate printable label with QR code for thermal printer
@@ -108,22 +116,26 @@ export async function POST(request: NextRequest) {
     const year = date.getFullYear();
     const formattedDate = `${day}-${month}-${year}`;
 
-    let labelsHTML = '';
-    for (let i = 0; i < effectiveQuantity; i++) {
-      labelsHTML += `
-        <div class="label">
-          <div class="label-content">
-            <div class="left-column">
-              <div class="production-date">${formattedDate}</div>
-              <div class="product-name">${product_name.toUpperCase()}</div>
-              <div class="instagram">@papikopi_bdg</div>
-            </div>
-            <div class="right-column">
-              <img src="${qrImage}" alt="QR Code" class="qr-code">
-            </div>
-          </div>
+    // XP-460B is fed 108 mm liner carrying two 50 x 20 mm labels per row. The Windows
+    // driver lays them out as: 1.3 mm margin, 50 mm label, 5.4 mm gap, 50 mm label,
+    // 1.3 mm margin, so the page must place each label at those exact offsets.
+    const labelInnerHTML = `
+        <div class="left-column">
+          <div class="production-date">${formattedDate}</div>
+          <div class="product-name">${escapeHtml(product_name.toUpperCase())}</div>
+          <div class="instagram">@papikopi_bdg</div>
         </div>
-      `;
+        <div class="right-column">
+          <img src="${qrImage}" alt="QR Code" class="qr-code">
+        </div>`;
+
+    let sheetsHTML = '';
+    for (let i = 0; i < effectiveQuantity; i += 2) {
+      const left = `<div class="label left">${labelInnerHTML}</div>`;
+      const right = i + 1 < effectiveQuantity
+        ? `<div class="label right">${labelInnerHTML}</div>`
+        : '<div class="label right empty"></div>';
+      sheetsHTML += `<div class="sheet">${left}${right}</div>`;
     }
 
     const html = `
@@ -132,42 +144,60 @@ export async function POST(request: NextRequest) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Label - ${product_name}</title>
+        <title>Label - ${escapeHtml(product_name)}</title>
         <style>
+          @page {
+            size: 108mm 20mm;
+            margin: 0;
+          }
           * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
           }
+          html, body {
+            width: 108mm;
+            background: white;
+          }
           body {
             font-family: 'Arial', sans-serif;
-            background: white;
-            padding: 2mm;
+          }
+          .sheet {
+            position: relative;
+            width: 108mm;
+            height: 20mm;
+            page-break-after: always;
+            break-after: page;
+          }
+          .sheet:last-child {
+            page-break-after: auto;
+            break-after: auto;
           }
           .label {
+            position: absolute;
+            top: 0;
             width: 50mm;
             height: 20mm;
-            margin-bottom: 1mm;
-            page-break-inside: avoid;
-            background: white;
-            border: 1px dashed #999;
-          }
-          .label-content {
-            display: flex;
-            width: 100%;
-            height: 100%;
             padding: 1mm;
+            display: flex;
             gap: 1mm;
+            background: white;
+            outline: 1px dashed #999;
+            outline-offset: -1px;
+          }
+          .label.left {
+            left: 1.3mm;
+          }
+          .label.right {
+            left: 56.7mm;
           }
           .left-column {
             flex: 1;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             justify-content: space-around;
-            padding-top: 1.5mm;
-            padding-bottom: 1.5mm;
-            padding-left: 1mm;
-            padding-right: 0.5mm;
+            padding: 0.5mm 0.5mm 0.5mm 1mm;
           }
           .production-date {
             font-size: 8pt;
@@ -179,7 +209,7 @@ export async function POST(request: NextRequest) {
             line-height: 1;
             text-transform: uppercase;
             word-wrap: break-word;
-            margin: 0.3mm 0;
+            overflow-wrap: anywhere;
           }
           .instagram {
             font-size: 7pt;
@@ -198,21 +228,16 @@ export async function POST(request: NextRequest) {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border: 0.5mm solid #000;
           }
           @media print {
-            body {
-              margin: 0;
-              padding: 1mm;
-            }
             .label {
-              margin-bottom: 0.5mm;
+              outline: none;
             }
           }
         </style>
       </head>
       <body>
-        ${labelsHTML}
+        ${sheetsHTML}
       </body>
       </html>
     `;

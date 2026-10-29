@@ -41,7 +41,7 @@ export function PrintLabelDialog({
         if (!active) return;
         setPrinterConfigured(Boolean(data.configured));
         if (data.configured === false) {
-          setPrinterStatusError('Printer belum dikonfigurasi. Set PRINTER_HOST atau NEXT_PUBLIC_PRINTER_HOST.');
+          setPrinterStatusError('Printer jaringan belum dikonfigurasi. XP-460B via USB: pakai Preview, lalu print dari browser (kertas 108 × 20 mm, margin None).');
         }
       })
       .catch((error) => {
@@ -64,7 +64,7 @@ export function PrintLabelDialog({
     try {
       if (sendToPrinter) {
         if (printerConfigured === false) {
-          setErrorMessage('Printer belum dikonfigurasi. Set PRINTER_HOST atau NEXT_PUBLIC_PRINTER_HOST di environment.');
+          setErrorMessage('Printer jaringan belum dikonfigurasi. Untuk XP-460B via USB, gunakan Preview lalu print dari browser.');
           return;
         }
 
@@ -107,7 +107,7 @@ export function PrintLabelDialog({
         }
         return url;
       });
-      setStatusMessage('Preview opened in a new tab. Use browser print only for local validation.');
+      setStatusMessage('Tab label dibuka. Pilih printer XP-460B, kertas 108 × 20 mm, margin None.');
 
       const printWindow = window.open(url, '_blank');
       if (printWindow) {
@@ -151,8 +151,13 @@ export function PrintLabelDialog({
         </button>
         <button
           onClick={() => handlePrint(true)}
-          disabled={isLoading}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 text-sm"
+          disabled={isLoading || printerConfigured === false}
+          title={
+            printerConfigured === false
+              ? 'Printer jaringan belum dikonfigurasi. Untuk XP-460B via USB, pakai Preview lalu print dari browser.'
+              : 'Kirim langsung ke printer jaringan (TSPL)'
+          }
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
         >
           🚀 Send to Printer
           {isLoading && <span className="animate-spin">⏳</span>}
