@@ -317,6 +317,19 @@ export default function WagesPage() {
     }
   };
 
+  // Cards are per barista; this reconciles them with the outlet total on the sales page.
+  const dayTotals = dailyWages
+    .filter((w) => w.date === selectedDate)
+    .reduce(
+      (acc, w) => ({
+        omset: acc.omset + w.omset,
+        bonus: acc.bonus + w.bonus,
+        meal: acc.meal + w.meal_allowance,
+        wage: acc.wage + w.total_wage,
+      }),
+      { omset: 0, bonus: 0, meal: 0, wage: 0 }
+    );
+
   return (
     <div className="p-6 surface min-h-screen">
 
@@ -446,6 +459,37 @@ export default function WagesPage() {
             })}
           </select>
         </div>
+
+        {dailyWages.length > 0 && (
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-emerald-900">
+                Total outlet · {format(new Date(selectedDate), 'dd MMM yyyy', { locale: idLocale })}
+              </p>
+              <p className="text-xs text-emerald-800">
+                gabungan {dailyWages.filter((w) => w.date === selectedDate).length} barista
+              </p>
+            </div>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="flex justify-between md:flex-col">
+                <span className="text-gray-600">Omset</span>
+                <span className="font-bold text-gray-900">Rp {dayTotals.omset.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between md:flex-col">
+                <span className="text-gray-600">Bonus</span>
+                <span className="font-bold text-yellow-700">Rp {dayTotals.bonus.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between md:flex-col">
+                <span className="text-gray-600">Uang Makan</span>
+                <span className="font-bold text-orange-700">Rp {dayTotals.meal.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between md:flex-col">
+                <span className="text-gray-600">Total Upah</span>
+                <span className="font-bold text-emerald-700">Rp {dayTotals.wage.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {dailyWages.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
