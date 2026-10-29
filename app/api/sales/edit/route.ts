@@ -48,6 +48,19 @@ export async function POST(request: Request) {
       if (Array.isArray(prods)) prods.forEach((p: any) => { productsMap[p.id] = p; });
     }
 
+    // Snapshot current items first: an edit that only moves the date must keep the prices
+    // the sale was recorded with, not re-price everything at today's catalogue values.
+    const { data: existingItems, error: existingError } = await svc
+      .from('sale_items')
+      .select('id,product_id,price,hpp')
+      .eq('sale_id', sale_id);
+
+    if (existingError) {
+      return NextResponse.json({ error: existingError.message }, { status: 500 });
+    }
+
+    const existingById = new Map<string, any>((existingItems || []).map((item: any) => [item.id, item]));
+
     // Process updates in a transaction-like sequential flow
 
     // 1) Insert new sale_items
@@ -62,40 +75,63 @@ export async function POST(request: Request) {
           hpp: prod.hpp ?? 0,
         };
       });
-      await svc.from('sale_items').insert(toInsert);
+      const { error } = await svc.from('sale_items').insert(toInsert);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // 2) Update existing sale_items
+    // 2) Update existing sale_items (re-price only when the product actually changes)
     for (const it of updateItems) {
       const itemId = it.id;
       if (!itemId) continue;
+      const existing = existingById.get(itemId);
       const updateData: any = {};
-      if (it.product_id) {
+
+      if (it.product_id && existing && it.product_id !== existing.product_id) {
         const prod = productsMap[it.product_id] || {};
         updateData.product_id = it.product_id;
-        updateData.price = prod.price ?? it.price ?? undefined;
-        updateData.hpp = prod.hpp ?? undefined;
+        if (prod.price !== undefined && prod.price !== null) updateData.price = prod.price;
+        if (prod.hpp !== undefined && prod.hpp !== null) updateData.hpp = prod.hpp;
       }
       if (it.quantity !== undefined) updateData.quantity = Number(it.quantity);
       if (it.price !== undefined && updateData.price === undefined) updateData.price = Number(it.price);
 
       if (Object.keys(updateData).length > 0) {
-        await svc.from('sale_items').update(updateData).eq('id', itemId);
+        const { error } = await svc.from('sale_items').update(updateData).eq('id', itemId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       }
     }
 
     // 3) Delete sale_items
     if (deleteIds.length > 0) {
-      await svc.from('sale_items').delete().in('id', deleteIds);
+      const { error } = await svc.from('sale_items').delete().in('id', deleteIds);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     // 4) Recalculate totals for the sale and update sale row
-    const { data: itemsAfter } = await svc.from('sale_items').select('quantity,price,hpp').eq('sale_id', sale_id);
+    const { data: itemsAfter, error: itemsAfterError } = await svc.from('sale_items').select('quantity,price,hpp').eq('sale_id', sale_id);
+    if (itemsAfterError) return NextResponse.json({ error: itemsAfterError.message }, { status: 500 });
+
     const total_amount = (itemsAfter || []).reduce((s: number, it: any) => s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
     const hpp_total = (itemsAfter || []).reduce((s: number, it: any) => s + (Number(it.hpp) || 0) * (Number(it.quantity) || 0), 0);
-    const profit = total_amount - hpp_total;
 
-    const saleUpdate: any = { total_amount, hpp_total, profit };
+    // Keep the stored bonus and subtract it, mirroring how POST /api/sales computes profit.
+    const { data: currentSale, error: currentSaleError } = await svc
+      .from('sales')
+      .select('bonus_amount')
+      .eq('id', sale_id)
+      .single();
+    if (currentSaleError) return NextResponse.json({ error: currentSaleError.message }, { status: 500 });
+
+    const bonus = Number(currentSale?.bonus_amount || 0);
+    const profit = total_amount - hpp_total - bonus;
+
+    const saleUpdate: any = {
+      total_amount,
+      hpp_total,
+      profit,
+      is_edited: true,
+      edited_at: new Date().toISOString().slice(0, 19),
+    };
     if (payment_method) saleUpdate.payment_method = payment_method;
     if (createdAtUtc) saleUpdate.created_at = createdAtUtc;
 
