@@ -85,6 +85,8 @@ export default function WagesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dailyWagesStatusFilter, setDailyWagesStatusFilter] = useState<string>('all');
   const [selectedBarista, setSelectedBarista] = useState<string>('all');
+  const [selectedOutlet, setSelectedOutlet] = useState<string>('all');
+  const [outlets, setOutlets] = useState<{ id: string; name: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(() => formatDateOnlyInJakarta(getBusinessDayDate(new Date(), 4)));
   const selectedBusinessDay = parseDateOnlyAsJakarta(selectedDate);
   // sales.created_at is a timestamp without time zone holding UTC wall time, so the range
@@ -136,6 +138,16 @@ export default function WagesPage() {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase.from('outlets').select('id, name').order('name');
+      if (!mounted || error) return;
+      setOutlets((data || []) as { id: string; name: string }[]);
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   const fetchPayments = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -148,11 +160,18 @@ export default function WagesPage() {
       const salesData: any[] = [];
 
       while (true) {
-        const { data, error } = await supabase
+        let salesQuery = supabase
           .from('sales')
           .select('id, total_amount, bonus_amount, created_at, barista_id, outlet_id')
           .gte('created_at', businessDaySince)
-          .lte('created_at', businessDayUntil)
+          .lte('created_at', businessDayUntil);
+
+        // Scope the whole view (cards, summary bar, stats) to one outlet when chosen.
+        if (selectedOutlet !== 'all') {
+          salesQuery = salesQuery.eq('outlet_id', selectedOutlet);
+        }
+
+        const { data, error } = await salesQuery
           .order('created_at', { ascending: true })
           .range(pageStart, pageStart + pageSize - 1);
 
@@ -276,7 +295,7 @@ export default function WagesPage() {
       setRefreshing(false);
       setLoading(false);
     }
-  }, [businessDaySince, businessDayUntil, getHolidayInfoForDate]);
+  }, [businessDaySince, businessDayUntil, getHolidayInfoForDate, selectedOutlet]);
 
   useEffect(() => {
     fetchPayments();
@@ -329,6 +348,11 @@ export default function WagesPage() {
       }),
       { omset: 0, bonus: 0, meal: 0, wage: 0 }
     );
+
+  const selectedOutletLabel =
+    selectedOutlet === 'all'
+      ? 'semua outlet'
+      : outlets.find((o) => o.id === selectedOutlet)?.name ?? 'outlet terpilih';
 
   return (
     <div className="p-6 surface min-h-screen">
@@ -440,6 +464,22 @@ export default function WagesPage() {
             >
               Hari Ini
             </button>
+
+            <select
+              value={selectedOutlet}
+              onChange={(e) => {
+                setSelectedOutlet(e.target.value);
+                setSelectedBarista('all');
+              }}
+              className="px-4 py-2 rounded-lg border-2 border-gray-200 focus:border-emerald-600 focus:outline-none bg-white text-gray-700 font-semibold"
+            >
+              <option value="all">Semua Outlet</option>
+              {outlets.map((outlet) => (
+                <option key={outlet.id} value={outlet.id}>
+                  {outlet.name}
+                </option>
+              ))}
+            </select>
           </div>
           
           {/* Barista Filter */}
@@ -464,7 +504,7 @@ export default function WagesPage() {
           <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-semibold text-emerald-900">
-                Total outlet · {format(new Date(selectedDate), 'dd MMM yyyy', { locale: idLocale })}
+                Total {selectedOutletLabel} · {format(new Date(selectedDate), 'dd MMM yyyy', { locale: idLocale })}
               </p>
               <p className="text-xs text-emerald-800">
                 gabungan {dailyWages.filter((w) => w.date === selectedDate).length} barista
