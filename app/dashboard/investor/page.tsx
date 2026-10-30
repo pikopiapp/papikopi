@@ -162,9 +162,10 @@ export default function InvestorDashboard() {
       const sinceIso = since.toISOString().split('.')[0] + 'Z'; // remove milliseconds for PostgREST compatibility
       console.debug('using created_at filter', sinceIso);
       // fetch via server API to avoid exposing service keys and to work around client REST limits
-      const resp = await fetch(`/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(sinceIso)}`);
+      const resp = await fetch(`/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(sinceIso)}&include_items=units`);
       const json = await resp.json();
-      const salesData = Array.isArray(json?.sales) ? json.sales : [];
+      // by-outlet returns a bare array (monthly grouping is the only { sales } shape).
+      const salesData = Array.isArray(json) ? json : Array.isArray(json?.sales) ? json.sales : [];
       console.debug('salesData for', outletId, salesData.length, 'status', resp.status, json.error || null);
 
       const revenue = (salesData || []).reduce((s: number, r: any) => s + (Number(r.total_amount) || 0), 0);

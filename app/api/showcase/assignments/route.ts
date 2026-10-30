@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { fetchAllPaginatedRows } from '@/lib/supabase-pagination';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -41,11 +42,10 @@ export async function GET(request: NextRequest) {
       query = query.lte('created_at', createdAtLte);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) {
-      throw error;
-    }
+    // Allocation history exceeds PostgREST's 1,000-row page, so page through it.
+    const data = await fetchAllPaginatedRows<Record<string, unknown>>(
+      query.order('created_at', { ascending: false }).order('id', { ascending: true })
+    );
 
     // Transform data to include product and outlet names
     type AllocationRow = Record<string, unknown>;

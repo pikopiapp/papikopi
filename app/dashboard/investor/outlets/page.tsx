@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
+import { formatDateOnlyInJakarta } from '@/lib/helpers/business-day';
 import { TrendingUp, DollarSign, Users2 } from 'lucide-react';
 
 function MiniLine({ data }: { data: any[] }) {
@@ -122,9 +123,9 @@ export default function InvestorOutlets() {
     setLoading(true);
 
     try {
-      // Fetch investor assignments for current user
-      // Admin mode: list all outlets (do not filter by user)
-      console.debug('fetchOutlets: admin mode - listing all outlets');
+      // Admin mode: list all outlets. Per-outlet sales are loaded on selection through
+      // /api/sales/by-outlet, which paginates; the previous direct query stopped at
+      // PostgREST's 1,000-row cap and its aggregates were never rendered.
       const { data: outletData, error: outletErr } = await supabase.from('outlets').select('id, name');
       if (outletErr) {
         console.error('fetchOutlets: error fetching outlets', outletErr);
@@ -132,32 +133,8 @@ export default function InvestorOutlets() {
         setLoading(false);
         return;
       }
-      const outletIds = (outletData || []).map((o: any) => o.id);
 
-      // Fetch sales data for these outlets
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('outlet_id, total_amount, hpp_total, profit')
-        .in('outlet_id', outletIds);
-
-      // Calculate metrics per outlet
-      const outletMetrics: { [key: string]: any } = {};
-      salesData?.forEach((sale) => {
-        if (!outletMetrics[sale.outlet_id]) {
-          outletMetrics[sale.outlet_id] = {
-            revenue: 0,
-            profit: 0,
-            count: 0,
-          };
-        }
-        outletMetrics[sale.outlet_id].revenue += sale.total_amount || 0;
-        outletMetrics[sale.outlet_id].profit += sale.profit || 0;
-        outletMetrics[sale.outlet_id].count += 1;
-      });
-
-      // Build outlet details from outletData (admin mode)
       const enhancedOutlets: OutletDetail[] = (outletData || []).map((o: any) => {
-        const metrics = outletMetrics[o.id] || { revenue: 0, profit: 0, count: 0 };
         return {
           outlet_id: o.id,
           outlet_name: o.name || 'Unknown',
@@ -165,10 +142,10 @@ export default function InvestorOutlets() {
           margin_percentage: 0,
           start_date: new Date().toISOString(),
           status: 'active',
-          outlet_revenue: metrics.revenue,
-          outlet_profit: metrics.profit,
+          outlet_revenue: 0,
+          outlet_profit: 0,
           investor_share: 0,
-          transaction_count: metrics.count,
+          transaction_count: 0,
         } as OutletDetail;
       });
 
@@ -198,18 +175,20 @@ export default function InvestorOutlets() {
   const fetchOutletDetail = async (outletId: string) => {
     setLoading(true);
     try {
-      // fetch sales for current month for this outlet via server API
-      const since = new Date();
-      since.setDate(1);
-      const sinceIso = since.toISOString().split('.')[0] + 'Z';
-      const resp = await fetch(`/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(sinceIso)}`);
+      // Month-to-date in Jakarta: a date-only bound is read as the start of that day.
+      const monthStart = `${formatDateOnlyInJakarta(new Date()).slice(0, 7)}-01`;
+      const resp = await fetch(`/api/sales/by-outlet?outlet_id=${encodeURIComponent(outletId)}&since=${encodeURIComponent(monthStart)}&include_items=units`);
       const json = await resp.json();
-      const salesData = Array.isArray(json?.sales) ? json.sales : [];
+      // by-outlet returns a bare array (monthly grouping is the only { sales } shape).
+      const salesData = Array.isArray(json) ? json : Array.isArray(json?.sales) ? json.sales : [];
 
       const revenue = (salesData || []).reduce((s: number, r: any) => s + (Number(r.total_amount) || 0), 0);
       const profit = (salesData || []).reduce((s: number, r: any) => s + (Number(r.profit) || 0), 0);
       const orders = (salesData || []).length;
-      const units = (salesData || []).reduce((s: number, r: any) => s + (Number(r.units) || 0), 0);
+      const units = (salesData || []).reduce((s: number, r: any) => {
+        const items = Array.isArray(r.sale_items) ? r.sale_items : [];
+        return s + items.reduce((si: number, it: any) => si + Number(it.quantity || 0), 0);
+      }, 0);
       const aov = orders > 0 ? Math.round(revenue / orders) : 0;
       setKpi({ sales: revenue, orders, profit, aov, units });
 
