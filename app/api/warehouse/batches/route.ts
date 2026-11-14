@@ -6,11 +6,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Generate batch code: BATCH-YYYYMMDD-XXX
+// Generate batch code: YYMMDD-NNN, e.g. 261114-787
 function generateBatchCode(date: Date): string {
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const dateStr = date.toISOString().slice(2, 10).replace(/-/g, '');
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `BATCH-${dateStr}-${random}`;
+  return `${dateStr}-${random}`;
 }
 
 export async function GET(request: NextRequest) {
