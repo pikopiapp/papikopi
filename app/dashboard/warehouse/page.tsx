@@ -402,7 +402,7 @@ export default function WarehousePage() {
       {/* QR Code Modal */}
       {showQR && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="text-center mb-4">
               <QrCode size={48} className="mx-auto text-amber-600 mb-2" />
               <h3 className="text-lg font-bold">Batch QR Code</h3>
@@ -412,7 +412,7 @@ export default function WarehousePage() {
             {/* QR Code Image */}
             {qrImage && (
               <div className="bg-white border border-gray-300 rounded-lg p-4 mb-4 flex justify-center">
-                <img src={qrImage} alt="QR Code" className="w-64 h-64" />
+                <img src={qrImage} alt="QR Code" className="w-80 h-80" />
               </div>
             )}
 
@@ -530,10 +530,12 @@ export default function WarehousePage() {
                           onClick={async () => {
                             setShowQR(batch);
                             try {
+                              // Screen-only code: no wear or water damage, so
+                              // L is enough and costs 4 fewer modules than M.
                               const qrDataUrl = await QRCode.toDataURL(getQRImageContent(batch), {
-                                width: 320,
+                                width: 640,
                                 margin: 2,
-                                errorCorrectionLevel: 'M',
+                                errorCorrectionLevel: 'L',
                               });
                               setQrImage(qrDataUrl);
                             } catch (err) {
