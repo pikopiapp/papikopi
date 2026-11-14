@@ -211,6 +211,15 @@ export default function WarehousePage() {
     });
   };
 
+  // Scanners only resolve product_id + product. Keeping batch/expiry in the
+  // symbol added ~50 characters, which doubled the module count and made the
+  // on-screen code as dense as the old printed one.
+  const getQRImageContent = (batch: ProductBatch) =>
+    JSON.stringify({
+      product_id: batch.product_id,
+      product: batch.product_name,
+    });
+
   const handleCopyQRJson = async (batch: ProductBatch) => {
     try {
       const jsonData = getQRContent(batch);
@@ -521,7 +530,11 @@ export default function WarehousePage() {
                           onClick={async () => {
                             setShowQR(batch);
                             try {
-                              const qrDataUrl = await QRCode.toDataURL(getQRContent(batch));
+                              const qrDataUrl = await QRCode.toDataURL(getQRImageContent(batch), {
+                                width: 320,
+                                margin: 2,
+                                errorCorrectionLevel: 'M',
+                              });
                               setQrImage(qrDataUrl);
                             } catch (err) {
                               console.error('Error generating QR code:', err);
