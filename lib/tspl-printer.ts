@@ -62,7 +62,9 @@ function mmToDots(mm: number): number {
 }
 
 function escapeTsplText(value: string): string {
-  return value.replace(/"/g, '""').replace(/\r|\n/g, ' ').trim();
+  // TSPL escapes a double quote inside a quoted string as \["] — doubling it
+  // left the QR content undecodable as JSON on the printed label.
+  return value.replace(/"/g, '\\["]').replace(/\r|\n/g, ' ').trim();
 }
 
 function splitLabelText(value: string, maxLength: number): string[] {
@@ -98,11 +100,11 @@ function formatProductionDate(productionDate: string): string {
 }
 
 export function buildTsplPrintJob(request: LabelPrintRequest): string {
-  const { productName, productId, batch, productionDate, quantity } = request;
+  const { productName, productId, productionDate, quantity } = request;
+  // Only what the app resolves a product with: a 20 mm label cannot carry a
+  // full JSON payload at a module size the phone camera can read.
   const qrPayload = JSON.stringify({
     product_id: productId,
-    batch,
-    production_date: productionDate,
     product: productName,
   });
 
@@ -140,7 +142,9 @@ export function buildTsplPrintJob(request: LabelPrintRequest): string {
       const escapedDate = escapeTsplText(formattedDate);
       const escapedQrPayload = escapeTsplText(qrPayload);
 
-      lines.push(`QRCODE ${qrX},${topDot},M,4,A,0,"${escapedQrPayload}"`);
+      // 3 dots per module keeps the 37-41 module symbol under the 20 mm label
+      // height; 4 dots made it ~24 mm and the printer clipped it.
+      lines.push(`QRCODE ${qrX},${topDot},M,3,A,0,"${escapedQrPayload}"`);
       lines.push(`TEXT ${textX},${dateY},"3",0,1,1,"${escapedDate}"`);
 
       for (let lineIndex = 0; lineIndex < productLines.length; lineIndex += 1) {

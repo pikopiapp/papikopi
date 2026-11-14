@@ -98,23 +98,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate QR code data for preview mode only
+    // Preview mode only. The label QR is ~17 mm wide, so the payload dictates
+    // how many printer dots each module gets: a full JSON payload needs 61
+    // modules (~2 dots each, unreadable on thermal paper). Keep only what the
+    // app resolves a product with, and stay on ECC M.
     const qrData = JSON.stringify({
       product_id,
-      batch,
-      production_date,
       product: product_name,
     });
 
-    const qrImage = await QRCode.toDataURL(qrData, {
-      width: 200,
+    // Vector output: Chrome scales the label to 203 dpi, and a 200 px PNG
+    // resampled to 128 dots blurs module edges into grey.
+    const qrSvg = await QRCode.toString(qrData, {
+      type: 'svg',
       margin: 1,
-      errorCorrectionLevel: 'H',
+      errorCorrectionLevel: 'M',
       color: {
         dark: '#000000',
         light: '#ffffff',
       },
     });
+    const qrImage = `data:image/svg+xml;base64,${Buffer.from(qrSvg).toString('base64')}`;
 
     const date = new Date(production_date);
     const day = String(date.getDate()).padStart(2, '0');
@@ -237,8 +241,8 @@ export async function POST(request: NextRequest) {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 16mm;
-            height: 16mm;
+            width: 17mm;
+            height: 17mm;
             flex-shrink: 0;
           }
           .qr-code {
