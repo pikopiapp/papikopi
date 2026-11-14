@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 interface PrintLabelProps {
   productId: string;
@@ -29,53 +29,13 @@ export function PrintLabelDialog({
   const printQuantity = Math.max(1, Math.min(2000, parseInt(quantityText, 10) || 1));
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [printerConfigured, setPrinterConfigured] = useState<boolean | null>(null);
-  const [printerStatusError, setPrinterStatusError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    fetch('/api/labels/printer-status')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error('Failed to read printer configuration');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (!active) return;
-        setPrinterConfigured(Boolean(data.configured));
-        if (data.configured === false) {
-          setPrinterStatusError('Printer jaringan belum dikonfigurasi. XP-460B via USB: pakai Preview, lalu print dari browser (kertas 108 × 20 mm, margin None).');
-        }
-      })
-      .catch((error) => {
-        if (!active) return;
-        console.error('Printer status fetch failed:', error);
-        setPrinterConfigured(false);
-        setPrinterStatusError('Gagal memeriksa status printer.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const handlePrint = async (sendToPrinter = false) => {
+  const handlePrint = async () => {
     setIsLoading(true);
     setErrorMessage(null);
     setStatusMessage(null);
 
     try {
-      if (sendToPrinter) {
-        if (printerConfigured === false) {
-          setErrorMessage('Printer jaringan belum dikonfigurasi. Untuk XP-460B via USB, gunakan Preview lalu print dari browser.');
-          return;
-        }
-
-        setStatusMessage('Mengirim label ke printer...');
-      }
-
       const response = await fetch('/api/labels/print', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,7 +46,6 @@ export function PrintLabelDialog({
           production_date: productionDate,
           expiry_date: expiryDate,
           quantity: printQuantity,
-          send_to_printer: sendToPrinter,
         }),
       });
 
@@ -95,12 +54,6 @@ export function PrintLabelDialog({
         const message = errorData?.printer_message || errorData?.error || 'Failed to generate label';
         setErrorMessage(message);
         throw new Error(message);
-      }
-
-      if (sendToPrinter) {
-        const data = await response.json();
-        setStatusMessage(data.message || 'Labels sent to printer');
-        return;
       }
 
       const html = await response.text();
@@ -210,33 +163,15 @@ export function PrintLabelDialog({
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <button
-          onClick={() => handlePrint(false)}
+          onClick={() => handlePrint()}
           disabled={isLoading}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
         >
           🖨️ Preview {printQuantity} {printQuantity === 1 ? 'Label' : 'Labels'}
           {isLoading && <span className="animate-spin">⏳</span>}
         </button>
-        <button
-          onClick={() => handlePrint(true)}
-          disabled={isLoading || printerConfigured === false}
-          title={
-            printerConfigured === false
-              ? 'Printer jaringan belum dikonfigurasi. Untuk XP-460B via USB, pakai Preview lalu print dari browser.'
-              : 'Kirim langsung ke printer jaringan (TSPL)'
-          }
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
-        >
-          🚀 Send to Printer
-          {isLoading && <span className="animate-spin">⏳</span>}
-        </button>
       </div>
 
-      {printerStatusError && (
-        <div className="text-sm text-orange-700 bg-orange-50 border border-orange-100 rounded p-2">
-          {printerStatusError}
-        </div>
-      )}
       {statusMessage && (
         <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded p-2">
           {statusMessage}
