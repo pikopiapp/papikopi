@@ -20,8 +20,8 @@ Platform manajemen outlet kopi dengan dashboard analytics dan inventory manageme
   via the Chrome dialog.
 - Current printer: Xprinter XP-460B — direct thermal, 203 dpi (8 dots/mm), max width 108 mm, USB/Bluetooth.
   With the Windows USB driver, use `Preview` and print from the browser: paper 108 × 20 mm, margin None.
-  Each sheet holds two 50 × 20 mm labels with 1.3 mm side margins and a 5.4 mm gap, matching the
-  driver's Page Setup (Rows 1, Columns 2, Template 50 × 20).
+  Each sheet holds two 50 × 20 mm labels with 2 mm side margins and a 4 mm gap
+  (2 + 50 + 4 + 50 + 2 = 108 mm), matching the physical sticker stock.
 - The API still accepts `send_to_printer` to dispatch a raw TSPL job to `PRINTER_HOST:9100`, but only
   for a printer reachable over TCP from the server; Vercel cannot reach a LAN address, so USB setups
   must use `Preview`. There is no UI button for direct dispatch.

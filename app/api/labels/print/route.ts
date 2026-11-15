@@ -126,9 +126,9 @@ export async function POST(request: NextRequest) {
     const year = date.getFullYear();
     const formattedDate = `${day}-${month}-${year}`;
 
-    // XP-460B is fed 108 mm liner carrying two 50 x 20 mm labels per row. The Windows
-    // driver lays them out as: 1.3 mm margin, 50 mm label, 5.4 mm gap, 50 mm label,
-    // 1.3 mm margin, so the page must place each label at those exact offsets.
+    // XP-460B is fed 108 mm liner carrying two 50 x 20 mm labels per row. The stock
+    // measures 2 mm margin, 50 mm label, 4 mm gap, 50 mm label, 2 mm margin
+    // (2 + 50 + 4 + 50 + 2 = 108), so the page must place each label at those offsets.
     const labelInnerHTML = `
         <div class="left-column">
           <div class="production-date">${formattedDate}</div>
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
           }
           .print-help {
             width: 108mm;
-            padding: 2mm 1.3mm;
+            padding: 2mm 2mm;
             font: 11px/1.5 Arial, sans-serif;
             color: #444;
             background: #fffbe6;
@@ -207,10 +207,10 @@ export async function POST(request: NextRequest) {
             outline-offset: -1px;
           }
           .label.left {
-            left: 1.3mm;
+            left: 2mm;
           }
           .label.right {
-            left: 56.7mm;
+            left: 56mm;
           }
           .left-column {
             flex: 1;
