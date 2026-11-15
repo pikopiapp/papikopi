@@ -126,9 +126,10 @@ export async function POST(request: NextRequest) {
     const year = date.getFullYear();
     const formattedDate = `${day}-${month}-${year}`;
 
-    // XP-460B is fed 108 mm liner carrying two 50 x 20 mm labels per row. The stock
-    // measures 2 mm margin, 50 mm label, 4 mm gap, 50 mm label, 2 mm margin
-    // (2 + 50 + 4 + 50 + 2 = 108), so the page must place each label at those offsets.
+    // XP-460B is fed 108 mm liner carrying two 50 x 20 mm labels per row, with 4 mm
+    // between labels across and 4 mm between rows. The page pitch is therefore
+    // 108 x 24 mm (20 mm label + 4 mm row gap) or every row after the first drifts.
+    // Across the sheet: 2 mm margin, 50 mm label, 4 mm gap, 50 mm label, 2 mm margin.
     const labelInnerHTML = `
         <div class="left-column">
           <div class="production-date">${formattedDate}</div>
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
         <title>Label - ${escapeHtml(product_name)}</title>
         <style>
           @page {
-            size: 108mm 20mm;
+            size: 108mm 24mm;
             margin: 0;
           }
           * {
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
           .sheet {
             position: relative;
             width: 108mm;
-            height: 20mm;
+            height: 24mm;
             page-break-after: always;
             break-after: page;
           }
@@ -263,7 +264,7 @@ export async function POST(request: NextRequest) {
       </head>
       <body>
         <div class="print-help">
-          Di dialog print: buka <b>More settings</b> &rarr; Paper size <b>108 &times; 20 mm</b>,
+          Di dialog print: buka <b>More settings</b> &rarr; Paper size <b>108 &times; 24 mm</b>,
           Margins <b>None</b>, Scale <b>100%</b>, Orientation <b>Landscape</b>.
           Matikan <b>Headers and footers</b>. Kalau QR tidak muncul, jangan pakai background graphics.
         </div>
