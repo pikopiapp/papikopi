@@ -204,11 +204,13 @@ export async function POST(request: NextRequest) {
             outline: 1px dashed #999;
             outline-offset: -1px;
           }
+          /* Content sits 2 mm left of the die-cut cell: the driver's exposed-liner
+             offset pushes the image right on paper, so both columns shift back. */
           .label.left {
-            left: 2mm;
+            left: 0mm;
           }
           .label.right {
-            left: 56mm;
+            left: 54mm;
           }
           .left-column {
             flex: 1;

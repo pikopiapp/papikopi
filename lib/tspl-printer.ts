@@ -133,7 +133,9 @@ export function buildTsplPrintJob(request: LabelPrintRequest): string {
       const labelIndex = column === 0 ? labelIndexLeft : labelIndexRight;
       if (labelIndex >= quantity) continue;
 
-      const xBase = mmToDots(column === 0 ? 2 : 56);
+      // Matches the HTML route: 2 mm left of the die-cut cell to offset the
+      // driver's exposed-liner shift.
+      const xBase = mmToDots(column === 0 ? 0 : 54);
       const qrX = xBase + mmToDots(30);
       const textX = xBase + mmToDots(4);
       const escapedDate = escapeTsplText(formattedDate);
