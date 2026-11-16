@@ -98,14 +98,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Preview mode only. The label QR is ~17 mm wide, so the payload dictates
-    // how many printer dots each module gets: a full JSON payload needs 61
-    // modules (~2 dots each, unreadable on thermal paper). Keep only what the
-    // app resolves a product with, and stay on ECC M.
-    const qrData = JSON.stringify({
-      product_id,
-      product: product_name,
-    });
+    // Preview mode only. The label QR is ~17 mm wide, so the payload dictates how
+    // many printer dots each module gets. A bare product UUID is 36 characters
+    // (25 modules, ~5.4 dots each) and the app resolves the product from it, so
+    // the symbol stays crisp on thermal paper without carrying the product name.
+    const qrData = product_id;
 
     // Vector output: Chrome scales the label to 203 dpi, and a 200 px PNG
     // resampled to 128 dots blurs module edges into grey.

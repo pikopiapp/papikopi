@@ -70,7 +70,7 @@ test('buildTsplPrintJob should include formatted production date in DD-MM-YYYY',
   assert.ok(tspl.includes('TEXT '), 'TSPL should contain text drawing commands');
 });
 
-test('buildTsplPrintJob should encode a compact payload at 3 dots per module', () => {
+test('buildTsplPrintJob should encode the bare product id at 3 dots per module', () => {
   const tspl = buildTsplPrintJob({
     productName: 'Butterscotch (M)',
     productId: 'P-1001',
@@ -81,11 +81,8 @@ test('buildTsplPrintJob should encode a compact payload at 3 dots per module', (
 
   const qrLine = tspl.split('\r\n').find((line) => line.startsWith('QRCODE ')) ?? '';
   const content = qrLine.slice(qrLine.indexOf('"') + 1, qrLine.lastIndexOf('"'));
-  const payload = JSON.parse(content.split('\\["]').join('"'));
 
-  assert.equal(payload.product_id, 'P-1001');
-  assert.equal(payload.product, 'Butterscotch (M)');
-  assert.deepEqual(Object.keys(payload).sort(), ['product', 'product_id']);
+  assert.equal(content, 'P-1001');
   assert.ok(tspl.includes(',M,3,A,0,'), 'QR modules should be 3 dots so the symbol fits the label');
 });
 

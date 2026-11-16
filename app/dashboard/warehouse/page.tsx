@@ -211,14 +211,10 @@ export default function WarehousePage() {
     });
   };
 
-  // Scanners only resolve product_id + product. Keeping batch/expiry in the
-  // symbol added ~50 characters, which doubled the module count and made the
-  // on-screen code as dense as the old printed one.
-  const getQRImageContent = (batch: ProductBatch) =>
-    JSON.stringify({
-      product_id: batch.product_id,
-      product: batch.product_name,
-    });
+  // Scanners resolve a product by product_id alone; a bare UUID is 36 characters
+  // (25 modules) versus 86 for product_id + product (37 modules), so the symbol
+  // stays readable on thermal paper. The app names the product from the lookup.
+  const getQRImageContent = (batch: ProductBatch) => batch.product_id;
 
   const handleCopyQRJson = async (batch: ProductBatch) => {
     try {

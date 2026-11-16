@@ -101,12 +101,9 @@ function formatProductionDate(productionDate: string): string {
 
 export function buildTsplPrintJob(request: LabelPrintRequest): string {
   const { productName, productId, productionDate, quantity } = request;
-  // Only what the app resolves a product with: a 20 mm label cannot carry a
-  // full JSON payload at a module size the phone camera can read.
-  const qrPayload = JSON.stringify({
-    product_id: productId,
-    product: productName,
-  });
+  // A bare UUID needs 25 modules; the app resolves the product from it, and the
+  // name would only cost module size on a 20 mm label.
+  const qrPayload = productId;
 
   const formattedDate = formatProductionDate(productionDate);
   const productLines = splitLabelText(productName, 18);
@@ -142,7 +139,7 @@ export function buildTsplPrintJob(request: LabelPrintRequest): string {
       const escapedDate = escapeTsplText(formattedDate);
       const escapedQrPayload = escapeTsplText(qrPayload);
 
-      // 3 dots per module keeps the 37-41 module symbol under the 20 mm label
+      // 3 dots per module keeps even a 41-module symbol under the 20 mm label
       // height; 4 dots made it ~24 mm and the printer clipped it.
       lines.push(`QRCODE ${qrX},${topDot},M,3,A,0,"${escapedQrPayload}"`);
       lines.push(`TEXT ${textX},${dateY},"3",0,1,1,"${escapedDate}"`);
