@@ -204,13 +204,14 @@ export async function POST(request: NextRequest) {
             outline: 1px dashed #999;
             outline-offset: -1px;
           }
-          /* Content sits 2 mm left of the die-cut cell: the driver's exposed-liner
-             offset pushes the image right on paper, so both columns shift back. */
+          /* 4 mm into each die-cut cell: the driver lands the image left of the
+             cell origin, so the printable area starts here to keep the text off
+             the sticker edge. */
           .label.left {
-            left: 0mm;
+            left: 4mm;
           }
           .label.right {
-            left: 54mm;
+            left: 58mm;
           }
           .left-column {
             flex: 1;
