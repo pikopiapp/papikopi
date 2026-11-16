@@ -212,8 +212,9 @@ export default function WarehousePage() {
   };
 
   // Scanners resolve a product by product_id alone; a bare UUID is 36 characters
-  // (25 modules) versus 86 for product_id + product (37 modules), so the symbol
-  // stays readable on thermal paper. The app names the product from the lookup.
+  // (29 modules at ECC L) versus 37 for the 86-character product_id + product
+  // payload, so the symbol stays readable on thermal paper. The app names the
+  // product from the lookup.
   const getQRImageContent = (batch: ProductBatch) => batch.product_id;
 
   const handleCopyQRJson = async (batch: ProductBatch) => {

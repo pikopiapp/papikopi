@@ -101,8 +101,8 @@ function formatProductionDate(productionDate: string): string {
 
 export function buildTsplPrintJob(request: LabelPrintRequest): string {
   const { productName, productId, productionDate, quantity } = request;
-  // A bare UUID needs 25 modules; the app resolves the product from it, and the
-  // name would only cost module size on a 20 mm label.
+  // A bare UUID needs 29 modules (87 dots, ~11 mm at 3 dots each); the app
+  // resolves the product from it, and the name would only cost module size.
   const qrPayload = productId;
 
   const formattedDate = formatProductionDate(productionDate);
@@ -139,8 +139,8 @@ export function buildTsplPrintJob(request: LabelPrintRequest): string {
       const escapedDate = escapeTsplText(formattedDate);
       const escapedQrPayload = escapeTsplText(qrPayload);
 
-      // 3 dots per module keeps even a 41-module symbol under the 20 mm label
-      // height; 4 dots made it ~24 mm and the printer clipped it.
+      // 3 dots per module keeps the symbol well inside the 20 mm label height;
+      // at 4 dots the old 41-module payload ran past it and the printer clipped.
       lines.push(`QRCODE ${qrX},${topDot},M,3,A,0,"${escapedQrPayload}"`);
       lines.push(`TEXT ${textX},${dateY},"3",0,1,1,"${escapedDate}"`);
 

@@ -100,8 +100,8 @@ export async function POST(request: NextRequest) {
 
     // Preview mode only. The label QR is ~17 mm wide, so the payload dictates how
     // many printer dots each module gets. A bare product UUID is 36 characters
-    // (25 modules, ~5.4 dots each) and the app resolves the product from it, so
-    // the symbol stays crisp on thermal paper without carrying the product name.
+    // (29 modules, ~4.7 dots each at ECC M) and the app resolves the product from
+    // it, so the symbol stays crisp on thermal paper without the product name.
     const qrData = product_id;
 
     // Vector output: Chrome scales the label to 203 dpi, and a 200 px PNG
